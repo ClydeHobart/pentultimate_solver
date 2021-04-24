@@ -1,0 +1,5 @@
+binop_separator = "Back"
+blank_lines_upper_bound = 1
+brace_style = "SameLineWhere"
+hard_tabs = true
+newline_style = "Unix"

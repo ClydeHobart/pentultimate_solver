@@ -1,0 +1,14 @@
+{
+	f: "Warn",
+	m: {
+		"pentultimate_solver::math::polyhedra::data": {
+			f: "Info",
+			m: {
+				// "edge_status": {
+				// 	"f": "Trace",
+				// 	"m": {}
+				// }
+			}
+		}
+	}
+}
