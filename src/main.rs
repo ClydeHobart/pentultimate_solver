@@ -15,7 +15,7 @@ fn init() -> () {
 fn main() -> () {
 	init();
 
-	let icosahedron: DataRefOption = Data::get(Polyhedron::Icosahedron);
+	let data: DataRefOption = Data::get(Polyhedron::RhombicTriacontahedron);
 
-	println!("ico: {:#?}", icosahedron);
+	println!("{:#?}", data);
 }

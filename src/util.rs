@@ -24,6 +24,17 @@ struct Module {
 	m:	std::collections::HashMap<String, Module>
 }
 
+#[macro_export]
+macro_rules! log_path {
+	() => {
+		std::module_path!()
+	};
+
+	($item:expr) => {
+		format!("{}::{}", std::module_path!(), $item).as_str()
+	};
+}
+
 pub fn init_env_logger() -> () {
 	const RUST_LOG_JSON_FILE_NAME: &str = "RUST_LOG.json5";
 
@@ -117,17 +128,18 @@ fn set_env_var(module: Module) -> () {
 		}
 	}
 
-	let mut pretty_env_var_val: String = String::new();
-	env_var_val
-		.split(',')
-		.collect::<Vec<&str>>()
-		.iter()
-		.for_each(
-			|token: &&str| -> () {
-				pretty_env_var_val.push_str(format!("\n\t{}", token).as_str());
-			}
-		);
-	println!("RUST_LOG={}", pretty_env_var_val);
+	println!("RUST_LOG={}",
+		env_var_val
+			.split(',')
+			.collect::<Vec<&str>>()
+			.iter()
+			.map(
+				|token: &&str| -> String {
+					format!("\n\t{}", token)
+				}
+			)
+			.collect::<String>()
+	);
 	std::env::set_var("RUST_LOG", env_var_val);
 	env_logger::init();
 }
