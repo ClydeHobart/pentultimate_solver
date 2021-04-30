@@ -8,33 +8,34 @@ use {
 			}
 		},
 		prelude::*
-	}
+	},
+	log::Level
 };
 
 #[derive(Debug, Default)]
 pub struct VertexData {
-	vector:	Vec3,
-	normal:	Vec3
+	vec:	Vec3,
+	norm:	Vec3
 }
 
 impl From<Vec3> for VertexData {
-	fn from(vector: Vec3) -> Self {
+	fn from(vec: Vec3) -> Self {
 		Self {
-			vector,
-			normal: vector.normalize_or_zero()
+			vec,
+			norm: vec.normalize_or_zero()
 		}
 	}
 }
 
 #[derive(Clone, Copy, Eq, Debug, Default, Hash, PartialEq)]
-pub struct EdgeData(u32, u32);
+pub struct EdgeData(usize, usize);
 
 impl EdgeData {
-	pub fn new(vert_index_1: u32, vert_index_2: u32) -> Self {
+	pub fn new(vert_index_1: usize, vert_index_2: usize) -> Self {
 		EdgeData(std::cmp::min(vert_index_1, vert_index_2), std::cmp::max(vert_index_1, vert_index_2))
 	}
 
-	pub fn contains_vert(&self, vert_index: u32) -> bool {
+	pub fn contains_vert(&self, vert_index: usize) -> bool {
 		self.0 == vert_index || self.1 == vert_index
 	}
 }
@@ -44,22 +45,34 @@ type Range = std::ops::Range<usize>;
 #[derive(Debug, Default)]
 pub struct FaceData {
 	range:	Range,
-	normal:	Vec3
+	norm:	Vec3
 }
 
 impl FaceData {
-	pub fn new(verts: &Vec<VertexData>, vert_indices: &Vec<u32>, start: usize, end: usize) -> Self {
+	pub fn new(verts: &Vec<VertexData>, vert_indices: &Vec<usize>, start: usize, end: usize) -> Self {
 		let mut vector_sum: Vec3 = Vec3::ZERO;
 
 		for vert_index in vert_indices.get(start .. end).unwrap().iter() {
-			vector_sum += verts[*vert_index as usize].vector;
+			vector_sum += verts[*vert_index].vec;
 		}
 
 		FaceData {
 			range: start .. end,
-			normal: vector_sum.normalize_or_zero()
+			norm: vector_sum.normalize_or_zero()
 		}
 	}
+
+	pub fn get_range(&self) -> Range { self.range.start .. self.range.end }
+
+	pub fn get_slice<'a>(&self, vert_indices: &'a Vec<usize>) -> &'a [usize] { &vert_indices[self.get_range()] }
+
+	pub fn get_slice_mut<'a>(&self, vert_indices: &'a mut Vec<usize>) -> &'a mut [usize] { &mut vert_indices[self.get_range()] }
+
+	pub fn contains_vert(&self, vert_indices: &Vec<usize>, vert_index: usize) -> bool {
+		self.get_slice(vert_indices).iter().any(|index: &usize| *index == vert_index)
+	}
+
+	pub fn get_size(&self) -> usize { self.range.end - self.range.start }
 }
 
 #[derive(Debug)]
@@ -67,7 +80,7 @@ pub struct Data {
 	polyhedron:		Polyhedron,
 	verts:			Vec<VertexData>,
 	edges:			Vec<EdgeData>,
-	vert_indices:	Vec<u32>,
+	vert_indices:	Vec<usize>,
 	faces:			Vec<FaceData>
 }
 
@@ -75,7 +88,7 @@ pub type DataRefOption = Option<&'static Data>;
 
 impl Data {
 	pub fn get(polyhedron: Polyhedron) -> DataRefOption {
-		let option: &Option<Data> = match polyhedron {
+		let option: &'static Option<Data> = match polyhedron {
 				Polyhedron::Icosahedron				=> &ICOSAHEDRON,
 				Polyhedron::Dodecahedron			=> &DODECAHEDRON,
 				Polyhedron::Icosidodecahedron		=> &ICOSIDODECAHEDRON,
@@ -90,14 +103,90 @@ impl Data {
 		}
 	}
 
-	const fn default() -> Self {
-		Self {
-			polyhedron:		Polyhedron::Invalid,
-			verts:			Vec::<VertexData>::new(),
-			edges:			Vec::<EdgeData>::new(),
-			vert_indices:	Vec::<u32>::new(),
-			faces:			Vec::<FaceData>::new()
+	pub fn get_closest_vert_index(&self, vec: &Vec3) -> usize {
+		Data::get_closest_vert_index_for_verts(&self.verts, vec)
+	}
+
+	pub fn get_closest_vert_index_for_verts(verts: &Vec<VertexData>, vec: &Vec3) -> usize {
+		use std::cmp::Ordering;
+
+		verts
+			.iter()
+			.map(|vert: &VertexData| -> f32 {
+				vert.norm.dot(*vec)
+			})
+			.enumerate()
+			.max_by(|(_vert_index_a, norm_dot_vec_a): &(usize, f32), (_vert_index_b, norm_dot_vec_b): &(usize, f32)| -> Ordering {
+				norm_dot_vec_a.partial_cmp(&norm_dot_vec_b).unwrap_or(Ordering::Equal)
+			})
+			.map(|(vert_index, _norm_dot_vec): (usize, f32)| -> usize {
+				vert_index
+			})
+			.unwrap()
+	}
+
+	pub fn validate_polyhedra() -> LogErrorResult {
+		let log_target: String = log_path!("validate_polyhedra").to_string();
+
+		fn validate_polyhedron(log_target: &String, polyhedron: Polyhedron) -> LogErrorResult {
+			if Data::get(polyhedron).is_some() {
+				Ok(())
+			} else {
+				Err(log_error!(
+					target: log_target,
+					Level::Warn, format!("Failed to validate polyhedron {:?}", polyhedron)
+				))
+			}
 		}
+
+		validate_polyhedron(&log_target, Polyhedron::Icosahedron)?;
+		validate_polyhedron(&log_target, Polyhedron::Dodecahedron)?;
+		validate_polyhedron(&log_target, Polyhedron::Icosidodecahedron)?;
+		validate_polyhedron(&log_target, Polyhedron::RhombicTriacontahedron)?;
+
+		fn validate_dual_polyhedra(log_target: &String, polyhedron_a: Polyhedron) -> LogErrorResult {
+			let polyhedron_b: Polyhedron = polyhedron_a.dual();
+
+			if polyhedron_b.is_invalid() {
+				return Err(log_error!(
+					target: log_target,
+					Level::Warn, format!("Polyhedron {:?}'s dual is Invalid", polyhedron_a)
+				));
+			}
+
+			let properties_a: &Properties = Properties::get(polyhedron_a).unwrap();
+			let properties_b: &Properties = Properties::get(polyhedron_b).unwrap();
+			let data_a: &Data = Data::get(polyhedron_a).unwrap();
+			let data_b: &Data = Data::get(polyhedron_b).unwrap();
+
+			if properties_a.vert_count != properties_b.face_count {
+				return Err(log_error!(
+					target: log_target,
+					Level::Warn, format!("Polyhedron {:?}'s vertex count doesn't equal polyhedron {:?}'s face count", polyhedron_a, polyhedron_b)
+				));
+			}
+
+			for index in 0 .. properties_a.vert_count {
+				if !data_a.verts[index].norm.abs_diff_eq(data_b.faces[index].norm, f32::EPSILON) {
+					return Err(log_error!(
+						target: log_target,
+						Level::Warn, format!("Vert {}'s normal vector ({:?}) of polyhedron {:?} isn't close enough to face {}'s normal vector ({:?}) of polyhedron {:?}",
+							index, data_a.verts[index].norm, polyhedron_a,
+							index, data_b.faces[index].norm, polyhedron_b
+						)
+					))
+				}
+			}
+
+			Ok(())
+		}
+
+		validate_dual_polyhedra(&log_target, Polyhedron::Icosahedron)?;
+		validate_dual_polyhedra(&log_target, Polyhedron::Dodecahedron)?;
+		validate_dual_polyhedra(&log_target, Polyhedron::Icosidodecahedron)?;
+		validate_dual_polyhedra(&log_target, Polyhedron::RhombicTriacontahedron)?;
+
+		Ok(())
 	}
 
 	fn new_option(polyhedron: Polyhedron) -> Option<Data> {
@@ -105,53 +194,88 @@ impl Data {
 
 		data.polyhedron = polyhedron;
 
-		if data.generate() {
-			Some(data)
-		} else {
-			data.reset();
+		match data.generate() {
+			Ok(_) => {
+				Some(data)
+			},
+			Err(log_error) => {
+				log_error.log();
+				data.reset();
 
-			None
+				None
+			}
 		}
 	}
 
-	fn generate(&mut self) -> bool {
-		fn try_generate_elements<T: std::fmt::Debug>(result: bool, elements: &str, data_struct: &Data, important_data: &T) -> bool {
-			return result || {
-				warn!("Failed to generate {} for polyhedron {:?}", elements, data_struct.polyhedron);
-				info!("Important data: {:#?}", important_data);
+	fn default() -> Self {
+		Self {
+			polyhedron:		Polyhedron::Invalid,
+			verts:			Vec::<VertexData>::new(),
+			edges:			Vec::<EdgeData>::new(),
+			vert_indices:	Vec::<usize>::new(),
+			faces:			Vec::<FaceData>::new()
+		}
+	}
 
-				false
-			};
+	fn generate(&mut self) -> LogErrorResult {
+		fn try_generate_elements<'a, T: std::fmt::Debug>(
+			func:				fn(&mut Data) -> LogErrorResult,
+			data_struct:		&'a mut Data,
+			elements:			&str,
+			get_relevant_data:	fn(&'a Data) -> T
+		) -> LogErrorResult {
+			if let Err(log_error) = func(data_struct) {
+				log_error.log();
+
+				Err(log_error!(
+					target: log_path!("generate"),
+					Level::Warn, format!("Failed to generate {} for polyhedron {:?}", elements, data_struct.polyhedron),
+					Level::Info, format!("Relevant data: {:#?}", get_relevant_data(data_struct))
+				))
+			} else {
+				Ok(())
+			}
 		}
 
 		try_generate_elements(
-			self.generate_verts(),
+			Data::generate_verts,
+			self,
 			"vertices",
+			|data: &Data| -> (&Vec<VertexData>, ) { (&data.verts, ) }
+		)?;
+		try_generate_elements(
+			Data::generate_edges,
 			self,
-			&self.verts
-		) && try_generate_elements(
-			self.generate_edges(),
 			"edges",
+			|data: &Data| -> (&Vec<VertexData>, &Vec<EdgeData>) { (&data.verts, &data.edges) }
+		)?;
+		try_generate_elements(
+			Data::generate_faces,
 			self,
-			&(&self.verts, &self.edges)
-		) && try_generate_elements(
-			self.generate_faces(),
 			"faces",
-			self,
-			&(&self.edges, &self.vert_indices, &self.faces)
-		)
+			|data: &Data| -> (&Vec<EdgeData>, &Vec<usize>, &Vec<FaceData>) { (&data.edges, &data.vert_indices, &data.faces) }
+		)?;
+
+		Ok(())
 	}
 
-	fn generate_verts(&mut self) -> bool {
+	fn generate_verts(&mut self) -> LogErrorResult {
 		let properties: &Properties = Properties::get(self.polyhedron).unwrap();
 		let verts: &mut Vec<VertexData> = &mut self.verts;
 
 		verts.clear();
 		verts.reserve_exact(properties.vert_count);
 		Data::generate_verts_for_properties(properties, verts);
-		trace!(target: log_path!("gen_verts"), "{:#?}", verts);
+		trace!(target: log_path!("generate_verts"), "{:#?}", verts);
 
-		verts.len() == properties.vert_count
+		if verts.len() != properties.vert_count {
+			return Err(log_error!(
+				target: log_path!("generate_verts"),
+				Level::Warn, format!("Found vertex count ({}) did not match expected vertex count ({})", verts.len(), properties.vert_count)
+			));
+		}
+
+		Ok(())
 	}
 
 	fn generate_verts_for_properties(properties: &Properties, verts: &mut Vec<VertexData>) -> () {
@@ -159,7 +283,7 @@ impl Data {
 			Polyhedron::Icosahedron => {
 				let base_vector: Vec3 = properties.base_vectors[0];
 				let mut perm_mat: Mat3 = Mat3::IDENTITY;
-		
+
 				for _perm in 0 .. 3 {
 					for vert in 0 .. 4 {
 						verts.push(
@@ -176,7 +300,7 @@ impl Data {
 							)
 						);
 					}
-		
+
 					perm_mat = PERMUTE_AXES * perm_mat;
 				}
 			},
@@ -263,14 +387,16 @@ impl Data {
 				}
 			},
 			Polyhedron::RhombicTriacontahedron => {
-				Data::generate_verts_for_properties(Properties::get(Polyhedron::Icosahedron).unwrap(), verts);
-				Data::generate_verts_for_properties(Properties::get(Polyhedron::Dodecahedron).unwrap(), verts);
+				Data::generate_verts_for_properties(&polyhedra::properties::ICOSAHEDRON, verts);
+				Data::generate_verts_for_properties(&polyhedra::properties::DODECAHEDRON, verts);
 			},
 			_ => {}
 		}
+
+		trace!(target: log_path!("generate_verts"), "{:?} verts: {:#?}", properties.polyhedron, verts);
 	}
 
-	fn generate_edges(&mut self) -> bool {
+	fn generate_edges(&mut self) -> LogErrorResult {
 		let properties: &Properties =  Properties::get(self.polyhedron).unwrap();
 		let verts: &Vec<VertexData> = &self.verts;
 		let edges: &mut Vec<EdgeData> = &mut self.edges;
@@ -281,27 +407,35 @@ impl Data {
 		let distance_squared_threshold: f32 = properties.edge_length * properties.edge_length + 0.000001;
 
 		for vert_index_1 in 0 .. properties.vert_count - 1 {
-			let vert_1: &Vec3 = &verts[vert_index_1].vector;
+			let vert_1: &Vec3 = &verts[vert_index_1].vec;
 
 			for vert_index_2 in vert_index_1 + 1 .. properties.vert_count {
-				if vert_1.distance_squared(verts[vert_index_2].vector) <= distance_squared_threshold {
-					edges.push(EdgeData(vert_index_1 as u32, vert_index_2 as u32));
+				if vert_1.distance_squared(verts[vert_index_2].vec) <= distance_squared_threshold {
+					edges.push(EdgeData(vert_index_1, vert_index_2));
 				}
 			}
 		}
 
-		trace!(target: log_path!("gen_edges"), "{:#?}", edges);
+		trace!(target: log_path!("generate_edges"), "{:?} edges: {:#?}", properties.polyhedron, edges);
 
-		edges.len() == properties.edge_count
+		if edges.len() != properties.edge_count {
+			return Err(log_error!(
+				target: log_path!("generate_edges"),
+				Level::Warn, format!("Found edge count ({}) did not match expected edge count ({})", edges.len(), properties.edge_count)
+			));
+		}
+
+		Ok(())
 	}
 
-	fn generate_faces(&mut self) -> bool {
+	fn generate_faces(&mut self) -> LogErrorResult {
 		let properties:			&Properties							= Properties::get(self.polyhedron).unwrap();
 		let verts:				&Vec<VertexData>					= &self.verts;
 		let edges:				&Vec<EdgeData>						= &self.edges;
-		let vert_indices:		&mut Vec<u32>						= &mut self.vert_indices;
+		let vert_indices:		&mut Vec<usize>						= &mut self.vert_indices;
 		let faces:				&mut Vec<FaceData>					= &mut self.faces;
 		let all_edges_used:		u64									= (1 << properties.edge_count) - 1;
+		let log_target:			String								= log_path!("generate_faces").to_owned();
 		let mut edge_to_index:	fnv::FnvHashMap<EdgeData, usize>	= fnv::FnvHashMap::default();
 		let mut edge_matrix:	Vec<u64>							= vec![0; properties.vert_count];
 		let mut forward_edges:	u64									= 0;
@@ -312,38 +446,38 @@ impl Data {
 		faces.reserve_exact(properties.face_count);
 
 		for (edge_index, edge) in edges.iter().enumerate() {
-			edge_matrix[edge.0 as usize] |= 1 << edge.1;
-			edge_matrix[edge.1 as usize] |= 1 << edge.0;
+			edge_matrix[edge.0] |= 1 << edge.1;
+			edge_matrix[edge.1] |= 1 << edge.0;
 			edge_to_index.insert(*edge, edge_index);
 		}
 
 		macro_rules! log_edge_status {
 			() => {
-				if log_enabled!(target: log_path!("edge_status"), log::Level::Trace) {
+				if log_enabled!(target: log_concat!(log_target, "edge_status"), log::Level::Trace) {
 					let mut status_update: String = "Edge Status:\n   ".to_string();
 					let cell_width: usize = if properties.vert_count >= 0xF { 3 } else { 2 };
-		
+
 					for vert_index_x in 0 .. properties.vert_count {
 						status_update.push_str(format!("{0:^1$x}", vert_index_x, cell_width).as_str());
 					}
-		
+
 					status_update.push('\n');
-		
+
 					for (vert_index_y, adjacent_verts) in edge_matrix.iter().enumerate() {
 						status_update.push_str(format!("{:>2x} ", vert_index_y).as_str());
-		
+
 						for vert_index_x in 0 .. properties.vert_count {
 							status_update.push_str(format!("{0:^1$}",
 								if (*adjacent_verts & (1 << vert_index_x)) != 0 { 'X' } else { '.' },
 								cell_width
 							).as_str());
 						}
-		
+
 						status_update.push('\n');
 					}
-		
+
 					status_update.push_str(format!("\n{:22}F B\n", "").as_str());
-		
+
 					for (edge_index, edge) in edges.iter().enumerate() {
 						status_update.push_str(format!("{:>3x}: {:2?} {} {}\n", edge_index, edge,
 							if (forward_edges & (1 << edge_index)) != 0 { 'X' } else { '.' },
@@ -351,7 +485,7 @@ impl Data {
 						).as_str());
 					}
 
-					trace!(target: log_path!("edge_status"), "{}", status_update);
+					trace!(target: log_concat!(log_target, "edge_status"), "{}", status_update);
 				}
 			};
 		}
@@ -359,17 +493,17 @@ impl Data {
 		log_edge_status!();
 
 		while forward_edges != all_edges_used && backward_edges != all_edges_used {
-			const INVALID_VERT_INDEX: u32 = u32::MAX;
+			const INVALID_VERT_INDEX: usize = usize::MAX;
 			let initial_edge: EdgeData = edges[forward_edges.trailing_ones() as usize];
 			let start: usize = vert_indices.len();
 			let mut end: usize = start;
-			let mut prev_vert_index: u32 = 0;
-			let mut curr_vert_index: u32 = initial_edge.0;
-			let mut next_vert_index: u32 = initial_edge.1;
+			let mut prev_vert_index: usize = 0;
+			let mut curr_vert_index: usize = initial_edge.0;
+			let mut next_vert_index: usize = initial_edge.1;
 
 			macro_rules! cycle_values {
 				() => {
-					trace!("Cycling {} <- {} <- {}", prev_vert_index, curr_vert_index, next_vert_index);
+					trace!(target: log_concat!(log_target, "cycle_values"), "Cycling {} <- {} <- {}", prev_vert_index, curr_vert_index, next_vert_index);
 					prev_vert_index = curr_vert_index;
 					curr_vert_index = next_vert_index;
 				};
@@ -379,7 +513,7 @@ impl Data {
 				() => {
 					vert_indices.push(curr_vert_index);
 					end += 1;
-					trace!("Recording vertex index {} (end is now {})", curr_vert_index, end);
+					trace!(target: log_concat!(log_target, "record_vert"), "Recording vertex index {} (end is now {})", curr_vert_index, end);
 				};
 			}
 
@@ -387,20 +521,29 @@ impl Data {
 				() => {
 					// EdgeData::new() automatically orders the indices
 					let edge: EdgeData = EdgeData::new(prev_vert_index, curr_vert_index);
-	
-					trace!("Recording edge {:?}", edge);
-	
-					edge_matrix[prev_vert_index as usize] &= !(1_u64 << curr_vert_index);
-					// edge_matrix[curr_vert_index as usize] &= !(1_u64 << prev_vert_index);
-	
+
+					trace!(target: log_concat!(log_target, "record_edge"), "Recording edge {:?}", edge);
+
+					edge_matrix[prev_vert_index] &= !(1_u64 << curr_vert_index);
+					// edge_matrix[curr_vert_index] &= !(1_u64 << prev_vert_index);
+
 					if let Some(edge_index) = edge_to_index.get(&edge) {
 						if prev_vert_index <= curr_vert_index {
 							forward_edges |= 1_u64 << edge_index;
 						} else {
-							backward_edges |= 1_u64 << edge_index
+							backward_edges |= 1_u64 << edge_index;
 						}
 					} else {
-						warn!("No stored index for edge {:?} in polyhedron {:?}", edge, properties.polyhedron);
+						return Err(log_error!(
+							target: log_concat!(log_target, "record_edge"),
+							Level::Warn, format!("No valid next vertex for previous vertex {} ({}) and current vertex {} ({}) in polyhedron {:?}",
+								prev_vert_index,
+								verts[prev_vert_index].vec,
+								curr_vert_index,
+								verts[curr_vert_index].vec,
+								properties.polyhedron
+							)
+						));
 					}
 				};
 			}
@@ -408,51 +551,52 @@ impl Data {
 			macro_rules! find_next_vert {
 				() => {
 					next_vert_index = {
-						let mut candidate_vert_indices: u64 = edge_matrix[curr_vert_index as usize];
+						let mut candidate_vert_indices: u64 = edge_matrix[curr_vert_index];
 
 						if candidate_vert_indices == 0 {
-							warn!("No candidate next vertices for vertex {} in polyhedron {:?}", curr_vert_index, properties.polyhedron);
-		
+							warn!(target: log_concat!(log_target, "find_next_vert"), "No candidate next vertices for vertex {} in polyhedron {:?}", curr_vert_index, properties.polyhedron);
+
 							INVALID_VERT_INDEX
 						} else {
-							let curr_vert_vector: Vec3 = verts[curr_vert_index as usize].vector;
-							let prev_vert_to_curr_vert_vector: Vec3 = curr_vert_vector - verts[prev_vert_index as usize].vector;
-							let mut best_vert_index: u32 = INVALID_VERT_INDEX;
+							let curr_vert_vector: Vec3 = verts[curr_vert_index].vec;
+							let prev_vert_to_curr_vert_vector: Vec3 = curr_vert_vector - verts[prev_vert_index].vec;
+							let mut best_vert_index: usize = INVALID_VERT_INDEX;
 							let mut best_vert_angle: f32 = 0.0;
-			
+
 							while candidate_vert_indices != 0 {
-								let candidate_vert_index: u32 = candidate_vert_indices.trailing_zeros();
-			
-								trace!("Considering candidate vertex {}", candidate_vert_index);
-			
+								let candidate_vert_index: usize = candidate_vert_indices.trailing_zeros() as usize;
+
+								trace!(target: log_concat!(log_target, "find_next_vert"), "Considering candidate vertex {}", candidate_vert_index);
+
 								candidate_vert_indices &= !(1 << candidate_vert_index);
-			
+
 								// Don't double back
 								if candidate_vert_index == prev_vert_index {
-									trace!("Double-back, rejecting");
-			
+									trace!(target: log_concat!(log_target, "find_next_vert"), "Double-back, rejecting");
+
 									continue;
 								}
-			
-								let candidate_vert_vector: Vec3 = verts[candidate_vert_index as usize].vector;
-			
+
+								let candidate_vert_vector: Vec3 = verts[candidate_vert_index].vec;
+
+								// TODO: Might need to revisit this because glam is FOOLISH and implements left-hand rule instead of right-hand rule. Ruined my night learning this.
 								// Only proceed if this is a counter-clockwise candidate
 								if prev_vert_to_curr_vert_vector.cross(candidate_vert_vector).dot(curr_vert_vector) <= 0.0 {
-									trace!("Clockwise, rejecting");
-			
+									trace!(target: log_concat!(log_target, "find_next_vert"), "Clockwise, rejecting");
+
 									continue;
 								}
-			
+
 								let candidate_vert_angle: f32 = prev_vert_to_curr_vert_vector.angle_between(candidate_vert_vector);
-			
+
 								if best_vert_index == INVALID_VERT_INDEX || best_vert_angle <= candidate_vert_angle {
 									best_vert_index = candidate_vert_index;
 									best_vert_angle = candidate_vert_angle;
 								} else {
-									trace!("Worse angle ({} (best) > {} (candidate))", best_vert_angle, candidate_vert_angle);
+									trace!(target: log_concat!(log_target, "find_next_vert"), "Worse angle ({} (best) > {} (candidate))", best_vert_angle, candidate_vert_angle);
 								}
 							}
-			
+
 							best_vert_index
 						}
 					}
@@ -470,28 +614,155 @@ impl Data {
 				if next_vert_index == initial_edge.0 {
 					break;
 				} else if next_vert_index == INVALID_VERT_INDEX {
-					warn!("No valid next vertex for previous vertex {} ({}) and current vertex {} ({}) in polyhedron {:?}",
-						prev_vert_index,
-						verts[prev_vert_index as usize].vector,
-						curr_vert_index,
-						verts[curr_vert_index as usize].vector,
-						properties.polyhedron);
-
-					return false;
+					return Err(log_error!(
+						target: log_target,
+						Level::Warn, format!("No valid next vertex for previous vertex {} ({}) and current vertex {} ({}) in polyhedron {:?}",
+							prev_vert_index,
+							verts[prev_vert_index].vec,
+							curr_vert_index,
+							verts[curr_vert_index].vec,
+							properties.polyhedron
+						)
+					));
 				}
 			}
 
 			cycle_values!();
 			record_edge!();
-
 			faces.push(FaceData::new(&verts, &vert_indices, start, end));
-
-			trace!("Adding face {:?}", faces.last().unwrap());
-
+			trace!(target: log_target.as_str(), "Adding face {:?}", faces.last().unwrap());
 			log_edge_status!();
 		}
 
-		faces.len() == properties.face_count
+		let dual_verts: Vec<VertexData> = {
+			if let Some(dual_properties) = Properties::get(properties.polyhedron.dual()) {
+				let mut verts: Vec<VertexData> = Vec::<VertexData>::with_capacity(dual_properties.vert_count);
+	
+				Data::generate_verts_for_properties(dual_properties, &mut verts);
+
+				verts
+			} else {
+				return Err(log_error!(
+					target: log_target,
+					Level::Warn, format!("Polyhedron {:?}'s dual is Invalid", properties.polyhedron)
+				));
+			}
+		};
+
+		faces.sort_by_cached_key(|face_data: &FaceData| -> usize {
+			Data::get_closest_vert_index_for_verts(&dual_verts, &face_data.norm)
+		});
+
+		let should_be_initial_vert: Box<dyn Fn(usize, usize) -> bool> = match self.polyhedron {
+			Polyhedron::Icosahedron => Some(Box::new(|face_index: usize, vert_index: usize| -> bool {
+				if face_index < properties.vert_count {
+					((vert_index as isize) - (face_index as isize)).abs() > 1
+				} else {
+					vert_index >> 2 == 1
+				}
+			}) as Box<dyn Fn(usize, usize) -> bool>),
+			Polyhedron::Dodecahedron =>  Some(Box::new(|face_index: usize, vert_index: usize| -> bool {
+				vert_index < properties.face_count && ((vert_index as isize) - (face_index as isize)).abs() > 1
+			}) as Box<dyn Fn(usize, usize) -> bool>),
+			Polyhedron::Icosidodecahedron =>  Some(Box::new(|face_index: usize, vert_index: usize| -> bool {
+				if face_index < 2 * polyhedra::properties::ICOSAHEDRON.vert_count {
+					vert_index % 5 == 0
+				} else {
+					const X_MAJOR_VERT_INDEX_END: usize = polyhedra::properties::ICOSIDODECAHEDRON.vert_count / 3;
+
+					vert_index < X_MAJOR_VERT_INDEX_END
+				}
+			}) as Box<dyn Fn(usize, usize) -> bool>),
+			Polyhedron::RhombicTriacontahedron => Some(Box::new(|face_index: usize, vert_index: usize| -> bool {
+				if face_index % 5 == 0 {
+					vert_index & 0b1 == 0
+				} else {
+					vert_index < polyhedra::properties::ICOSAHEDRON.vert_count
+				}
+			}) as Box<dyn Fn(usize, usize) -> bool>),
+			Polyhedron::Invalid => {
+				return Err(log_error!(target: log_target, Level::Error, format!("Couldn't assign closure to rotate vertex indices due to an Invalid Polyhedron")));
+			},
+		}.unwrap();
+
+		for (face_index, face_data) in faces.iter().enumerate() {
+			let face_slice: &mut [usize] = face_data.get_slice_mut(vert_indices);
+
+			if let Some(slice_index) = face_slice.iter().position(|vert_index: &usize| -> bool {
+				should_be_initial_vert(face_index, *vert_index)
+			}) {
+				face_slice.rotate_left(slice_index);
+			} else {
+				return Err(log_error!(
+					target: log_target,
+					Level::Warn, format!("Couldn't find vertex in face {}'s slice, {:?}, that satisfies the condition necessary for it to be the initial vertex",
+						face_index,
+						face_slice
+					)
+				));
+			}
+		}
+
+		let log_target: String = log_concat!(log_target, "validation").to_string();
+
+		if faces.len() != properties.face_count {
+			return Err(log_error!(
+				target: log_target,
+				Level::Warn, format!("Found face count ({}) did not match expected face count ({})", faces.len(), properties.face_count)
+			));
+		}
+
+		// Handle polyhedron-specific verification
+		match self.polyhedron {
+			Polyhedron::Icosidodecahedron => {
+				for (face_index, face_data) in faces.iter().enumerate() {
+					const DODECAHEDRON_FACE_COUNT: usize = polyhedra::properties::DODECAHEDRON.face_count;
+					let face_size: usize = face_data.get_size();
+
+					if (face_index >= DODECAHEDRON_FACE_COUNT || face_size != 5) && (face_index < DODECAHEDRON_FACE_COUNT || face_size != 3) {
+						return Err(log_error!(
+							target: log_target,
+							Level::Warn, format!(
+								"Face {} of size {} wasn't a pentagon with index < {} nor a triangle with index >= {}",
+								face_index, face_size, DODECAHEDRON_FACE_COUNT, DODECAHEDRON_FACE_COUNT
+							)
+						));
+					}
+
+					if face_index < 2 * DODECAHEDRON_FACE_COUNT {
+						return {
+								if vert_indices[face_data.range.start] % 5 != 0 {
+								Err(log_error!(
+									target: log_target,
+									Level::Warn, format!(
+										"Face {}'s initial vertex index, {}, wasn't a multiple of five",
+										face_index, vert_indices[face_data.range.start]
+									),
+									Level::Info, format!("Face {}'s slice: {:?}", face_index, face_data.get_slice(vert_indices))
+								))
+							} else {
+								Ok(())
+							}
+						};
+					}
+
+					let face_slice: &[usize] = face_data.get_slice(vert_indices);
+
+					if face_slice[0] >= face_slice[1] || face_slice[0] >= face_slice[2] {
+						return Err(log_error!(
+							target: log_target,
+							Level::Warn, format!(
+								"Face {}'s initial vertex index, {}, wasn't smaller than the other vertex indices, {} and {}",
+								face_index, face_slice[0], face_slice[1], face_slice[2]
+							)
+						));
+					}
+				}
+			},
+			_ => {}
+		}
+
+		Ok(())
 	}
 
 	fn reset(&mut self) -> () {

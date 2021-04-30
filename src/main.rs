@@ -1,6 +1,7 @@
 extern crate pentultimate_solver;
 
 use pentultimate_solver::{
+	prelude::*,
 	math::polyhedra::{
 		properties::Polyhedron,
 		data::*
@@ -12,10 +13,20 @@ fn init() -> () {
 	util::init_env_logger();
 }
 
+fn validate() -> Result<(), LogError> {
+	Data::validate_polyhedra()?;
+
+	Ok(())
+}
+
 fn main() -> () {
 	init();
 
-	let data: DataRefOption = Data::get(Polyhedron::RhombicTriacontahedron);
+	if let Err(log_error) = validate() {
+		log_error.log();
 
-	println!("{:#?}", data);
+		return;
+	}
+
+	// println!("{:#?}", Data::get(Polyhedron::Icosidodecahedron));
 }
