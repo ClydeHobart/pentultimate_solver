@@ -1,21 +1,33 @@
-pub use bevy::math::prelude::*;
+pub use bevy::math::*;
 
 pub mod polyhedra;
 
 pub const PHI:			f64 = 1.6180339887498950_f64;
 pub const ONE_OVER_PHI:	f64 = 0.61803398874989490_f64;
 
+#[macro_export]
+macro_rules! clamp {
+	($val:expr, $min:expr, $max:expr) => {
+		std::cmp::min(
+			std::cmp::max(
+				$val, $min
+			),
+			$max
+		)
+	};
+}
+
 #[derive(Clone, Copy)]
 pub struct ReflectionMat3 {
 	pub matrix: Mat3
 }
 
-pub const PERMUTE_AXES: Mat3 = bevy::math::const_mat3!([0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]);
+pub const PERMUTE_AXES: Mat3 = const_mat3!([0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]);
 
 impl ReflectionMat3 {
 	pub fn new(reflect_x: bool, reflect_y: bool, reflect_z: bool) -> ReflectionMat3 {
 		ReflectionMat3 {
-			matrix: Mat3::from_diagonal(bevy::math::vec3(
+			matrix: Mat3::from_diagonal(vec3(
 					if reflect_x { -1.0 } else { 1.0 },
 					if reflect_y { -1.0 } else { 1.0 },
 					if reflect_z { -1.0 } else { 1.0 }

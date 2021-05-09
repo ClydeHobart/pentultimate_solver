@@ -2,12 +2,19 @@ use {
 	crate::{
 			math::{
 			*,
-			polyhedra::properties::{
+			polyhedra::{
 				Polyhedron,
-				Properties
+				properties::Properties
 			}
 		},
 		prelude::*
+	},
+	bevy::render::{
+		mesh::{
+			Indices,
+			Mesh
+		},
+		pipeline::PrimitiveTopology
 	},
 	log::Level
 };
@@ -128,7 +135,7 @@ impl Data {
 	pub fn validate_polyhedra() -> LogErrorResult {
 		let log_target: String = log_path!("validate_polyhedra").to_string();
 
-		fn validate_polyhedron(log_target: &String, polyhedron: Polyhedron) -> LogErrorResult {
+		let validate_polyhedron = |polyhedron: Polyhedron| -> LogErrorResult {
 			if Data::get(polyhedron).is_some() {
 				Ok(())
 			} else {
@@ -137,14 +144,14 @@ impl Data {
 					Level::Warn, format!("Failed to validate polyhedron {:?}", polyhedron)
 				))
 			}
-		}
+		};
 
-		validate_polyhedron(&log_target, Polyhedron::Icosahedron)?;
-		validate_polyhedron(&log_target, Polyhedron::Dodecahedron)?;
-		validate_polyhedron(&log_target, Polyhedron::Icosidodecahedron)?;
-		validate_polyhedron(&log_target, Polyhedron::RhombicTriacontahedron)?;
+		validate_polyhedron(Polyhedron::Icosahedron)?;
+		validate_polyhedron(Polyhedron::Dodecahedron)?;
+		validate_polyhedron(Polyhedron::Icosidodecahedron)?;
+		validate_polyhedron(Polyhedron::RhombicTriacontahedron)?;
 
-		fn validate_dual_polyhedra(log_target: &String, polyhedron_a: Polyhedron) -> LogErrorResult {
+		let validate_dual_polyhedra = |polyhedron_a: Polyhedron| -> LogErrorResult {
 			let polyhedron_b: Polyhedron = polyhedron_a.dual();
 
 			if polyhedron_b.is_invalid() {
@@ -179,14 +186,79 @@ impl Data {
 			}
 
 			Ok(())
-		}
+		};
 
-		validate_dual_polyhedra(&log_target, Polyhedron::Icosahedron)?;
-		validate_dual_polyhedra(&log_target, Polyhedron::Dodecahedron)?;
-		validate_dual_polyhedra(&log_target, Polyhedron::Icosidodecahedron)?;
-		validate_dual_polyhedra(&log_target, Polyhedron::RhombicTriacontahedron)?;
+		validate_dual_polyhedra(Polyhedron::Icosahedron)?;
+		validate_dual_polyhedra(Polyhedron::Dodecahedron)?;
+		validate_dual_polyhedra(Polyhedron::Icosidodecahedron)?;
+		validate_dual_polyhedra(Polyhedron::RhombicTriacontahedron)?;
 
 		Ok(())
+	}
+
+	pub fn as_mesh(&self, primitive_topology: PrimitiveTopology) -> Option<Mesh> {
+		if primitive_topology == PrimitiveTopology::LineStrip || primitive_topology == PrimitiveTopology::TriangleStrip {
+			return None;
+		}
+
+		let mut mesh = Mesh::new(primitive_topology);
+		let mut positions: Vec<[f32; 3]> = Vec::<[f32; 3]>::new();
+		let mut normals: Vec<[f32; 3]> = Vec::<[f32; 3]>::new();
+		let mut uvs: Vec<[f32; 2]> = Vec::<[f32; 2]>::new();
+		let mut append_vert = |vert_index: usize| -> () {
+			let vert_data: &VertexData = &self.verts[vert_index];
+			positions.push(vert_data.vec.as_ref().clone());
+			normals.push(vert_data.norm.as_ref().clone());
+			uvs.push([0.0, 0.0]);
+		};
+		let mut append_all_verts = || -> () {
+			for vert_index in 0 .. self.verts.len() {
+				append_vert(vert_index);
+			}
+		};
+
+		match primitive_topology {
+			PrimitiveTopology::PointList => {
+				append_all_verts();
+			},
+			PrimitiveTopology::LineList => {
+				self.edges.iter().for_each(|edge_data: &EdgeData| -> () {
+					append_vert(edge_data.0);
+					append_vert(edge_data.1);
+				});
+			},
+			PrimitiveTopology::TriangleList => {
+				let vert_indices: &Vec<usize> = &self.vert_indices;
+				let mut indices: Vec<u32> = Vec::<u32>::new();
+
+				for face_data in self.faces.iter()
+				{
+					let initial_index: u32 = positions.len() as u32;
+					let range: &Range = &face_data.range;
+
+					for vert_index in vert_indices[range.clone()].iter() {
+						positions.push(self.verts[*vert_index].vec.as_ref().clone());
+						normals.push(face_data.norm.as_ref().clone());
+						uvs.push([0.0, 0.0]);
+					}
+
+					for slice_index in 1 .. (face_data.get_size() - 1) as u32 {
+						indices.push(initial_index);
+						indices.push(initial_index + slice_index);
+						indices.push(initial_index + slice_index + 1);
+					}
+				}
+
+				mesh.set_indices(Some(Indices::U32(indices)));
+			},
+			_ => { return None; }
+		}
+
+		mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+		mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+		mesh.set_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+
+		Some(mesh)
 	}
 
 	fn new_option(polyhedron: Polyhedron) -> Option<Data> {
@@ -712,54 +784,41 @@ impl Data {
 			));
 		}
 
-		// Handle polyhedron-specific verification
-		match self.polyhedron {
-			Polyhedron::Icosidodecahedron => {
-				for (face_index, face_data) in faces.iter().enumerate() {
-					const DODECAHEDRON_FACE_COUNT: usize = polyhedra::properties::DODECAHEDRON.face_count;
-					let face_size: usize = face_data.get_size();
+		for face_size_index in 0 .. properties.face_sizes.len() - 1 {
+			let min_face_index: usize = properties.face_sizes[face_size_index].initial_vert_index;
+			let max_face_index: usize = properties.face_sizes[face_size_index + 1].initial_vert_index;
+			let face_size: usize = properties.face_sizes[face_size_index].face_size;
 
-					if (face_index >= DODECAHEDRON_FACE_COUNT || face_size != 5) && (face_index < DODECAHEDRON_FACE_COUNT || face_size != 3) {
-						return Err(log_error!(
-							target: log_target,
-							Level::Warn, format!(
-								"Face {} of size {} wasn't a pentagon with index < {} nor a triangle with index >= {}",
-								face_index, face_size, DODECAHEDRON_FACE_COUNT, DODECAHEDRON_FACE_COUNT
-							)
-						));
-					}
+			if min_face_index >= properties.face_count || max_face_index > properties.face_count {
+				return Err(log_error!(
+					target: log_target,
+					Level::Warn, format!("Face size data {} is invalid", face_size_index)
+				));
+			}
 
-					if face_index < 2 * DODECAHEDRON_FACE_COUNT {
-						return {
-								if vert_indices[face_data.range.start] % 5 != 0 {
-								Err(log_error!(
-									target: log_target,
-									Level::Warn, format!(
-										"Face {}'s initial vertex index, {}, wasn't a multiple of five",
-										face_index, vert_indices[face_data.range.start]
-									),
-									Level::Info, format!("Face {}'s slice: {:?}", face_index, face_data.get_slice(vert_indices))
-								))
-							} else {
-								Ok(())
-							}
-						};
-					}
-
-					let face_slice: &[usize] = face_data.get_slice(vert_indices);
-
-					if face_slice[0] >= face_slice[1] || face_slice[0] >= face_slice[2] {
-						return Err(log_error!(
-							target: log_target,
-							Level::Warn, format!(
-								"Face {}'s initial vertex index, {}, wasn't smaller than the other vertex indices, {} and {}",
-								face_index, face_slice[0], face_slice[1], face_slice[2]
-							)
-						));
-					}
+			for (face_index, face_data) in faces[min_face_index .. max_face_index]
+				.iter()
+				.enumerate()
+				.map(|(face_slice_index, face_data): (usize, &FaceData)| -> (usize, &FaceData) {
+					(face_slice_index + min_face_index, face_data)
+				})
+			{
+				if face_data.get_size() != face_size {
+					return Err(log_error!(
+						target: log_target,
+						Level::Warn, format!("Face {}'s size ({}) did not match expected face size ({})", face_index, face_data.get_size(), face_size)
+					));
 				}
-			},
-			_ => {}
+
+				let initial_vert_index: usize = vert_indices[face_data.range.start];
+
+				if !should_be_initial_vert(face_index, initial_vert_index) {
+					return Err(log_error!(
+						target: log_target,
+						Level::Warn, format!("Face {}'s initial vertex index ({}) did not satisfy the requisite condition for it to be the initial vertex index", face_index, initial_vert_index)
+					));
+				}
+			}
 		}
 
 		Ok(())

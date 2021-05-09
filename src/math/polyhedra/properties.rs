@@ -1,40 +1,19 @@
-use crate::math;
+use crate::math::{
+	*,
+	polyhedra::Polyhedron
+};
 
-use super::super::*;
-use bevy::math::const_vec3;
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Polyhedron {
-	Invalid,
-	Icosahedron,
-	Dodecahedron,
-	Icosidodecahedron,
-	RhombicTriacontahedron
+pub struct FaceSizeData {
+	pub initial_vert_index:	usize,
+	pub face_size:			usize
 }
 
-impl Polyhedron {
-	pub fn dual(&self) -> Self {
-		match self {
-			Polyhedron::Icosahedron				=> Polyhedron::Dodecahedron,
-			Polyhedron::Dodecahedron			=> Polyhedron::Icosahedron,
-			Polyhedron::Icosidodecahedron		=> Polyhedron::RhombicTriacontahedron,
-			Polyhedron::RhombicTriacontahedron	=> Polyhedron::Icosidodecahedron,
-			Polyhedron::Invalid					=> Polyhedron::Invalid
+impl FaceSizeData {
+	pub const fn new(initial_vert_index: usize, face_size: usize) -> Self {
+		Self {
+			initial_vert_index,
+			face_size
 		}
-	}
-
-	pub fn is_valid(&self) -> bool {
-		*self != Polyhedron::Invalid
-	}
-
-	pub fn is_invalid(&self) -> bool {
-		*self == Polyhedron::Invalid
-	}
-}
-
-impl Default for Polyhedron {
-	fn default() -> Self {
-		Self::Invalid
 	}
 }
 
@@ -43,8 +22,9 @@ pub struct Properties {
 	pub vert_count:		usize,
 	pub edge_count:		usize,
 	pub face_count:		usize,
-	pub base_vectors:	&'static [bevy::math::Vec3],
-	pub edge_length:	f32
+	pub base_vectors:	&'static [Vec3],
+	pub edge_length:	f32,
+	pub face_sizes:		&'static [FaceSizeData]
 }
 
 impl Properties {
@@ -71,7 +51,11 @@ pub const ICOSAHEDRON: Properties = Properties {
 			0.0
 		])
 	],
-	edge_length:	2.0
+	edge_length:	2.0,
+	face_sizes:		&[
+		FaceSizeData::new(0, 3),
+		FaceSizeData::new(20, 0),
+	]
 };
 
 pub const DODECAHEDRON: Properties = Properties {
@@ -90,14 +74,18 @@ pub const DODECAHEDRON: Properties = Properties {
 			1.0
 		])
 	],
-	edge_length:	(2.0 * ONE_OVER_PHI) as f32
+	edge_length:	(2.0 * ONE_OVER_PHI) as f32,
+	face_sizes:		&[
+		FaceSizeData::new(0, 5),
+		FaceSizeData::new(ICOSAHEDRON.vert_count, 0)
+	]
 };
 
 pub const ICOSIDODECAHEDRON: Properties = Properties {
 	polyhedron:		Polyhedron::Icosidodecahedron,
 	vert_count:		ICOSAHEDRON.edge_count,
 	edge_count:		2 * ICOSAHEDRON.edge_count,
-	face_count:		ICOSAHEDRON.face_count + DODECAHEDRON.face_count,
+	face_count:		DODECAHEDRON.face_count + ICOSAHEDRON.face_count,
 	base_vectors:	&[
 		const_vec3!([
 			PHI as f32,
@@ -109,7 +97,12 @@ pub const ICOSIDODECAHEDRON: Properties = Properties {
 			(0.5 * PHI) as f32
 		])
 	],
-	edge_length:	1.0
+	edge_length:	1.0,
+	face_sizes:		&[
+		FaceSizeData::new(0, 5),
+		FaceSizeData::new(DODECAHEDRON.face_count, 3),
+		FaceSizeData::new(DODECAHEDRON.face_count + ICOSAHEDRON.vert_count, 0)
+	]
 };
 
 pub const RHOMBIC_TRIACONTAHEDRON: Properties = Properties {
@@ -122,5 +115,9 @@ pub const RHOMBIC_TRIACONTAHEDRON: Properties = Properties {
 		DODECAHEDRON.base_vectors[0],
 		DODECAHEDRON.base_vectors[1]
 	],
-	edge_length:	math::const_sqrt_f64(1.0 + ONE_OVER_PHI * ONE_OVER_PHI) as f32
+	edge_length:	const_sqrt_f64(1.0 + ONE_OVER_PHI * ONE_OVER_PHI) as f32,
+	face_sizes:		&[
+		FaceSizeData::new(0, 4),
+		FaceSizeData::new(ICOSIDODECAHEDRON.vert_count, 0)
+	]
 };

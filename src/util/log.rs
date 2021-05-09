@@ -29,9 +29,9 @@ enum Level { // A facsimile definition of log::Level, for trait derivation
 	Trace,
 }
 
-impl Level {
-	pub fn from_u8_unchecked(val: u8) -> Self {
-		unsafe { std::mem::transmute(val) }
+impl From<u8> for Level {
+	fn from(val: u8) -> Self {
+		unsafe { std::mem::transmute(crate::clamp!(val, 0, Level::Trace as u8)) }
 	}
 }
 
@@ -97,17 +97,17 @@ impl LogError {
 
 	fn get_message(&self) -> String {
 		for level_as_u8 in Level::Error as u8 ..= Level::Trace as u8 {
-			if !self[Level::from_u8_unchecked(level_as_u8)].is_empty() {
-				let mut message: String = format!("[{:?} {}]: {}", Level::from_u8_unchecked(level_as_u8), self.target, self[Level::from_u8_unchecked(level_as_u8)]);
+			if !self[Level::from(level_as_u8)].is_empty() {
+				let mut message: String = format!("[{:?} {}]: {}", Level::from(level_as_u8), self.target, self[Level::from(level_as_u8)]);
 				let mut other_messages: String = String::new();
 
 				for other_level_as_u8 in level_as_u8 + 1 ..= Level::Trace as u8 {
-					if !self[Level::from_u8_unchecked(other_level_as_u8)].is_empty() {
+					if !self[Level::from(other_level_as_u8)].is_empty() {
 						let is_first_message: bool = other_messages.is_empty();
 
 						other_messages.push_str(format!("{}{:?}",
 							if is_first_message { "" } else { ", " },
-							Level::from_u8_unchecked(other_level_as_u8)
+							Level::from(other_level_as_u8)
 						).as_str());
 					}
 				}
