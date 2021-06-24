@@ -21,8 +21,8 @@ use {
 
 #[derive(Debug, Default)]
 pub struct VertexData {
-	vec:	Vec3,
-	norm:	Vec3
+	pub vec:	Vec3,
+	pub norm:	Vec3
 }
 
 impl From<Vec3> for VertexData {
@@ -51,8 +51,8 @@ type Range = std::ops::Range<usize>;
 
 #[derive(Debug, Default)]
 pub struct FaceData {
-	range:	Range,
-	norm:	Vec3
+	pub range:	Range,
+	pub norm:	Vec3
 }
 
 impl FaceData {
@@ -84,11 +84,11 @@ impl FaceData {
 
 #[derive(Debug)]
 pub struct Data {
-	polyhedron:		Polyhedron,
-	verts:			Vec<VertexData>,
-	edges:			Vec<EdgeData>,
-	vert_indices:	Vec<usize>,
-	faces:			Vec<FaceData>
+	pub polyhedron:		Polyhedron,
+	pub verts:			Vec<VertexData>,
+	pub edges:			Vec<EdgeData>,
+	pub vert_indices:	Vec<usize>,
+	pub faces:			Vec<FaceData>
 }
 
 pub type DataRefOption = Option<&'static Data>;

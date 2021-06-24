@@ -2,8 +2,9 @@ pub use bevy::math::*;
 
 pub mod polyhedra;
 
-pub const PHI:			f64 = 1.6180339887498950_f64;
-pub const ONE_OVER_PHI:	f64 = 0.61803398874989490_f64;
+pub const PHI:					f64 = 1.6180339887498950_f64;
+pub const ONE_OVER_PHI:			f64 = 0.61803398874989490_f64;
+pub const ONE_OVER_PHI_SQUARED:	f64 = 0.38196601125010515_f64;
 
 #[macro_export]
 macro_rules! clamp {

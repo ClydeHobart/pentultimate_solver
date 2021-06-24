@@ -100,17 +100,7 @@ fn spawn_polyhedra_meshes(
 	});
 }
 
-fn main() -> () {
-	init();
-
-	if let Err(log_error) = validate() {
-		log_error.log();
-
-		return;
-	}
-
-
-	// println!("{:#?}", Data::get(Polyhedron::Icosidodecahedron));
+fn run_polyhedra_demo() -> () {
 	App::build()
 		.insert_resource(Msaa { samples: 4 })
 		.insert_resource(WgpuOptions {
@@ -123,4 +113,17 @@ fn main() -> () {
 		.add_plugin(WireframePlugin)
 		.add_startup_system(spawn_polyhedra_meshes.system())
 		.run();
+}
+
+fn main() -> () {
+	init();
+
+	if let Err(log_error) = validate() {
+		log_error.log();
+
+		return;
+	}
+
+
+	// println!("{:#?}", Data::get(Polyhedron::Icosidodecahedron));
 }
