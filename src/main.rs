@@ -37,7 +37,7 @@ fn validate() -> Result<(), LogError> {
 	Ok(())
 }
 
-fn spawn_polyhedra_meshes(
+fn _spawn_polyhedra_meshes(
 	mut commands: Commands,
 	mut wireframe_config: ResMut<WireframeConfig>,
 	mut meshes: ResMut<Assets<Mesh>>,
@@ -100,7 +100,7 @@ fn spawn_polyhedra_meshes(
 	});
 }
 
-fn run_polyhedra_demo() -> () {
+fn _run_polyhedra_demo() -> () {
 	App::build()
 		.insert_resource(Msaa { samples: 4 })
 		.insert_resource(WgpuOptions {
@@ -111,7 +111,7 @@ fn run_polyhedra_demo() -> () {
 		})
 		.add_plugins(DefaultPlugins)
 		.add_plugin(WireframePlugin)
-		.add_startup_system(spawn_polyhedra_meshes.system())
+		.add_startup_system(_spawn_polyhedra_meshes.system())
 		.run();
 }
 
@@ -124,6 +124,7 @@ fn main() -> () {
 		return;
 	}
 
-
-	// println!("{:#?}", Data::get(Polyhedron::Icosidodecahedron));
+	let mut app_builder = App::build();
+	pentultimate_solver::app::build_app(&mut app_builder);
+	app_builder.run();
 }

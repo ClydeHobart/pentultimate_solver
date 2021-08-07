@@ -1,0 +1,6 @@
+(
+	default_design: Dodecahedron1,
+	designs: [
+		Dodecahedron1
+	]
+)

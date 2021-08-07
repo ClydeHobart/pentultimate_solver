@@ -16,3 +16,11 @@ lazy_static = "1.4.0"
 log = "0.4.14"
 serde = "1.0.125"
 json5 = "0.3.0"
+ron = "*"
+
+[features]
+const_fn_floating_point_arithmetic = []
+io_read_to_string = []
+specialization = []
+
+default = ["const_fn_floating_point_arithmetic", "io_read_to_string", "specialization"]

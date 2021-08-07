@@ -2626,6 +2626,7 @@ dependencies = [
  "json5",
  "lazy_static",
  "log",
+ "ron",
  "serde",
 ]
 

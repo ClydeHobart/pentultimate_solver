@@ -49,8 +49,8 @@ impl From<log::Level> for Level {
 
 #[derive(Deserialize, Debug)]
 struct Module {
-	f:	LevelFilter,
-	m:	std::collections::HashMap<String, Module>
+	f:	LevelFilter,								// Filter
+	m:	std::collections::HashMap<String, Module>	// Modules
 }
 
 #[macro_export]
@@ -176,6 +176,10 @@ impl fmt::Display for LogError {
 	}
 }
 
+impl std::error::Error for LogError {
+	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> { None }
+}
+
 #[macro_export(local_inner_macros)]
 macro_rules! __log_error_set_message {
 	($log_error:ident, $level:expr, $message:expr) => {
@@ -202,42 +206,70 @@ macro_rules! log_error {
 	}};
 
 	($($levels:expr, $messages:expr),+) => {
-		log_error!(log_path!(), $($levels, $messages),+)
+		log_error!(target: log_path!(), $($levels, $messages),+)
+	};
+}
+
+#[macro_export(local_inner_macros)]
+macro_rules! log_dyn_error {
+	($error:expr) => {
+		match (&$error as &dyn std::any::Any).downcast_ref::<LogError>() {
+			Some(log_error) => {
+				log_error.log();
+			},
+			None => {
+				log::warn!(target: log_path!(), "{:?}", $error);
+			}
+		}
+	};
+}
+
+#[macro_export(local_inner_macros)]
+macro_rules! log_error_result {
+	($result:expr) => {
+		match $result {
+			Ok(value) => value,
+			Err(error) => {
+				log_dyn_error!(error);
+
+				return;
+			}
+		}
+	};
+
+	($result:expr, $default:expr) => {
+		match $result {
+			Ok(value) => value,
+			Err(error) => {
+				log_dyn_error!(error);
+
+				$default
+			}
+		}
+	};
+}
+
+#[macro_export(local_inner_macros)]
+macro_rules! debug_expr {
+	($expr:expr) => {
+		log::debug!("{}: {:#?}", std::stringify!($expr), $expr);
 	};
 }
 
 pub fn init_env_logger() -> () {
-	const RUST_LOG_JSON_FILE_NAME: &str = "RUST_LOG.json5";
+	const _RUST_LOG_JSON_FILE_NAME: &str = "RUST_LOG.json5";
+	const RUST_LOG_RON_FILE_NAME: &str = "RUST_LOG.ron";
 
-	match get_module(RUST_LOG_JSON_FILE_NAME) {
+	let file_name: &str = RUST_LOG_RON_FILE_NAME;
+
+	match super::from_ron::<Module>(file_name) {
 		Ok(module) => {
 			set_env_var(module);
 		},
 		Err(error) => {
-			eprintln!("Error opening \"{}\": {}\nLogging will be disabled", RUST_LOG_JSON_FILE_NAME, error);
+			eprintln!("Error opening \"{}\": {}\nLogging will be disabled", file_name, error);
 		}
 	}
-}
-
-fn get_module(file_name: &str) -> Result<Module, Box<dyn std::error::Error>> {
-	use std::{
-		io::{
-			BufReader,
-			read_to_string
-		},
-		fs::File
-	};
-
-	Ok(
-		json5::from_str(
-			read_to_string::<BufReader<File>>(
-				&mut BufReader::new(
-					File::open(file_name)?
-				)
-			)?
-			.as_str()
-		)?
-	)
 }
 
 fn set_env_var(module: Module) -> () {

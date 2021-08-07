@@ -1,8 +1,9 @@
-pub mod properties;
+use serde::Deserialize;
 
 pub mod data;
+pub mod properties;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq)]
 #[repr(u8)]
 pub enum Polyhedron {
 	Invalid,
@@ -23,12 +24,12 @@ impl Polyhedron {
 		}
 	}
 
-	pub fn is_valid(&self) -> bool {
-		*self != Polyhedron::Invalid
+	pub fn is_valid(self) -> bool {
+		self != Polyhedron::Invalid
 	}
 
-	pub fn is_invalid(&self) -> bool {
-		*self == Polyhedron::Invalid
+	pub fn is_invalid(self) -> bool {
+		self == Polyhedron::Invalid
 	}
 }
 

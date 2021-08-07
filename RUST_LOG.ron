@@ -1,0 +1,13 @@
+(
+	f: Off,
+	m: {
+		"pentultimate_solver": (
+			f: Debug,
+			m: {}
+		),
+		"pentultimate_solver::math::polyhedra::data::generate_faces": (
+			f: Warn,
+			m: {}
+		),
+	},
+)

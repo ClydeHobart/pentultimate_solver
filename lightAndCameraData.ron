@@ -1,0 +1,11 @@
+(
+	light_pos: ( 5.0, 0.0, 1.0 ),
+	camera_pos: ( 5.0, 0.0, 0.0 ),
+	persp_proj: (
+		fov:			0.95,
+		aspect_ratio:	10.0,
+		near:			1.0,
+		far:			1000.0
+	)
+)
+  

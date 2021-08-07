@@ -4,14 +4,14 @@ use crate::math::{
 };
 
 pub struct FaceSizeData {
-	pub initial_vert_index:	usize,
+	pub initial_face_index:	usize,
 	pub face_size:			usize
 }
 
 impl FaceSizeData {
 	pub const fn new(initial_vert_index: usize, face_size: usize) -> Self {
 		Self {
-			initial_vert_index,
+			initial_face_index: initial_vert_index,
 			face_size
 		}
 	}
@@ -101,7 +101,7 @@ pub const ICOSIDODECAHEDRON: Properties = Properties {
 	face_sizes:		&[
 		FaceSizeData::new(0, 5),
 		FaceSizeData::new(DODECAHEDRON.face_count, 3),
-		FaceSizeData::new(DODECAHEDRON.face_count + ICOSAHEDRON.vert_count, 0)
+		FaceSizeData::new(DODECAHEDRON.face_count + ICOSAHEDRON.face_count, 0)
 	]
 };
 

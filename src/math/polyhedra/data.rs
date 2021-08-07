@@ -52,7 +52,8 @@ type Range = std::ops::Range<usize>;
 #[derive(Debug, Default)]
 pub struct FaceData {
 	pub range:	Range,
-	pub norm:	Vec3
+	pub norm:	Vec3,
+	pub quat:	Quat
 }
 
 impl FaceData {
@@ -65,7 +66,8 @@ impl FaceData {
 
 		FaceData {
 			range: start .. end,
-			norm: vector_sum.normalize_or_zero()
+			norm: vector_sum.normalize_or_zero(),
+			quat: Quat::IDENTITY
 		}
 	}
 
@@ -128,6 +130,28 @@ impl Data {
 			})
 			.map(|(vert_index, _norm_dot_vec): (usize, f32)| -> usize {
 				vert_index
+			})
+			.unwrap()
+	}
+
+	pub fn get_closest_face_index(&self, quat: &Quat) -> usize {
+		Data::get_closest_face_index_for_faces(&self.faces, quat)
+	}
+
+	pub fn get_closest_face_index_for_faces(faces: &Vec<FaceData>, quat: &Quat) -> usize {
+		use std::cmp::Ordering;
+
+		faces
+			.iter()
+			.map(|face: &FaceData| -> f32 {
+				face.quat.dot(*quat)
+			})
+			.enumerate()
+			.max_by(|(_face_index_a, quat_dot_vec_a): &(usize, f32), (_face_index_b, quat_dot_vec_b): &(usize, f32)| -> Ordering {
+				quat_dot_vec_a.partial_cmp(&quat_dot_vec_b).unwrap_or(Ordering::Equal)
+			})
+			.map(|(face_index, _quat_dot_vec): (usize, f32)| -> usize {
+				face_index
 			})
 			.unwrap()
 	}
@@ -508,6 +532,7 @@ impl Data {
 		let faces:				&mut Vec<FaceData>					= &mut self.faces;
 		let all_edges_used:		u64									= (1 << properties.edge_count) - 1;
 		let log_target:			String								= log_path!("generate_faces").to_owned();
+
 		let mut edge_to_index:	fnv::FnvHashMap<EdgeData, usize>	= fnv::FnvHashMap::default();
 		let mut edge_matrix:	Vec<u64>							= vec![0; properties.vert_count];
 		let mut forward_edges:	u64									= 0;
@@ -597,7 +622,6 @@ impl Data {
 					trace!(target: log_concat!(log_target, "record_edge"), "Recording edge {:?}", edge);
 
 					edge_matrix[prev_vert_index] &= !(1_u64 << curr_vert_index);
-					// edge_matrix[curr_vert_index] &= !(1_u64 << prev_vert_index);
 
 					if let Some(edge_index) = edge_to_index.get(&edge) {
 						if prev_vert_index <= curr_vert_index {
@@ -709,7 +733,7 @@ impl Data {
 		let dual_verts: Vec<VertexData> = {
 			if let Some(dual_properties) = Properties::get(properties.polyhedron.dual()) {
 				let mut verts: Vec<VertexData> = Vec::<VertexData>::with_capacity(dual_properties.vert_count);
-	
+
 				Data::generate_verts_for_properties(dual_properties, &mut verts);
 
 				verts
@@ -726,17 +750,17 @@ impl Data {
 		});
 
 		let should_be_initial_vert: Box<dyn Fn(usize, usize) -> bool> = match self.polyhedron {
-			Polyhedron::Icosahedron => Some(Box::new(|face_index: usize, vert_index: usize| -> bool {
+			Polyhedron::Icosahedron => Box::new(|face_index: usize, vert_index: usize| -> bool {
 				if face_index < properties.vert_count {
 					((vert_index as isize) - (face_index as isize)).abs() > 1
 				} else {
 					vert_index >> 2 == 1
 				}
-			}) as Box<dyn Fn(usize, usize) -> bool>),
-			Polyhedron::Dodecahedron =>  Some(Box::new(|face_index: usize, vert_index: usize| -> bool {
+			}) as Box<dyn Fn(usize, usize) -> bool>,
+			Polyhedron::Dodecahedron => Box::new(|face_index: usize, vert_index: usize| -> bool {
 				vert_index < properties.face_count && ((vert_index as isize) - (face_index as isize)).abs() > 1
-			}) as Box<dyn Fn(usize, usize) -> bool>),
-			Polyhedron::Icosidodecahedron =>  Some(Box::new(|face_index: usize, vert_index: usize| -> bool {
+			}) as Box<dyn Fn(usize, usize) -> bool>,
+			Polyhedron::Icosidodecahedron => Box::new(|face_index: usize, vert_index: usize| -> bool {
 				if face_index < 2 * polyhedra::properties::ICOSAHEDRON.vert_count {
 					vert_index % 5 == 0
 				} else {
@@ -744,20 +768,20 @@ impl Data {
 
 					vert_index < X_MAJOR_VERT_INDEX_END
 				}
-			}) as Box<dyn Fn(usize, usize) -> bool>),
-			Polyhedron::RhombicTriacontahedron => Some(Box::new(|face_index: usize, vert_index: usize| -> bool {
+			}) as Box<dyn Fn(usize, usize) -> bool>,
+			Polyhedron::RhombicTriacontahedron => Box::new(|face_index: usize, vert_index: usize| -> bool {
 				if face_index % 5 == 0 {
 					vert_index & 0b1 == 0
 				} else {
 					vert_index < polyhedra::properties::ICOSAHEDRON.vert_count
 				}
-			}) as Box<dyn Fn(usize, usize) -> bool>),
+			}) as Box<dyn Fn(usize, usize) -> bool>,
 			Polyhedron::Invalid => {
 				return Err(log_error!(target: log_target, Level::Error, format!("Couldn't assign closure to rotate vertex indices due to an Invalid Polyhedron")));
 			},
-		}.unwrap();
+		};
 
-		for (face_index, face_data) in faces.iter().enumerate() {
+		for (face_index, face_data) in faces.iter_mut().enumerate() {
 			let face_slice: &mut [usize] = face_data.get_slice_mut(vert_indices);
 
 			if let Some(slice_index) = face_slice.iter().position(|vert_index: &usize| -> bool {
@@ -773,6 +797,42 @@ impl Data {
 					)
 				));
 			}
+
+			face_data.quat = {
+				let first_vert: Vec3 = verts[*face_slice.first().unwrap()].vec;
+				let face_average: Vec3 = {
+					let mut face_sum: Vec3 = Vec3::ZERO;
+
+					for vert_index in face_slice as &[usize] {
+						face_sum += verts[*vert_index].vec;
+					}
+
+					face_sum / face_slice.len() as f32
+				};
+				// let first_vert_to_face: Vec3 = {
+				// 	let face: Vec3 = {
+
+				// 		face_average * first_vert.length() / face_average.length()
+				// 	};
+
+				// 	face - first_vert
+				// };
+				// let center_un_normalized: Vec3 = (face_average - first_vert).cross(first_vert);
+
+
+
+				Quat::from_rotation_mat4(&Mat4::look_at_rh(
+					Vec3::ZERO,
+					face_average,
+					(first_vert - face_average).normalize()
+				))
+				// let up: Vec3 = face_average - first_vert;
+				// Quat::from_rotation_mat4(&Mat4::look_at_rh(
+				// 	Vec3::ZERO,
+				// 	face_average,
+				// 	(face_average - first_vert).normalize()
+				// ))
+			};
 		}
 
 		let log_target: String = log_concat!(log_target, "validation").to_string();
@@ -785,8 +845,8 @@ impl Data {
 		}
 
 		for face_size_index in 0 .. properties.face_sizes.len() - 1 {
-			let min_face_index: usize = properties.face_sizes[face_size_index].initial_vert_index;
-			let max_face_index: usize = properties.face_sizes[face_size_index + 1].initial_vert_index;
+			let min_face_index: usize = properties.face_sizes[face_size_index].initial_face_index;
+			let max_face_index: usize = properties.face_sizes[face_size_index + 1].initial_face_index;
 			let face_size: usize = properties.face_sizes[face_size_index].face_size;
 
 			if min_face_index >= properties.face_count || max_face_index > properties.face_count {
@@ -830,6 +890,16 @@ impl Data {
 		// just make a new one
 		*self = Data::default();
 	}
+}
+
+#[macro_export(local_inner_macros)]
+macro_rules! get_data {
+	($polyhedron:ident) => {
+		match Data::get(Polyhedron::$polyhedron) {
+			Some(data) => data,
+			None => { return Err(log_error!(Level::Error, std::format!("Data::get(Polyhedron::{:?}) was None", Polyhedron::$polyhedron))); }
+		}
+	};
 }
 
 lazy_static!{
