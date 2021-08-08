@@ -14,7 +14,8 @@ use {
 				Polyhedron,
 				properties::ICOSIDODECAHEDRON
 			}
-		}
+		},
+		strings::STRING_DATA
 	},
 	std::{
 		collections::HashMap,
@@ -263,8 +264,8 @@ impl From<&Mesh> for BevyMesh {
 }
 
 pub struct PieceComponent {
-	index:		usize,
-	piece_type:	Type
+	_index:			usize,
+	_piece_type:	Type
 }
 
 struct Piece {
@@ -507,14 +508,14 @@ impl Piece {
 		let piece_type: Type = self.piece_type;
 		let index_offset: usize = piece_type.index_offset();
 
-		log_error_result!(self.check_meshes());
+		log_result_err!(self.check_meshes());
 
 		for index in index_offset .. index_offset + piece_type.instance_count() {
 			commands
 				.spawn_bundle((
 					PieceComponent {
-						index,
-						piece_type
+						_index: index,
+						_piece_type: piece_type
 					},
 					// Transform::identity(),
 					Transform::from_matrix(
@@ -622,21 +623,6 @@ impl PieceLibrary {
 			piece_pair.add_bevy_meshes(bevy_meshes);
 		}
 	}
-
-	fn build_app(app_builder: &mut AppBuilder) -> () {
-		const PIECE_LIBRARY_DATA_FILE: &str = "pieceLibraryData.ron";
-
-		app_builder
-			.insert_resource(log_error_result!(Self::try_from(PIECE_LIBRARY_DATA_FILE)))
-			.add_startup_system(PieceLibrary::startup_app.system().label("PieceLibrary::startup_app()"));
-	}
-
-	fn startup_app(
-		mut piece_library: ResMut<PieceLibrary>,
-		mut bevy_meshes: ResMut<Assets<BevyMesh>>
-	) -> () {
-		piece_library.add_bevy_meshes(&mut bevy_meshes);
-	}
 }
 
 impl TryFrom<&str> for PieceLibrary {
@@ -674,6 +660,21 @@ impl TryFrom<&str> for PieceLibrary {
 	}
 }
 
-pub fn build_app(app_builder: &mut AppBuilder) -> () {
-	PieceLibrary::build_app(app_builder);
+pub struct PiecePlugin;
+
+impl PiecePlugin {
+	fn startup_app(
+		mut piece_library: ResMut<PieceLibrary>,
+		mut bevy_meshes: ResMut<Assets<BevyMesh>>
+	) -> () {
+		piece_library.add_bevy_meshes(&mut bevy_meshes);
+	}
+}
+
+impl Plugin for PiecePlugin {
+	fn build(&self, app: &mut AppBuilder) -> () {
+		app
+			.insert_resource(log_result_err!(PieceLibrary::try_from(STRING_DATA.files.piece_library_data.as_ref())))
+			.add_startup_system(Self::startup_app.system().label(STRING_DATA.labels.piece_library.as_ref()));
+	}
 }

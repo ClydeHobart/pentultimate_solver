@@ -21,6 +21,7 @@ ron = "*"
 [features]
 const_fn_floating_point_arithmetic = []
 io_read_to_string = []
-specialization = []
 
-default = ["const_fn_floating_point_arithmetic", "io_read_to_string", "specialization"]
+# specialization = []
+
+default = ["const_fn_floating_point_arithmetic", "io_read_to_string"]

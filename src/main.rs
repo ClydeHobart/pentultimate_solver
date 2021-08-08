@@ -19,6 +19,7 @@ use {
 	},
 	pentultimate_solver::{
 		prelude::*,
+		app,
 		math::polyhedra::{
 			Polyhedron,
 			data::*
@@ -117,14 +118,6 @@ fn _run_polyhedra_demo() -> () {
 
 fn main() -> () {
 	init();
-
-	if let Err(log_error) = validate() {
-		log_error.log();
-
-		return;
-	}
-
-	let mut app_builder = App::build();
-	pentultimate_solver::app::build_app(&mut app_builder);
-	app_builder.run();
+	log_result_err!(validate());
+	app::main();
 }

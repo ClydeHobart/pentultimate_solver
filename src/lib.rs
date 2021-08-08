@@ -1,4 +1,4 @@
-#![feature(const_fn_floating_point_arithmetic, io_read_to_string, specialization)]
+#![feature(const_fn_floating_point_arithmetic, io_read_to_string)]
 
 #[macro_use]
 extern crate lazy_static;
@@ -12,4 +12,5 @@ pub mod math;
 pub mod piece;
 pub mod prelude;
 pub mod puzzle;
+pub mod strings;
 pub mod util;

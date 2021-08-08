@@ -106,8 +106,67 @@ pub fn from_ron<T>(file_name: &str) -> Result<T, Box<dyn std::error::Error>>
 	)
 }
 
+pub fn from_ron_or_default<T>(file_name: &str) -> T
+	where
+		T: Default + for<'de> Deserialize<'de>
+{
+	log_result_err!(from_ron(file_name), T::default())
+}
+
 pub fn exit_app(mut exit: EventWriter<AppExit>) -> () {
 	exit.send(AppExit);
+}
+
+// Macro adapted from https://stackoverflow.com/questions/66291962/how-do-i-use-macro-rules-to-define-a-struct-with-optional-cfg
+#[macro_export(local_inner_macros)]
+macro_rules! define_struct_with_default {
+	(
+		$(#[$meta_macro:meta])?
+		$struct_vis:vis $struct_name:ident <$field_type:ty> {
+			$( $field_vis:vis $field:ident = $value:expr , )*
+		}
+	) => {
+		$(#[$meta_macro])?
+		$struct_vis struct $struct_name {
+			$(
+				$field_vis $field: $field_type,
+			)*
+		}
+		
+		impl Default for $struct_name {
+			fn default() -> Self {
+				Self {
+					$(
+						$field: $value.into(),
+					)*
+				}
+			}
+		}
+	};
+
+	(
+		$(#[$meta_macro:meta])?
+		$struct_vis:vis $struct_name:ident {
+			$( $field_vis:vis $field:ident : $field_type:ty = $value:expr , )*
+		}
+	) => {
+		$(#[$meta_macro])?
+		$struct_vis struct $struct_name {
+			$(
+				$field_vis $field: $field_type,
+			)*
+		}
+		
+		impl Default for $struct_name {
+			fn default() -> Self {
+				Self {
+					$(
+						$field: $value.into(),
+					)*
+				}
+			}
+		}
+	};
 }
 
 #[cfg(test)]
@@ -202,7 +261,7 @@ mod tests {
 	#[cfg(not(feature = "specialization"))]
 	macro_rules! test_log_error {
 		($expr:expr, $t:ty) => {
-			log_error!($expr, $t, LogError);
+			test_err!($expr, $t, LogError);
 		};
 	}
 

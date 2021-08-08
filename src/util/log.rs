@@ -1,4 +1,16 @@
+pub use ::log::{
+	trace,
+	debug,
+	info,
+	warn,
+	error
+};
+
 use {
+	crate::{
+		prelude::*,
+		strings::STRING_DATA
+	},
 	core::fmt,
 	serde::Deserialize
 };
@@ -51,6 +63,15 @@ impl From<log::Level> for Level {
 struct Module {
 	f:	LevelFilter,								// Filter
 	m:	std::collections::HashMap<String, Module>	// Modules
+}
+
+impl Default for Module {
+	fn default() -> Self {
+		Self {
+			f: LevelFilter::Off,
+			m: std::collections::HashMap::<String, Module>::default()
+		}
+	}
 }
 
 #[macro_export]
@@ -218,14 +239,14 @@ macro_rules! log_dyn_error {
 				log_error.log();
 			},
 			None => {
-				log::warn!(target: log_path!(), "{:?}", $error);
+				log::warn!("{:?}", $error);
 			}
 		}
 	};
 }
 
 #[macro_export(local_inner_macros)]
-macro_rules! log_error_result {
+macro_rules! log_result_err {
 	($result:expr) => {
 		match $result {
 			Ok(value) => value,
@@ -250,6 +271,31 @@ macro_rules! log_error_result {
 }
 
 #[macro_export(local_inner_macros)]
+macro_rules! log_option_none {
+	($option:expr) => {
+		match $option {
+			Some(value) => value,
+			None => {
+				log::warn!("\"{}\" was None", std::stringify!($option));
+
+				return;
+			}
+		}
+	};
+
+	($option:expr, $default:expr) => {
+		match $option {
+			Ok(value) => value,
+			None => {
+				log::warn!("\"{}\" was None", std::stringify!($option));
+
+				$default
+			}
+		}
+	};
+}
+
+#[macro_export(local_inner_macros)]
 macro_rules! debug_expr {
 	($expr:expr) => {
 		log::debug!("{}: {:#?}", std::stringify!($expr), $expr);
@@ -257,19 +303,7 @@ macro_rules! debug_expr {
 }
 
 pub fn init_env_logger() -> () {
-	const _RUST_LOG_JSON_FILE_NAME: &str = "RUST_LOG.json5";
-	const RUST_LOG_RON_FILE_NAME: &str = "RUST_LOG.ron";
-
-	let file_name: &str = RUST_LOG_RON_FILE_NAME;
-
-	match super::from_ron::<Module>(file_name) {
-		Ok(module) => {
-			set_env_var(module);
-		},
-		Err(error) => {
-			eprintln!("Error opening \"{}\": {}\nLogging will be disabled", file_name, error);
-		}
-	}
+	set_env_var(from_ron_or_default(&STRING_DATA.files.rust_log));
 }
 
 fn set_env_var(module: Module) -> () {

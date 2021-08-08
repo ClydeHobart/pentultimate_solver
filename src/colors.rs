@@ -1,7 +1,8 @@
 use {
 	crate::{
 		prelude::*,
-		math::polyhedra::Polyhedron
+		math::polyhedra::Polyhedron,
+		strings::STRING_DATA
 	},
 	std::collections::HashMap,
 	bevy::prelude::*,
@@ -216,14 +217,6 @@ impl ColorDataTyped {
 			}
 		);
 	}
-
-	fn build_app(app_builder: &mut AppBuilder) -> () {
-		const COLOR_DATA_FILE: &str = "colorData.ron";
-
-		app_builder
-			.insert_resource::<ColorData<Color>>(log_error_result!(from_ron::<ColorDataTyped>(COLOR_DATA_FILE), ColorDataTyped::default()).into())
-			.add_startup_system(ColorDataTyped::startup_app.system().label("ColorDataTyped::startup_app()"));
-	}
 }
 
 impl From<ColorDataTyped> for ColorData<String> {
@@ -244,6 +237,12 @@ impl From<ColorDataTyped> for ColorData<Color> {
 	}
 }
 
-pub fn build_app(app_builder: &mut AppBuilder) -> () {
-	ColorDataTyped::build_app(app_builder);
+pub struct ColorsPlugin;
+
+impl Plugin for ColorsPlugin {
+	fn build(&self, app: &mut AppBuilder) -> () {
+		app
+			.insert_resource::<ColorData<Color>>(from_ron_or_default::<ColorDataTyped>(&STRING_DATA.files.color_data).into())
+			.add_startup_system(ColorDataTyped::startup_app.system().label(STRING_DATA.labels.color_data_typed.as_ref()));
+	}
 }

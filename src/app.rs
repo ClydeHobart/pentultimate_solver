@@ -1,11 +1,12 @@
-use bevy::app;
+use bevy::app::PluginGroupBuilder;
 
 use {
 	crate::{
 		prelude::*,
-		colors,
-		piece,
-		puzzle
+		colors::ColorsPlugin,
+		piece::PiecePlugin,
+		puzzle::PuzzlePlugin,
+		strings::STRING_DATA
 	},
 	bevy::{
 		prelude::*,
@@ -68,55 +69,78 @@ impl Default for LightAndCameraData {
 	}
 }
 
-pub fn build_app(app_builder: &mut AppBuilder) -> () {
-	const LIGHT_AND_CAMERA_DATA_FILE: &str = "lightAndCameraData.ron";
+struct AppPlugin;
 
-	app_builder
-		.insert_resource(Msaa { samples: 4 })
-		.add_plugins(DefaultPlugins)
-		.insert_resource(log_error_result!(from_ron::<LightAndCameraData>(LIGHT_AND_CAMERA_DATA_FILE), LightAndCameraData::default()))
-		.add_startup_system(startup_app
-			.system()
-			.after("puzzle::startup_app()")
-		);
-	colors::build_app(app_builder);
-	piece::build_app(app_builder);
-	puzzle::build_app(app_builder);
+impl AppPlugin {
+	fn startup_app(
+		mut commands: Commands,
+		light_and_camera_data: Res<LightAndCameraData>,
+		mut meshes: ResMut<Assets<Mesh>>,
+		mut materials: ResMut<Assets<StandardMaterial>>,
+		mut windows: ResMut<Windows>
+	) -> () {
+		let cube_mesh_handle: Handle<Mesh> = meshes.add(Mesh::from(shape::Cube {size: 1.0_f32}));
+
+		log_option_none!(windows.get_primary_mut()).set_maximized(true);
+		commands.spawn_bundle(PbrBundle {
+			mesh: cube_mesh_handle.clone(),
+			material: materials.add(Color::RED.into()),
+			transform: Transform::from_matrix(Mat4::from_scale(Vec3::new(10.0_f32, 0.125_f32, 0.125_f32))),
+			.. Default::default()
+		});
+		commands.spawn_bundle(PbrBundle {
+			mesh: cube_mesh_handle.clone(),
+			material: materials.add(Color::GREEN.into()),
+			transform: Transform::from_matrix(Mat4::from_scale(Vec3::new(0.125_f32, 10.0_f32, 0.125_f32))),
+			.. Default::default()
+		});
+		commands.spawn_bundle(PbrBundle {
+			mesh: cube_mesh_handle.clone(),
+			material: materials.add(Color::BLUE.into()),
+			transform: Transform::from_matrix(Mat4::from_scale(Vec3::new(0.125_f32, 0.125_f32, 10.0_f32))),
+			.. Default::default()
+		});
+		commands.spawn_bundle(LightBundle {
+			transform: Transform::from_translation(Vec3::from(light_and_camera_data.light_pos.clone())),
+			.. Default::default()
+		});
+		commands.spawn_bundle(PerspectiveCameraBundle {
+			transform: Transform::from_translation(Vec3::from(light_and_camera_data.camera_pos.clone())).looking_at(Vec3::ZERO, Vec3::Z),
+			perspective_projection: light_and_camera_data.persp_proj.into(),
+			.. Default::default()
+		});
+	}
 }
 
-fn startup_app(
-	mut commands: Commands,
-	light_and_camera_data: Res<LightAndCameraData>,
-	mut meshes: ResMut<Assets<Mesh>>,
-	mut materials: ResMut<Assets<StandardMaterial>>
-) -> () {
-	let cube_mesh_handle: Handle<Mesh> = meshes.add(Mesh::from(shape::Cube {size: 1.0_f32}));
+impl Plugin for AppPlugin {
+	fn build(&self, app: &mut AppBuilder) {
+		app
+			.insert_resource(Msaa { samples: 4 })
+			.insert_resource(WindowDescriptor {
+				title: STRING_DATA.misc.app_title.clone(),
+				.. WindowDescriptor::default()
+			})
+			.insert_resource(from_ron_or_default::<LightAndCameraData>(&STRING_DATA.files.light_and_camera_data))
+			.add_plugins(DefaultPlugins)
+			.add_startup_system(Self::startup_app
+				.system()
+				.after(STRING_DATA.labels.puzzle.as_ref())
+			);
+	}
+}
 
-	commands.spawn_bundle(PbrBundle {
-		mesh: cube_mesh_handle.clone(),
-		material: materials.add(Color::RED.into()),
-		transform: Transform::from_matrix(Mat4::from_scale(Vec3::new(10.0_f32, 0.125_f32, 0.125_f32))),
-		.. Default::default()
-	});
-	commands.spawn_bundle(PbrBundle {
-		mesh: cube_mesh_handle.clone(),
-		material: materials.add(Color::GREEN.into()),
-		transform: Transform::from_matrix(Mat4::from_scale(Vec3::new(0.125_f32, 10.0_f32, 0.125_f32))),
-		.. Default::default()
-	});
-	commands.spawn_bundle(PbrBundle {
-		mesh: cube_mesh_handle.clone(),
-		material: materials.add(Color::BLUE.into()),
-		transform: Transform::from_matrix(Mat4::from_scale(Vec3::new(0.125_f32, 0.125_f32, 10.0_f32))),
-		.. Default::default()
-	});
-	commands.spawn_bundle(LightBundle {
-		transform: Transform::from_translation(Vec3::from(light_and_camera_data.light_pos.clone())),
-		.. Default::default()
-	});
-	commands.spawn_bundle(PerspectiveCameraBundle {
-		transform: Transform::from_translation(Vec3::from(light_and_camera_data.camera_pos.clone())).looking_at(Vec3::ZERO, Vec3::Z),
-		perspective_projection: light_and_camera_data.persp_proj.into(),
-		.. Default::default()
-	});
+struct AppPluginGroup;
+
+impl PluginGroup for AppPluginGroup {
+	fn build(&mut self, group: &mut PluginGroupBuilder) {
+		group
+			.add(AppPlugin)
+			.add(ColorsPlugin)
+			.add(PiecePlugin)
+			.add(PuzzlePlugin);
+	}
+}
+
+pub fn main() -> () {
+	App::build().add_plugins(AppPluginGroup).run();
 }
