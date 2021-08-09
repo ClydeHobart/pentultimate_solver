@@ -8,6 +8,7 @@ pub use {
 		log_option_none,
 		log_path,
 		log_result_err,
+		strings::STRING_DATA,
 		util::{
 			FromAlt,
 			LogError,

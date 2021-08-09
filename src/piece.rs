@@ -48,7 +48,7 @@ impl Design {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
-enum Type {
+pub enum Type {
 	Pentagon,
 	Triangle
 }

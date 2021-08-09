@@ -29,14 +29,12 @@ define_struct_with_default!(
 	}
 );
 
-define_struct_with_default!(
-	#[derive(Deserialize)]
-	pub StringData {
-		pub files:	Files	= Files::default(),
-		pub labels:	Labels	= Labels::default(),
-		pub misc:	Misc	= Misc::default(),
-	}
-);
+#[derive(Default, Deserialize)]
+pub struct StringData {
+	pub files:	Files,
+	pub labels:	Labels,
+	pub misc:	Misc
+}
 
 lazy_static!{
 	pub static ref STRING_DATA: StringData = from_ron_or_default("stringData.ron");

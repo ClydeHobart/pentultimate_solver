@@ -9,5 +9,9 @@
 			f: Warn,
 			m: {}
 		),
+		"pentultimate_solver::ui": (
+			f: Trace,
+			m: {}
+		),
 	},
 )

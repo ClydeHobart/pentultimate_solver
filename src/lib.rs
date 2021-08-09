@@ -13,4 +13,5 @@ pub mod piece;
 pub mod prelude;
 pub mod puzzle;
 pub mod strings;
+pub mod ui;
 pub mod util;

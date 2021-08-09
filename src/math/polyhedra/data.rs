@@ -58,15 +58,18 @@ pub struct FaceData {
 
 impl FaceData {
 	pub fn new(verts: &Vec<VertexData>, vert_indices: &Vec<usize>, start: usize, end: usize) -> Self {
-		let mut vector_sum: Vec3 = Vec3::ZERO;
-
-		for vert_index in vert_indices.get(start .. end).unwrap().iter() {
-			vector_sum += verts[*vert_index].vec;
-		}
+		let range: Range = start .. end;
+		let norm: Vec3 = vert_indices[range.clone()]
+			.iter()
+			.map(|vert_index: &usize| -> &Vec3 {
+				&verts[*vert_index].vec
+			})
+			.sum::<Vec3>()
+			.normalize_or_zero();
 
 		FaceData {
-			range: start .. end,
-			norm: vector_sum.normalize_or_zero(),
+			range,
+			norm,
 			quat: Quat::IDENTITY
 		}
 	}
@@ -531,7 +534,7 @@ impl Data {
 		let vert_indices:		&mut Vec<usize>						= &mut self.vert_indices;
 		let faces:				&mut Vec<FaceData>					= &mut self.faces;
 		let all_edges_used:		u64									= (1 << properties.edge_count) - 1;
-		let log_target:			String								= log_path!("generate_faces").to_owned();
+		let log_target:			String								= log_path!("generate_faces").into();
 
 		let mut edge_to_index:	fnv::FnvHashMap<EdgeData, usize>	= fnv::FnvHashMap::default();
 		let mut edge_matrix:	Vec<u64>							= vec![0; properties.vert_count];
@@ -800,42 +803,22 @@ impl Data {
 
 			face_data.quat = {
 				let first_vert: Vec3 = verts[*face_slice.first().unwrap()].vec;
-				let face_average: Vec3 = {
-					let mut face_sum: Vec3 = Vec3::ZERO;
-
-					for vert_index in face_slice as &[usize] {
-						face_sum += verts[*vert_index].vec;
-					}
-
-					face_sum / face_slice.len() as f32
-				};
-				// let first_vert_to_face: Vec3 = {
-				// 	let face: Vec3 = {
-
-				// 		face_average * first_vert.length() / face_average.length()
-				// 	};
-
-				// 	face - first_vert
-				// };
-				// let center_un_normalized: Vec3 = (face_average - first_vert).cross(first_vert);
-
-
+				let negative_face_average: Vec3 = -(face_slice
+					.iter()
+					.map(|vert_index: &usize| -> &Vec3 {
+						&verts[*vert_index].vec
+					})
+					.sum::<Vec3>() / face_slice.len() as f32);
 
 				Quat::from_rotation_mat4(&Mat4::look_at_rh(
 					Vec3::ZERO,
-					face_average,
-					(first_vert - face_average).normalize()
+					negative_face_average,
+					(first_vert + negative_face_average).normalize()
 				))
-				// let up: Vec3 = face_average - first_vert;
-				// Quat::from_rotation_mat4(&Mat4::look_at_rh(
-				// 	Vec3::ZERO,
-				// 	face_average,
-				// 	(face_average - first_vert).normalize()
-				// ))
 			};
 		}
 
-		let log_target: String = log_concat!(log_target, "validation").to_string();
+		let log_target: String = log_concat!(log_target, "validation").into();
 
 		if faces.len() != properties.face_count {
 			return Err(log_error!(
