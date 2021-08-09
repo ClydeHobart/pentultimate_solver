@@ -104,7 +104,8 @@ impl CameraPlugin {
 				Quat::IDENTITY
 			},
 			|icosidodecahedron_data: &Data| -> Quat {
-				icosidodecahedron_data.faces[face_index].quat.inverse()
+				icosidodecahedron_data.faces[face_index].quat
+				// .inverse()
 			}
 		)
 	}

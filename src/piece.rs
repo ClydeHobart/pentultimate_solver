@@ -298,7 +298,9 @@ impl Piece {
 		let side_count:						usize				= piece_type.side_count();
 		let double_side_count:				usize				= 2_usize * side_count;
 		let range:							Range<usize>		= 0_usize .. side_count;
-		let transformation:					Mat4				= Mat4::from_quat(icosidodecahedron_data.faces[piece_type.index_offset()].quat);
+		let transformation:					Mat4				= Mat4::from_quat(icosidodecahedron_data.faces[piece_type.index_offset()].quat
+		.inverse()
+	);
 
 		let mut vertices: Vec<Vec3>;
 		let center: Vec3;
@@ -520,7 +522,7 @@ impl Piece {
 					// Transform::identity(),
 					Transform::from_matrix(
 						Mat4::from_quat(faces[index].quat)
-						.inverse()
+						// .inverse()
 					),
 					GlobalTransform::identity()
 				))
