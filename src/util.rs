@@ -1,23 +1,31 @@
 mod log;
 
-use serde::Deserialize;
+#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+pub mod simd;
 
-pub use crate::util::log::{
-	LogError,
-	LogErrorResult,
-	init_env_logger
-};
+pub mod prelude {
+	pub use super::{
+		log::prelude::*,
+		FromAlt,
+		ToOption,
+		ToResult,
+		from_ron,
+		from_ron_or_default
+	};
+}
+
+pub use crate::util::log::init_env_logger;
 
 use {
+	crate::prelude::*,
 	std::fmt::Debug,
 	bevy::app::{
 		AppExit,
 		EventWriter
 	},
-	::log::Level
+	::log::Level,
+	serde::Deserialize
 };
-
-use crate::prelude::*;
 
 pub trait FromAlt<T> {
 	fn from_alt(value: T) -> Self;
@@ -177,7 +185,7 @@ mod tests {
 			ToOption,
 			ToResult
 		},
-		log::Level
+		::log::Level
 	};
 
 	#[test]
@@ -274,8 +282,7 @@ mod tests {
 	}
 
 	fn to_option_test_err() -> () {
-		std::env::set_var("RUST_LOG", log_path!());
-		env_logger::init();
+		init_log!();
 
 		to_option_test_err_std();
 		to_option_test_err_log_error();

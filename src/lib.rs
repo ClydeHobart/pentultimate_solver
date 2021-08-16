@@ -6,6 +6,9 @@ extern crate lazy_static;
 #[macro_use]
 extern crate log;
 
+#[macro_use]
+extern crate static_assertions as sa;
+
 pub mod app;
 pub mod colors;
 pub mod math;

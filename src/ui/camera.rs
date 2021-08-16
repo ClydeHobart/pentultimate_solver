@@ -105,7 +105,6 @@ impl CameraPlugin {
 			},
 			|icosidodecahedron_data: &Data| -> Quat {
 				icosidodecahedron_data.faces[face_index].quat
-				// .inverse()
 			}
 		)
 	}

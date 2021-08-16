@@ -1,10 +1,18 @@
-pub use ::log::{
-	trace,
-	debug,
-	info,
-	warn,
-	error
-};
+pub mod prelude {
+	pub use {
+		crate::{
+			trace_expr,
+			debug_expr,
+			info_expr,
+			warn_expr,
+			error_expr
+		},
+		super::{
+			LogError,
+			LogErrorResult
+		}
+	};
+}
 
 use {
 	crate::{
@@ -12,6 +20,7 @@ use {
 		strings::STRING_DATA
 	},
 	core::fmt,
+	::log::Level as LogLevel,
 	serde::Deserialize
 };
 
@@ -47,14 +56,14 @@ impl From<u8> for Level {
 	}
 }
 
-impl From<log::Level> for Level {
-	fn from(level: log::Level) -> Self {
+impl From<LogLevel> for Level {
+	fn from(level: LogLevel) -> Self {
 		match level {
-			log::Level::Error	=> Level::Error,
-			log::Level::Warn	=> Level::Warn,
-			log::Level::Info	=> Level::Info,
-			log::Level::Debug	=> Level::Debug,
-			log::Level::Trace	=> Level::Trace
+			LogLevel::Error	=> Level::Error,
+			LogLevel::Warn	=> Level::Warn,
+			LogLevel::Info	=> Level::Info,
+			LogLevel::Debug	=> Level::Debug,
+			LogLevel::Trace	=> Level::Trace
 		}
 	}
 }
@@ -108,11 +117,11 @@ impl LogError {
 	pub fn log(&self) -> () {
 		let mut has_logged: bool = false;
 
-		if !self.error.is_empty() { log::error! (target: self.target.as_str(), "{}", self.error); has_logged = true; }
-		if !self.warn .is_empty() { log::warn!  (target: self.target.as_str(), "{}", self.warn ); has_logged = true; }
-		if !self.info .is_empty() { log::info!  (target: self.target.as_str(), "{}", self.info ); has_logged = true; }
-		if !self.debug.is_empty() { log::debug! (target: self.target.as_str(), "{}", self.debug); has_logged = true; }
-		if !self.trace.is_empty() { log::trace! (target: self.target.as_str(), "{}", self.trace); has_logged = true; }
+		if !self.error.is_empty() { error! (target: self.target.as_str(), "{}", self.error); has_logged = true; }
+		if !self.warn .is_empty() { warn!  (target: self.target.as_str(), "{}", self.warn ); has_logged = true; }
+		if !self.info .is_empty() { info!  (target: self.target.as_str(), "{}", self.info ); has_logged = true; }
+		if !self.debug.is_empty() { debug! (target: self.target.as_str(), "{}", self.debug); has_logged = true; }
+		if !self.trace.is_empty() { trace! (target: self.target.as_str(), "{}", self.trace); has_logged = true; }
 		if !has_logged { eprintln!("log() called on empty LogError with target \"{}\"", self.target); }
 	}
 
@@ -171,16 +180,16 @@ impl std::ops::IndexMut<Level> for LogError {
 	}
 }
 
-impl std::ops::Index<log::Level> for LogError {
+impl std::ops::Index<LogLevel> for LogError {
 	type Output = String;
 
-	fn index(&self, level: log::Level) -> &Self::Output {
+	fn index(&self, level: LogLevel) -> &Self::Output {
 		&self[Level::from(level)]
 	}
 }
 
-impl std::ops::IndexMut<log::Level> for LogError {
-	fn index_mut(&mut self, level: log::Level) -> &mut Self::Output {
+impl std::ops::IndexMut<LogLevel> for LogError {
+	fn index_mut(&mut self, level: LogLevel) -> &mut Self::Output {
 		&mut self[Level::from(level)]
 	}
 }
@@ -239,7 +248,7 @@ macro_rules! log_dyn_error {
 				log_error.log();
 			},
 			None => {
-				log::warn!("{:?}", $error);
+				::log::warn!("{:?}", $error);
 			}
 		}
 	};
@@ -276,7 +285,7 @@ macro_rules! log_option_none {
 		match $option {
 			Some(value) => value,
 			None => {
-				log::warn!("\"{}\" was None", std::stringify!($option));
+				::log::warn!("\"{}\" was None", std::stringify!($option));
 
 				return;
 			}
@@ -287,7 +296,7 @@ macro_rules! log_option_none {
 		match $option {
 			Ok(value) => value,
 			None => {
-				log::warn!("\"{}\" was None", std::stringify!($option));
+				::log::warn!("\"{}\" was None", std::stringify!($option));
 
 				$default
 			}
@@ -296,9 +305,87 @@ macro_rules! log_option_none {
 }
 
 #[macro_export(local_inner_macros)]
+macro_rules! __log_expr_literals {
+	($fmt:literal, $_:expr) => {
+		std::concat!("{}: {", $fmt, "}")
+	};
+
+	($fmt:literal, $expr:expr, $($exprs:expr),+) => {
+		std::concat!(__log_expr_literals!($fmt, $expr), "\n", __log_expr_literals!($fmt, $($exprs),+))
+	};
+}
+
+#[macro_export(local_inner_macros)]
+macro_rules! log_expr {
+	($level:path, $fmt:literal, $($expr:expr),+) => {
+		$level!(__log_expr_literals!($fmt, $($expr),+),
+			$(
+				std::stringify!($expr), $expr
+			),+
+		);
+	};
+}
+
+#[macro_export(local_inner_macros)]
+macro_rules! trace_expr {
+	(fmt: $fmt:literal, $($expr:expr),+) => {
+		log_expr!(::log::trace, $fmt, $($expr),+);
+	};
+
+	($($expr:expr),+) => {
+		trace_expr!(fmt: ":#?", $($expr),+)
+	};
+}
+
+#[macro_export(local_inner_macros)]
 macro_rules! debug_expr {
-	($expr:expr) => {
-		log::debug!("{}: {:#?}", std::stringify!($expr), $expr);
+	(fmt: $fmt:literal, $($expr:expr),+) => {
+		log_expr!(::log::debug, $fmt, $($expr),+);
+	};
+
+	($($expr:expr),+) => {
+		debug_expr!(fmt: ":#?", $($expr),+)
+	};
+}
+
+#[macro_export(local_inner_macros)]
+macro_rules! info_expr {
+	(fmt: $fmt:literal, $($expr:expr),+) => {
+		log_expr!(::log::info, $fmt, $($expr),+);
+	};
+
+	($($expr:expr),+) => {
+		info_expr!(fmt: ":#?", $($expr),+)
+	};
+}
+
+#[macro_export(local_inner_macros)]
+macro_rules! warn_expr {
+	(fmt: $fmt:literal, $($expr:expr),+) => {
+		log_expr!(::log::warn, $fmt, $($expr),+);
+	};
+
+	($($expr:expr),+) => {
+		warn_expr!(fmt: ":#?", $($expr),+)
+	};
+}
+
+#[macro_export(local_inner_macros)]
+macro_rules! error_expr {
+	(fmt: $fmt:literal, $($expr:expr),+) => {
+		log_expr!(::log::error, $fmt, $($expr),+);
+	};
+
+	($($expr:expr),+) => {
+		error_expr!(fmt: ":#?", $($expr),+)
+	};
+}
+
+#[macro_export]
+macro_rules! init_log {
+	() => {
+		std::env::set_var("RUST_LOG", "Trace");
+		let _ = env_logger::try_init();
 	};
 }
 
@@ -378,5 +465,5 @@ fn set_env_var(module: Module) -> () {
 
 	std::env::set_var("RUST_LOG", env_var_val);
 	env_logger::init();
-	log::info!(target: log_path!("set_env_var"), "RUST_LOG={}", pretty_env_var_val);
+	info!(target: log_path!("set_env_var"), "RUST_LOG={}", pretty_env_var_val);
 }

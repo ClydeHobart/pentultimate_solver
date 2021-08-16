@@ -814,9 +814,7 @@ impl Data {
 					Vec3::ZERO,
 					negative_face_average,
 					(first_vert + negative_face_average).normalize()
-				)
-				.inverse()
-			)
+				).inverse())
 			};
 		}
 

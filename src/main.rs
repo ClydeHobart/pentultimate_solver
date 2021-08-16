@@ -119,5 +119,6 @@ fn _run_polyhedra_demo() -> () {
 fn main() -> () {
 	init();
 	log_result_err!(validate());
-	app::main();
+	pentultimate_solver::puzzle::main();
+	// app::main();
 }

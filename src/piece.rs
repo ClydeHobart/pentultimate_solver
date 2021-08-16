@@ -54,15 +54,15 @@ pub enum Type {
 }
 
 impl Type {
-	pub fn side_count(self) -> usize {
+	pub const fn side_count(self) -> usize {
 		ICOSIDODECAHEDRON.face_sizes[self as usize].face_size
 	}
 
-	pub fn index_offset(self) -> usize {
+	pub const fn index_offset(self) -> usize {
 		ICOSIDODECAHEDRON.face_sizes[self as usize].initial_face_index
 	}
 
-	pub fn instance_count(self) -> usize {
+	pub const fn instance_count(self) -> usize {
 		ICOSIDODECAHEDRON.face_sizes[self as usize + 1].initial_face_index - self.index_offset()
 	}
 
@@ -298,9 +298,7 @@ impl Piece {
 		let side_count:						usize				= piece_type.side_count();
 		let double_side_count:				usize				= 2_usize * side_count;
 		let range:							Range<usize>		= 0_usize .. side_count;
-		let transformation:					Mat4				= Mat4::from_quat(icosidodecahedron_data.faces[piece_type.index_offset()].quat
-		.inverse()
-	);
+		let transformation:					Mat4				= Mat4::from_quat(icosidodecahedron_data.faces[piece_type.index_offset()].quat.inverse());
 
 		let mut vertices: Vec<Vec3>;
 		let center: Vec3;
@@ -520,10 +518,7 @@ impl Piece {
 						_piece_type: piece_type
 					},
 					// Transform::identity(),
-					Transform::from_matrix(
-						Mat4::from_quat(faces[index].quat)
-						// .inverse()
-					),
+					Transform::from_matrix(Mat4::from_quat(faces[index].quat)),
 					GlobalTransform::identity()
 				))
 				.with_children(
