@@ -85,7 +85,11 @@ impl HemisphereMask {
 }
 
 mod consts {
-	use super::Type;
+	use super::{
+		deflated::PieceState as DPS,
+		inflated::PieceStateComponent as IPSC,
+		Type
+	};
 
 	pub const PENTAGON_PIECE_COUNT:		usize	= Type::Pentagon.instance_count();				// 12
 	pub const TRIANGLE_PIECE_COUNT:		usize	= Type::Triangle.instance_count();				// 20
@@ -96,10 +100,10 @@ mod consts {
 	pub const TRIANGLE_PIECE_COUNT_F32:	f32		= TRIANGLE_PIECE_COUNT as f32;
 	pub const PENTAGON_SIDE_COUNT_F32:	f32		= PENTAGON_SIDE_COUNT as f32;
 	pub const TRIANGLE_SIDE_COUNT_F32:	f32		= TRIANGLE_SIDE_COUNT as f32;
-	pub const PENTAGON_SIDE_COUNT_U16:	u16		= PENTAGON_SIDE_COUNT as u16;
-	pub const TRIANGLE_SIDE_COUNT_U16:	u16		= TRIANGLE_SIDE_COUNT as u16;
-	pub const PENTAGON_SIDE_COUNT_U8:	u8		= PENTAGON_SIDE_COUNT as u8;
-	pub const TRIANGLE_SIDE_COUNT_U8:	u8		= TRIANGLE_SIDE_COUNT as u8;
+	pub const PENTAGON_SIDE_COUNT_IPSC:	IPSC	= PENTAGON_SIDE_COUNT as IPSC;
+	pub const TRIANGLE_SIDE_COUNT_IPSC:	IPSC	= TRIANGLE_SIDE_COUNT as IPSC;
+	pub const PENTAGON_SIDE_COUNT_DPS:	DPS		= PENTAGON_SIDE_COUNT as DPS;
+	pub const TRIANGLE_SIDE_COUNT_DPS:	DPS		= TRIANGLE_SIDE_COUNT as DPS;
 }
 
 // Compressed version for smaller memory footprint when keeping track of multiple states
@@ -146,11 +150,11 @@ pub mod deflated {
 			let mut deflated_puzzle_state: Self = Self::default();
 
 			for pent_index in 0_usize .. PENTAGON_PIECE_COUNT {
-				deflated_puzzle_state.pents[pent_index] = (pos.pents[pent_index] * PENTAGON_SIDE_COUNT as u16 + rot.pents[pent_index]) as u8;
+				deflated_puzzle_state.pents[pent_index] = (pos.pents[pent_index] * PENTAGON_SIDE_COUNT_IPSC + rot.pents[pent_index]) as PieceState;
 			}
 
 			for tri_index in 0_usize .. TRIANGLE_PIECE_COUNT {
-				deflated_puzzle_state.tris[tri_index] = (pos.tris[tri_index] * TRIANGLE_SIDE_COUNT as u16 + rot.tris[tri_index]) as u8;
+				deflated_puzzle_state.tris[tri_index] = (pos.tris[tri_index] * TRIANGLE_SIDE_COUNT_IPSC + rot.tris[tri_index]) as PieceState;
 			}
 
 			deflated_puzzle_state
@@ -162,11 +166,11 @@ pub mod deflated {
 			let mut puzzle_state: PuzzleState = PuzzleState::default();
 
 			for pent_index in 0_usize .. PENTAGON_PIECE_COUNT {
-				puzzle_state.pents[pent_index] = (thread_rng.gen::<f32>() * PENTAGON_PIECE_COUNT_F32) as u8 * PENTAGON_SIDE_COUNT_U8 + (thread_rng.gen::<f32>() * PENTAGON_SIDE_COUNT_F32) as u8;
+				puzzle_state.pents[pent_index] = (thread_rng.gen::<f32>() * PENTAGON_PIECE_COUNT_F32) as PieceState * PENTAGON_SIDE_COUNT_DPS + (thread_rng.gen::<f32>() * PENTAGON_SIDE_COUNT_F32) as PieceState;
 			}
 
 			for tri_index in 0_usize .. TRIANGLE_PIECE_COUNT {
-				puzzle_state.tris[tri_index] = (thread_rng.gen::<f32>() * TRIANGLE_PIECE_COUNT_F32) as u8 * TRIANGLE_SIDE_COUNT_U8 + (thread_rng.gen::<f32>() * TRIANGLE_SIDE_COUNT_F32) as u8;
+				puzzle_state.tris[tri_index] = (thread_rng.gen::<f32>() * TRIANGLE_PIECE_COUNT_F32) as PieceState * TRIANGLE_SIDE_COUNT_DPS + (thread_rng.gen::<f32>() * TRIANGLE_SIDE_COUNT_F32) as PieceState;
 			}
 
 			puzzle_state
@@ -187,7 +191,7 @@ pub mod inflated {
 		consts::*
 	};
 
-	pub type PieceStateComponent = u16;
+	pub type PieceStateComponent = u32;
 
 	#[derive(Debug)]
 	#[repr(align(32))]
@@ -209,10 +213,10 @@ pub mod inflated {
 
 	impl Default for PuzzleState {
 		fn default() -> Self {
-			assert_eq_size!(PuzzleState, [u16; 2 * PIECE_COUNT]);
+			assert_eq_size!(PuzzleState, [u32; 2 * PIECE_COUNT]);
 
 			unsafe {
-				transmute::<[u16; 2 * PIECE_COUNT], Self>([0_u16; 2 * PIECE_COUNT])
+				transmute::<[u32; 2 * PIECE_COUNT], Self>([0_u32; 2 * PIECE_COUNT])
 			}
 		}
 	}
@@ -227,27 +231,24 @@ pub mod inflated {
 
 		#[cfg(not(all(target_arch = "x86_64", target_feature = "avx2")))]
 		fn from(deflated_puzzle_state: &deflated::PuzzleState) -> Self {
-			const PENTAGON_SIDE_COUNT_U16: u16 = PENTAGON_SIDE_COUNT as u16;
-			const TRIANGLE_SIDE_COUNT_U16: u16 = TRIANGLE_SIDE_COUNT as u16;
-
 			let mut inflated_puzzle_state: Self = Self::default();
 			let pos: &mut PuzzleStateComponent = &mut inflated_puzzle_state.pos;
 			let rot: &mut PuzzleStateComponent = &mut inflated_puzzle_state.rot;
 
 			for pent_index in 0_usize .. PENTAGON_PIECE_COUNT {
-				let deflated_piece_state: u16 = deflated_puzzle_state.pents[pent_index] as u16;
-				let pent_pos: u16 = deflated_piece_state / PENTAGON_SIDE_COUNT_U16;
+				let deflated_piece_state: PieceStateComponent = deflated_puzzle_state.pents[pent_index] as PieceStateComponent;
+				let pent_pos: PieceStateComponent = deflated_piece_state / PENTAGON_SIDE_COUNT_IPSC;
 
 				pos.pents[pent_index] = pent_pos;
-				rot.pents[pent_index] = deflated_piece_state - pent_pos * PENTAGON_SIDE_COUNT_U16;
+				rot.pents[pent_index] = deflated_piece_state - pent_pos * PENTAGON_SIDE_COUNT_IPSC;
 			}
 
 			for tri_index in 0_usize .. TRIANGLE_PIECE_COUNT {
-				let deflated_piece_state: u16 = deflated_puzzle_state.tris[tri_index] as u16;
-				let tri_pos: u16 = deflated_piece_state / TRIANGLE_SIDE_COUNT_U16;
+				let deflated_piece_state: PieceStateComponent = deflated_puzzle_state.tris[tri_index] as PieceStateComponent;
+				let tri_pos: PieceStateComponent = deflated_piece_state / TRIANGLE_SIDE_COUNT_IPSC;
 
 				pos.tris[tri_index] = tri_pos;
-				rot.tris[tri_index] = deflated_piece_state - tri_pos * TRIANGLE_SIDE_COUNT_U16;
+				rot.tris[tri_index] = deflated_piece_state - tri_pos * TRIANGLE_SIDE_COUNT_IPSC;
 			}
 
 			inflated_puzzle_state
@@ -259,13 +260,13 @@ pub mod inflated {
 			let mut puzzle_state: PuzzleState = PuzzleState::default();
 
 			for pent_index in 0_usize .. PENTAGON_PIECE_COUNT {
-				puzzle_state.pos.pents[pent_index] = (thread_rng.gen::<f32>() * PENTAGON_PIECE_COUNT_F32) as u16;
-				puzzle_state.rot.pents[pent_index] = (thread_rng.gen::<f32>() * PENTAGON_SIDE_COUNT_F32) as u16;
+				puzzle_state.pos.pents[pent_index] = (thread_rng.gen::<f32>() * PENTAGON_PIECE_COUNT_F32) as PieceStateComponent;
+				puzzle_state.rot.pents[pent_index] = (thread_rng.gen::<f32>() * PENTAGON_SIDE_COUNT_F32) as PieceStateComponent;
 			}
 
 			for tri_index in 0_usize .. TRIANGLE_PIECE_COUNT {
-				puzzle_state.pos.tris[tri_index] = (thread_rng.gen::<f32>() * TRIANGLE_PIECE_COUNT_F32) as u16;
-				puzzle_state.rot.tris[tri_index] = (thread_rng.gen::<f32>() * TRIANGLE_SIDE_COUNT_F32) as u16;
+				puzzle_state.pos.tris[tri_index] = (thread_rng.gen::<f32>() * TRIANGLE_PIECE_COUNT_F32) as PieceStateComponent;
+				puzzle_state.rot.tris[tri_index] = (thread_rng.gen::<f32>() * TRIANGLE_SIDE_COUNT_F32) as PieceStateComponent;
 			}
 
 			puzzle_state
@@ -322,7 +323,7 @@ impl TransformationLibrary {
 							rot[piece_index] = rotation;
 						} else {
 							pos[piece_index] = piece_index as PieceStateComponent;
-							rot[piece_index] = 0_u16 /* as PieceStateComponent */;
+							rot[piece_index] = 0 as PieceStateComponent;
 						}
 					}
 				};
@@ -415,8 +416,14 @@ impl Plugin for PuzzlePlugin {
 mod tests {
 	use {
 		super::{*,
-			deflated::PuzzleState as DeflatedPuzzleState,
-			inflated::PuzzleState as InflatedPuzzleState,
+			deflated::{
+				PieceState as DPS,
+				PuzzleState as DeflatedPuzzleState
+			},
+			inflated::{
+				PieceStateComponent as IPSC,
+				PuzzleState as InflatedPuzzleState
+			},
 			consts::*
 		},
 		std::fmt::Debug
@@ -455,21 +462,21 @@ mod tests {
 		let mut inflated_puzzle_state: InflatedPuzzleState = InflatedPuzzleState::default();
 
 		for pent_index in 0_usize .. PENTAGON_PIECE_COUNT {
-			let pent_index_u8: u8 = pent_index as u8;
-			let rot: u8 = pent_index_u8 % PENTAGON_SIDE_COUNT as u8;
+			let pent_index_dps: DPS = pent_index as DPS;
+			let rot: DPS = pent_index_dps % PENTAGON_SIDE_COUNT_DPS;
 
-			deflated_puzzle_state.pents[pent_index] = pent_index_u8 * PENTAGON_SIDE_COUNT as u8 + rot;
-			inflated_puzzle_state.pos.pents[pent_index] = pent_index_u8 as u16;
-			inflated_puzzle_state.rot.pents[pent_index] = rot as u16;
+			deflated_puzzle_state.pents[pent_index] = pent_index_dps * PENTAGON_SIDE_COUNT_DPS + rot;
+			inflated_puzzle_state.pos.pents[pent_index] = pent_index_dps as IPSC;
+			inflated_puzzle_state.rot.pents[pent_index] = rot as IPSC;
 		}
 
 		for tri_index in 0_usize .. TRIANGLE_PIECE_COUNT {
-			let tri_index_u8: u8 = tri_index as u8;
-			let rot: u8 = tri_index_u8 % TRIANGLE_SIDE_COUNT as u8;
+			let tri_index_dps: DPS = tri_index as DPS;
+			let rot: DPS = tri_index_dps % TRIANGLE_SIDE_COUNT_DPS;
 
-			deflated_puzzle_state.tris[tri_index] = tri_index_u8 * TRIANGLE_SIDE_COUNT as u8 + rot;
-			inflated_puzzle_state.pos.tris[tri_index] = tri_index_u8 as u16;
-			inflated_puzzle_state.rot.tris[tri_index] = rot as u16;
+			deflated_puzzle_state.tris[tri_index] = tri_index_dps * TRIANGLE_SIDE_COUNT_DPS + rot;
+			inflated_puzzle_state.pos.tris[tri_index] = tri_index_dps as IPSC;
+			inflated_puzzle_state.rot.tris[tri_index] = rot as IPSC;
 		}
 
 		assert!(test_conversion::<DeflatedPuzzleState, InflatedPuzzleState>(&deflated_puzzle_state));
