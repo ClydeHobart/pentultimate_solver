@@ -5,7 +5,6 @@ use {
 		criterion_main,
 		BatchSize,
 		Bencher,
-		BenchmarkGroup,
 		Criterion
 	},
 	core::time::Duration,
@@ -15,9 +14,10 @@ use {
 			InflatedPuzzleState
 		},
 		util::simd,
-		util_simd_deflate_deflate_puzzle_state as deflate_puzzle_state_current,
-		util_simd_inflate_inflate_puzzle_state as inflate_puzzle_state_current,
-		util_simd_inflate_inflate_puzzle_state_no_arrays as inflate_puzzle_state_no_arrays
+		util_simd_deflate_deflate_puzzle_state				as deflate_puzzle_state_current,
+		util_simd_inflate_inflate_puzzle_state				as inflate_puzzle_state_current,
+		util_simd_inflate_inflate_puzzle_state_no_init		as inflate_puzzle_state_no_init,
+		util_simd_inflate_inflate_puzzle_state_no_arrays	as inflate_puzzle_state_no_arrays
 	},
 	rand::prelude::*
 };
@@ -28,8 +28,9 @@ macro_rules! conversion_criterion {
 			let mut thread_rng: ThreadRng = rand::thread_rng();
 			let mut benchmark_group /* : BenchmarkGroup */ = criterion.benchmark_group(std::stringify!($group_name));
 
-			benchmark_group.warm_up_time(Duration::from_secs(60_u64));
+			benchmark_group.warm_up_time(Duration::from_secs(30_u64));
 			benchmark_group.measurement_time(Duration::from_secs(120_u64));
+			benchmark_group.sample_size(1000_usize);
 
 			$(
 				benchmark_group.bench_function(std::stringify!($test), |bencher: &mut Bencher| -> () {
@@ -48,7 +49,7 @@ macro_rules! conversion_criterion {
 	};
 }
 
-conversion_criterion!(inflate, DeflatedPuzzleState, InflatedPuzzleState, inflate_puzzle_state_current, inflate_puzzle_state_no_arrays);
+conversion_criterion!(inflate, DeflatedPuzzleState, InflatedPuzzleState, inflate_puzzle_state_current, inflate_puzzle_state_no_arrays, inflate_puzzle_state_no_init);
 conversion_criterion!(deflate, InflatedPuzzleState, DeflatedPuzzleState, deflate_puzzle_state_current);
 
 criterion_group!(convert_puzzle_state, inflate, deflate);

@@ -137,23 +137,23 @@ impl Data {
 			.unwrap()
 	}
 
-	pub fn get_closest_face_index(&self, quat: &Quat) -> usize {
-		Data::get_closest_face_index_for_faces(&self.faces, quat)
+	pub fn get_closest_face_index(&self, vec: &Vec3) -> usize {
+		Data::get_closest_face_index_for_faces(&self.faces, vec)
 	}
 
-	pub fn get_closest_face_index_for_faces(faces: &Vec<FaceData>, quat: &Quat) -> usize {
+	pub fn get_closest_face_index_for_faces(faces: &Vec<FaceData>, vec: &Vec3) -> usize {
 		use std::cmp::Ordering;
 
 		faces
 			.iter()
 			.map(|face: &FaceData| -> f32 {
-				face.quat.dot(*quat)
+				face.norm.dot(*vec)
 			})
 			.enumerate()
-			.max_by(|(_face_index_a, quat_dot_vec_a): &(usize, f32), (_face_index_b, quat_dot_vec_b): &(usize, f32)| -> Ordering {
-				quat_dot_vec_a.partial_cmp(&quat_dot_vec_b).unwrap_or(Ordering::Equal)
+			.max_by(|(_face_index_a, norm_dot_vec_a): &(usize, f32), (_face_index_b, norm_dot_vec_b): &(usize, f32)| -> Ordering {
+				norm_dot_vec_a.partial_cmp(&norm_dot_vec_b).unwrap_or(Ordering::Equal)
 			})
-			.map(|(face_index, _quat_dot_vec): (usize, f32)| -> usize {
+			.map(|(face_index, _norm_dot_vec): (usize, f32)| -> usize {
 				face_index
 			})
 			.unwrap()

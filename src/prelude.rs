@@ -2,6 +2,7 @@ pub use {
 	crate::{
 		define_struct_with_default,
 		init_log,
+		option_to_result,
 		log_concat,
 		log_dyn_error,
 		log_error,

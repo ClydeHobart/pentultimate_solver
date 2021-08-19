@@ -44,6 +44,16 @@ impl<T> ToResult<T> for Option<T> {
 	}
 }
 
+#[macro_export(local_inner_macros)]
+macro_rules! option_to_result {
+	($expr:expr) => {
+		match $expr {
+			Some(value) => Ok(value),
+			None => Err(log_error!(::log::Level::Debug, std::format!("\"{}\" was None", std::stringify!($expr))))
+		}
+	};
+}
+
 pub trait ToOption<T> where Self: Sized {
 	fn to_option(self) -> Option<T>;
 }

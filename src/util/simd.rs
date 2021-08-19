@@ -6,7 +6,8 @@ pub use {
 	std::mem::{
 		size_of,
 		transmute,
-		transmute_copy
+		transmute_copy,
+		MaybeUninit
 	}
 };
 
@@ -116,6 +117,71 @@ pub mod inflate {
 
 				unsafe {
 					let mut result: [[m256; 2]; 2] = [[ZERO, ZERO], [ZERO, ZERO]];
+
+					// Stage 1: Cast deflated_puzzle_state: &deflated::PuzzleState into stage_1: *const m256
+					let stage_1: *const m256 = $deflated_puzzle_state as *const $deflated_puzzle_state_type as *const m256;
+
+					// Stage 2: Space out data from u8s to u16s
+					//   Part 1: Run _mm256_unpacklo_epi8() and _mm256_unpackhi_epi8(), storing the result in part_1: [m256; 2]
+					let part_1: [m256; 2] = [
+						x86_64::_mm256_unpacklo_epi8(*stage_1, STAGE_2_1_B),
+						x86_64::_mm256_unpackhi_epi8(*stage_1, STAGE_2_1_B)
+					];
+
+					//   Part 2: Run _mm256_permute2x128_si256::<0x20>() and _mm256_permute2x128_si256::<0x31>() on part_1, storing the result in part_2: [m256; 2]
+					let part_2: [m256; 2] = [
+						x86_64::_mm256_permute2x128_si256::<STAGE_2_2_0_IMM8>(part_1[0], part_1[1]),
+						x86_64::_mm256_permute2x128_si256::<STAGE_2_2_1_IMM8>(part_1[0], part_1[1])
+					];
+
+					// Stage 3: Multiply pent and tri u16s by 26 and 43, respectively, storing the result in stage_3: [m256; 2]
+					let stage_3: [m256; 2] = [
+						x86_64::_mm256_mullo_epi16(part_2[0], STAGE_3_B[0]),
+						x86_64::_mm256_mullo_epi16(part_2[1], STAGE_3_B[1])
+					];
+
+					// Stage 4: Right shift stage_3 by 7, storing the result in result[0]
+					result[0] = [
+						x86_64::_mm256_srai_epi16::<STAGE_4_IMM8>(stage_3[0]),
+						x86_64::_mm256_srai_epi16::<STAGE_4_IMM8>(stage_3[1])
+					];
+
+					// STage 5: Multiply result[0] by 5 and 3 for the pents and tris, respectively, storing the result in stage_5: [m256; 2]
+					let stage_5: [m256; 2] = [
+						x86_64::_mm256_mullo_epi16(result[0][0], STAGE_5_B[0]),
+						x86_64::_mm256_mullo_epi16(result[0][1], STAGE_5_B[1])
+					];
+
+					// Stage 6: Subtract stage_5 from part_2, storing the result in result[1]
+					result[1] = [
+						x86_64::_mm256_sub_epi16(part_2[0], stage_5[0]),
+						x86_64::_mm256_sub_epi16(part_2[1], stage_5[1])
+					];
+
+					// Stage 7: Transmute result
+					transmute::<[[m256; 2]; 2], $inflated_puzzle_state_type>(result)
+				}
+			}
+		};
+	}
+
+	#[macro_export]
+	macro_rules! util_simd_inflate_inflate_puzzle_state_no_init {
+		($deflated_puzzle_state:expr, $deflated_puzzle_state_type:ty, $inflated_puzzle_state_type:ty) => {
+			{
+				use simd::{
+					*,
+					consts::{
+						*,
+						inflate::*
+					}
+				};
+
+				static_assertions::assert_eq_size!($deflated_puzzle_state_type, m256);
+				static_assertions::assert_eq_size!($inflated_puzzle_state_type, [[m256; 2]; 2]);
+
+				unsafe {
+					let mut result: [[m256; 2]; 2] = MaybeUninit::<[[m256; 2]; 2]>::uninit().assume_init();
 
 					// Stage 1: Cast deflated_puzzle_state: &deflated::PuzzleState into stage_1: *const m256
 					let stage_1: *const m256 = $deflated_puzzle_state as *const $deflated_puzzle_state_type as *const m256;

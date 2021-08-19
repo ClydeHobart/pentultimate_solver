@@ -22,9 +22,18 @@ use {
 		},
 		strings::STRING_DATA
 	},
-	std::mem::{
-		size_of,
-		transmute
+	self::consts::{
+		PENTAGON_PIECE_COUNT,
+		PENTAGON_SIDE_COUNT,
+		PENTAGON_SIDE_COUNT_F32,
+		PIECE_COUNT
+	},
+	std::{
+		f32::consts::TAU,
+		mem::{
+			size_of,
+			transmute
+		}
 	},
 	bevy::prelude::*,
 	libc::{
@@ -57,8 +66,8 @@ impl HemisphereMask {
 
 				let mut hemisphere_mask: u32 = 0_u32;
 
-				for face_index in 0_usize .. ICOSIDODECAHEDRON.face_count {
-					hemisphere_mask |= ((faces[face_index].norm.dot(face_normal) > 0.0_f32) as u32) << face_index;
+				for piece_index in 0_usize .. ICOSIDODECAHEDRON.face_count {
+					hemisphere_mask |= ((faces[piece_index].norm.dot(face_normal) > 0.0_f32) as u32) << piece_index;
 				}
 
 				hemisphere_mask
@@ -70,8 +79,8 @@ impl HemisphereMask {
 		})
 	}
 
-	fn includes_face(&self, face_index: usize) -> bool {
-		self.0 & (1_u32 << face_index) != 0_u32
+	fn includes_piece(&self, piece_index: usize) -> bool {
+		self.0 & (1_u32 << piece_index) != 0_u32
 	}
 }
 
@@ -270,6 +279,63 @@ pub mod inflated {
 	}
 }
 
+type Transformation = inflated::PuzzleState;
+
+pub struct TransformationLibrary {
+	hemi_masks:			[HemisphereMask; PENTAGON_PIECE_COUNT],
+	transformations:	[[Transformation; PENTAGON_SIDE_COUNT]; PENTAGON_PIECE_COUNT]
+}
+
+impl TransformationLibrary {
+	fn new() -> LogErrorResult<Self> {
+		let icosidodecahedron_data: &Data = option_to_result!(Data::get(Polyhedron::Icosidodecahedron))?;
+
+		let mut transformation_library: TransformationLibrary = unsafe { std::mem::MaybeUninit::<TransformationLibrary>::zeroed().assume_init() };
+
+		for transformation_index in 0_usize .. transformation_library.transformations.len() {
+			let hemi_mask: HemisphereMask = HemisphereMask::new(transformation_index);
+			let transformation_axis: Vec3 = icosidodecahedron_data.faces[transformation_index].norm;
+
+			transformation_library.hemi_masks[transformation_index] = hemi_mask;
+
+			for turn_index in 0_usize .. transformation_library.transformations[transformation_index].len() {
+				use inflated::PieceStateComponent;
+
+				const TURN_ANGLE: f32 = TAU / PENTAGON_SIDE_COUNT_F32; // TODO: this is not correct for triangles!
+
+				let transformation_quat: Quat = Quat::from_axis_angle(transformation_axis, turn_index as f32 * -TURN_ANGLE);
+				let transformation: &mut Transformation = &mut transformation_library.transformations[transformation_index][turn_index];
+
+				let populate_transformation = |piece_type: Type, pos: &mut [PieceStateComponent], rot: &mut [PieceStateComponent]| -> () {
+					for piece_index in 0_usize .. piece_type.instance_count() {
+						let offset_piece_index: usize = piece_index + piece_type.index_offset();
+
+						if hemi_mask.includes_piece(offset_piece_index) {
+							let result_piece_quat: Quat = transformation_quat * icosidodecahedron_data.faces[offset_piece_index].quat;
+							let result_offset_piece_index: usize = icosidodecahedron_data.get_closest_face_index(&(result_piece_quat * Vec3::Z));
+							let position: PieceStateComponent = (result_offset_piece_index - piece_type.index_offset()) as PieceStateComponent;
+							let result_face: &FaceData = &icosidodecahedron_data.faces[result_offset_piece_index];
+							let collapsed_result_y: Vec3 = Mat4::look_at_rh(Vec3::ZERO, -result_face.norm, result_face.norm.cross(result_face.quat * Vec3::Y)).transform_vector3(result_piece_quat * Vec3::Y);
+							let rotation: PieceStateComponent = ((TAU - collapsed_result_y.y.atan2(collapsed_result_y.x)) * piece_type.side_count() as f32 / TAU).round() as PieceStateComponent % piece_type.side_count() as PieceStateComponent;
+
+							pos[piece_index] = position;
+							rot[piece_index] = rotation;
+						} else {
+							pos[piece_index] = piece_index as PieceStateComponent;
+							rot[piece_index] = 0_u16 /* as PieceStateComponent */;
+						}
+					}
+				};
+
+				populate_transformation(Type::Pentagon, &mut transformation.pos.pents, &mut transformation.rot.pents);
+				populate_transformation(Type::Triangle, &mut transformation.pos.tris, &mut transformation.rot.tris);
+			}
+		}
+
+		Ok(transformation_library)
+	}
+}
+
 pub struct PuzzlePlugin;
 
 impl PuzzlePlugin {
@@ -426,4 +492,7 @@ mod tests {
 }
 
 pub fn main() -> () {
+	if let Ok(transformation_library) = TransformationLibrary::new() {
+		debug_expr!(transformation_library.transformations[0]);
+	}
 }
