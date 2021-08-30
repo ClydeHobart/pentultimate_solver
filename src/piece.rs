@@ -67,13 +67,26 @@ impl Type {
 	}
 
 	pub fn next_side_index(&self, index: usize) -> usize {
-		return (index + 1) % self.side_count();
+		(index + 1) % self.side_count()
 	}
 
 	pub fn prev_side_index(&self, index: usize) -> usize {
 		let side_count: usize = self.side_count();
 
-		return (index + side_count - 1) % side_count;
+		(index + side_count - 1) % side_count
+	}
+
+	pub fn from_index(index: usize) -> Option<Self> {
+		const_assert_eq!(Type::Pentagon.index_offset(),		0_usize);
+		const_assert_eq!(Type::Pentagon.instance_count(),	12_usize);
+		const_assert_eq!(Type::Triangle.index_offset(),		12_usize);
+		const_assert_eq!(Type::Triangle.instance_count(),	20_usize);
+
+		match index {
+			0..=11	=> Some(Type::Pentagon),
+			12..=31	=> Some(Type::Triangle),
+			_		=> None
+		}
 	}
 }
 
@@ -284,10 +297,10 @@ impl Piece {
 	}
 
 	fn from_design_and_type(design: Design, piece_type: Type) -> LogErrorResult<Self> {
-		const PLANAR_OFFSET_RATIO: f32 = 1.0_f32 / 64.0_f32;
-		const NORMAL_OFFSET_RATIO: f32 = 1.0_f32 / 256.0_f32;
-		const PLANAR_OFFSET: f32 = PLANAR_OFFSET_RATIO * ICOSIDODECAHEDRON.edge_length;
-		const NORMAL_OFFSET: f32 = NORMAL_OFFSET_RATIO * ICOSIDODECAHEDRON.edge_length;
+		const PLANAR_OFFSET_RATIO:			f32					= 1.0_f32 / 64.0_f32;
+		const NORMAL_OFFSET_RATIO:			f32					= 1.0_f32 / 256.0_f32;
+		const PLANAR_OFFSET:				f32					= PLANAR_OFFSET_RATIO * ICOSIDODECAHEDRON.edge_length;
+		const NORMAL_OFFSET:				f32					= NORMAL_OFFSET_RATIO * ICOSIDODECAHEDRON.edge_length;
 
 		let icosahedron_data:				&Data				= get_data!(Icosahedron);
 		let dodecahedron_data:				&Data				= get_data!(Dodecahedron);
@@ -427,7 +440,8 @@ impl Piece {
 														].range.start + vert_index
 													]
 												].vec - face_vec
-											))
+											)),
+											None
 										)
 									})
 									.collect()
@@ -481,7 +495,7 @@ impl Piece {
 
 										verts.rotate_left(side_index);
 
-										icosahedron_data.get_closest_vert_index(&(verts[0] + verts[1] - verts[2]))
+										icosahedron_data.get_closest_vert_index(&(verts[0] + verts[1] - verts[2]), None)
 									})
 									.collect()
 								),

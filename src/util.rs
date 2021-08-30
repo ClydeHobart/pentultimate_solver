@@ -10,7 +10,8 @@ pub mod prelude {
 		ToOption,
 		ToResult,
 		from_ron,
-		from_ron_or_default
+		from_ron_or_default,
+		init_env_logger
 	};
 }
 
@@ -292,14 +293,14 @@ mod tests {
 	}
 
 	fn to_option_test_err() -> () {
-		init_log!();
-
+		init_env_logger();
 		to_option_test_err_std();
 		to_option_test_err_log_error();
 	}
 
 	#[test]
 	fn to_option() -> () {
+		init_env_logger();
 		to_option_test_ok();
 		to_option_test_err();
 	}

@@ -20,6 +20,7 @@ use {
 		strings::STRING_DATA
 	},
 	core::fmt,
+	std::sync::Once,
 	::log::Level as LogLevel,
 	serde::Deserialize
 };
@@ -294,7 +295,7 @@ macro_rules! log_option_none {
 
 	($option:expr, $default:expr) => {
 		match $option {
-			Ok(value) => value,
+			Some(value) => value,
 			None => {
 				::log::warn!("\"{}\" was None", std::stringify!($option));
 
@@ -381,16 +382,10 @@ macro_rules! error_expr {
 	};
 }
 
-#[macro_export]
-macro_rules! init_log {
-	() => {
-		std::env::set_var("RUST_LOG", "Trace");
-		let _ = env_logger::try_init();
-	};
-}
-
 pub fn init_env_logger() -> () {
-	set_env_var(from_ron_or_default(&STRING_DATA.files.rust_log));
+	INIT_ENV_LOGGER.call_once(|| -> () {
+		set_env_var(from_ron_or_default(&STRING_DATA.files.rust_log));
+	});
 }
 
 fn set_env_var(module: Module) -> () {
@@ -467,3 +462,5 @@ fn set_env_var(module: Module) -> () {
 	env_logger::init();
 	info!(target: log_path!("set_env_var"), "RUST_LOG={}", pretty_env_var_val);
 }
+
+static INIT_ENV_LOGGER: Once = Once::new();

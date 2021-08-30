@@ -29,11 +29,21 @@ define_struct_with_default!(
 	}
 );
 
+define_struct_with_default!(
+	#[derive(Deserialize)]
+	pub Tests<String> {
+		pub reorientation_tests	= "reorientationTests.ron",
+	}
+);
+
 #[derive(Default, Deserialize)]
 pub struct StringData {
 	pub files:	Files,
 	pub labels:	Labels,
-	pub misc:	Misc
+	pub misc:	Misc,
+
+	#[cfg(test)]
+	pub tests:	Tests,
 }
 
 lazy_static!{

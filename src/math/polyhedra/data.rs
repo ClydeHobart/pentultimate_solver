@@ -9,12 +9,16 @@ use {
 		},
 		prelude::*
 	},
-	bevy::render::{
-		mesh::{
-			Indices,
-			Mesh
-		},
-		pipeline::PrimitiveTopology
+	std::f32::consts::TAU,
+	bevy::{
+		prelude::*,
+		render::{
+			mesh::{
+				Indices,
+				Mesh
+			},
+			pipeline::PrimitiveTopology
+		}
 	},
 	log::Level
 };
@@ -85,6 +89,21 @@ impl FaceData {
 	}
 
 	pub fn get_size(&self) -> usize { self.range.end - self.range.start }
+
+	pub fn get_rotation(&self, quat: &Quat) -> u32 {
+		let size: u32 = self.get_size() as u32;
+		let collapsed_result_up: Vec3 = Mat4::look_at_rh(Vec3::ZERO, -self.norm, self.norm.cross(self.quat * Vec3::Y)).transform_vector3(*quat * Vec3::Y);
+
+		((TAU - collapsed_result_up.y.atan2(collapsed_result_up.x)) * size as f32 / TAU).round() as u32 % size
+	}
+
+	pub fn get_rotation_quat(&self, rotation: u32) -> Quat {
+		Quat::from_axis_angle(self.norm, rotation as f32 * -TAU / self.get_size() as f32)
+	}
+
+	pub fn get_rotated_quat(&self, rotation: u32) -> Quat {
+		self.get_rotation_quat(rotation) * self.quat
+	}
 }
 
 #[derive(Debug)]
@@ -97,6 +116,7 @@ pub struct Data {
 }
 
 pub type DataRefOption = Option<&'static Data>;
+pub type OptionalPredicate<T> = Option<Box<dyn Fn(&T) -> bool>>;
 
 impl Data {
 	pub fn get(polyhedron: Polyhedron) -> DataRefOption {
@@ -115,15 +135,21 @@ impl Data {
 		}
 	}
 
-	pub fn get_closest_vert_index(&self, vec: &Vec3) -> usize {
-		Data::get_closest_vert_index_for_verts(&self.verts, vec)
+	pub fn get_closest_vert_index(&self, vec: &Vec3, filter: OptionalPredicate<VertexData>) -> usize {
+		Data::get_closest_vert_index_for_verts(&self.verts, vec, filter)
 	}
 
-	pub fn get_closest_vert_index_for_verts(verts: &Vec<VertexData>, vec: &Vec3) -> usize {
+	pub fn get_closest_vert_index_for_verts(verts: &Vec<VertexData>, vec: &Vec3, filter: OptionalPredicate<VertexData>) -> usize {
 		use std::cmp::Ordering;
 
 		verts
 			.iter()
+			.filter(|vert: &&VertexData| -> bool {
+				match &filter {
+					Some(filter_func) => filter_func(vert),
+					None => true
+				}
+			})
 			.map(|vert: &VertexData| -> f32 {
 				vert.norm.dot(*vec)
 			})
@@ -137,15 +163,21 @@ impl Data {
 			.unwrap()
 	}
 
-	pub fn get_closest_face_index(&self, vec: &Vec3) -> usize {
-		Data::get_closest_face_index_for_faces(&self.faces, vec)
+	pub fn get_closest_face_index(&self, vec: &Vec3, filter: OptionalPredicate<FaceData>) -> usize {
+		Data::get_closest_face_index_for_faces(&self.faces, vec, filter)
 	}
 
-	pub fn get_closest_face_index_for_faces(faces: &Vec<FaceData>, vec: &Vec3) -> usize {
+	pub fn get_closest_face_index_for_faces(faces: &Vec<FaceData>, vec: &Vec3, filter: OptionalPredicate<FaceData>) -> usize {
 		use std::cmp::Ordering;
 
 		faces
 			.iter()
+			.filter(|face: &&FaceData| -> bool {
+				match &filter {
+					Some(filter_func) => filter_func(face),
+					None => true
+				}
+			})
 			.map(|face: &FaceData| -> f32 {
 				face.norm.dot(*vec)
 			})
@@ -157,6 +189,12 @@ impl Data {
 				face_index
 			})
 			.unwrap()
+	}
+
+	pub fn get_pos_and_rot(&self, quat: &Quat, filter: OptionalPredicate<FaceData>) -> (u32, u32) {
+		let pos: usize = self.get_closest_face_index(&(*quat * Vec3::Z), filter);
+
+		(pos as u32, self.faces[pos].get_rotation(quat))
 	}
 
 	pub fn validate_polyhedra() -> LogErrorResult {
@@ -365,7 +403,7 @@ impl Data {
 		verts.clear();
 		verts.reserve_exact(properties.vert_count);
 		Data::generate_verts_for_properties(properties, verts);
-		trace!(target: log_path!("generate_verts"), "{:#?}", verts);
+		log::trace!(target: log_path!("generate_verts"), "{:#?}", verts);
 
 		if verts.len() != properties.vert_count {
 			return Err(log_error!(
@@ -492,7 +530,7 @@ impl Data {
 			_ => {}
 		}
 
-		trace!(target: log_path!("generate_verts"), "{:?} verts: {:#?}", properties.polyhedron, verts);
+		log::trace!(target: log_path!("generate_verts"), "{:?} verts: {:#?}", properties.polyhedron, verts);
 	}
 
 	fn generate_edges(&mut self) -> LogErrorResult {
@@ -515,7 +553,7 @@ impl Data {
 			}
 		}
 
-		trace!(target: log_path!("generate_edges"), "{:?} edges: {:#?}", properties.polyhedron, edges);
+		log::trace!(target: log_path!("generate_edges"), "{:?} edges: {:#?}", properties.polyhedron, edges);
 
 		if edges.len() != properties.edge_count {
 			return Err(log_error!(
@@ -585,7 +623,7 @@ impl Data {
 						).as_str());
 					}
 
-					trace!(target: log_concat!(log_target, "edge_status"), "{}", status_update);
+					log::trace!(target: log_concat!(log_target, "edge_status"), "{}", status_update);
 				}
 			};
 		}
@@ -603,7 +641,7 @@ impl Data {
 
 			macro_rules! cycle_values {
 				() => {
-					trace!(target: log_concat!(log_target, "cycle_values"), "Cycling {} <- {} <- {}", prev_vert_index, curr_vert_index, next_vert_index);
+					log::trace!(target: log_concat!(log_target, "cycle_values"), "Cycling {} <- {} <- {}", prev_vert_index, curr_vert_index, next_vert_index);
 					prev_vert_index = curr_vert_index;
 					curr_vert_index = next_vert_index;
 				};
@@ -613,7 +651,7 @@ impl Data {
 				() => {
 					vert_indices.push(curr_vert_index);
 					end += 1;
-					trace!(target: log_concat!(log_target, "record_vert"), "Recording vertex index {} (end is now {})", curr_vert_index, end);
+					log::trace!(target: log_concat!(log_target, "record_vert"), "Recording vertex index {} (end is now {})", curr_vert_index, end);
 				};
 			}
 
@@ -622,7 +660,7 @@ impl Data {
 					// EdgeData::new() automatically orders the indices
 					let edge: EdgeData = EdgeData::new(prev_vert_index, curr_vert_index);
 
-					trace!(target: log_concat!(log_target, "record_edge"), "Recording edge {:?}", edge);
+					log::trace!(target: log_concat!(log_target, "record_edge"), "Recording edge {:?}", edge);
 
 					edge_matrix[prev_vert_index] &= !(1_u64 << curr_vert_index);
 
@@ -653,7 +691,7 @@ impl Data {
 						let mut candidate_vert_indices: u64 = edge_matrix[curr_vert_index];
 
 						if candidate_vert_indices == 0 {
-							warn!(target: log_concat!(log_target, "find_next_vert"), "No candidate next vertices for vertex {} in polyhedron {:?}", curr_vert_index, properties.polyhedron);
+							log::warn!(target: log_concat!(log_target, "find_next_vert"), "No candidate next vertices for vertex {} in polyhedron {:?}", curr_vert_index, properties.polyhedron);
 
 							INVALID_VERT_INDEX
 						} else {
@@ -665,13 +703,13 @@ impl Data {
 							while candidate_vert_indices != 0 {
 								let candidate_vert_index: usize = candidate_vert_indices.trailing_zeros() as usize;
 
-								trace!(target: log_concat!(log_target, "find_next_vert"), "Considering candidate vertex {}", candidate_vert_index);
+								log::trace!(target: log_concat!(log_target, "find_next_vert"), "Considering candidate vertex {}", candidate_vert_index);
 
 								candidate_vert_indices &= !(1 << candidate_vert_index);
 
 								// Don't double back
 								if candidate_vert_index == prev_vert_index {
-									trace!(target: log_concat!(log_target, "find_next_vert"), "Double-back, rejecting");
+									log::trace!(target: log_concat!(log_target, "find_next_vert"), "Double-back, rejecting");
 
 									continue;
 								}
@@ -681,7 +719,7 @@ impl Data {
 								// TODO: Might need to revisit this because glam is FOOLISH and implements left-hand rule instead of right-hand rule. Ruined my night learning this.
 								// Only proceed if this is a counter-clockwise candidate
 								if prev_vert_to_curr_vert_vector.cross(candidate_vert_vector).dot(curr_vert_vector) <= 0.0 {
-									trace!(target: log_concat!(log_target, "find_next_vert"), "Clockwise, rejecting");
+									log::trace!(target: log_concat!(log_target, "find_next_vert"), "Clockwise, rejecting");
 
 									continue;
 								}
@@ -692,7 +730,7 @@ impl Data {
 									best_vert_index = candidate_vert_index;
 									best_vert_angle = candidate_vert_angle;
 								} else {
-									trace!(target: log_concat!(log_target, "find_next_vert"), "Worse angle ({} (best) > {} (candidate))", best_vert_angle, candidate_vert_angle);
+									log::trace!(target: log_concat!(log_target, "find_next_vert"), "Worse angle ({} (best) > {} (candidate))", best_vert_angle, candidate_vert_angle);
 								}
 							}
 
@@ -729,7 +767,7 @@ impl Data {
 			cycle_values!();
 			record_edge!();
 			faces.push(FaceData::new(&verts, &vert_indices, start, end));
-			trace!(target: log_target.as_str(), "Adding face {:?}", faces.last().unwrap());
+			log::trace!(target: log_target.as_str(), "Adding face {:?}", faces.last().unwrap());
 			log_edge_status!();
 		}
 
@@ -749,7 +787,7 @@ impl Data {
 		};
 
 		faces.sort_by_cached_key(|face_data: &FaceData| -> usize {
-			Data::get_closest_vert_index_for_verts(&dual_verts, &face_data.norm)
+			Data::get_closest_vert_index_for_verts(&dual_verts, &face_data.norm, None)
 		});
 
 		let should_be_initial_vert: Box<dyn Fn(usize, usize) -> bool> = match self.polyhedron {
@@ -883,6 +921,44 @@ macro_rules! get_data {
 			None => { return Err(log_error!(Level::Error, std::format!("Data::get(Polyhedron::{:?}) was None", Polyhedron::$polyhedron))); }
 		}
 	};
+}
+
+pub struct DataLibrary {
+	pub icosahedron:				&'static Data,
+	pub dodecahedron:				&'static Data,
+	pub icosidodecahedron:			&'static Data,
+	pub rhombic_triacontahedron:	&'static Data
+}
+
+impl Default for DataLibrary {
+	fn default() -> Self {
+		DataLibrary {
+			icosahedron:				Data::get(Polyhedron::Icosahedron).unwrap(),
+			dodecahedron:				Data::get(Polyhedron::Dodecahedron).unwrap(),
+			icosidodecahedron:			Data::get(Polyhedron::Icosidodecahedron).unwrap(),
+			rhombic_triacontahedron:	Data::get(Polyhedron::RhombicTriacontahedron).unwrap()
+		}
+	}
+}
+
+pub struct DataPlugin;
+
+impl Plugin for DataPlugin {
+	fn build(&self, app: &mut AppBuilder) -> () {
+		log_result_err!(Data::validate_polyhedra());
+
+		app.insert_resource::<DataLibrary>(DataLibrary::default());
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn test_data() -> () {
+		log_result_err!(Data::validate_polyhedra(), panic!());
+	}
 }
 
 lazy_static!{

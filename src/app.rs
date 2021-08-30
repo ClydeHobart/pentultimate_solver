@@ -1,8 +1,12 @@
 use {
 	crate::{
 		colors::ColorsPlugin,
+		math::polyhedra::data::DataPlugin,
 		piece::PiecePlugin,
-		puzzle::PuzzlePlugin,
+		puzzle::{
+			PuzzlePlugin,
+			TransformationPlugin
+		},
 		ui::UIPlugin
 	},
 	bevy::{
@@ -10,7 +14,6 @@ use {
 		app::PluginGroupBuilder
 	}
 };
-
 
 struct AppPlugin;
 
@@ -24,8 +27,10 @@ impl Plugin for AppPlugin {
 struct AppPluginGroup;
 
 impl PluginGroup for AppPluginGroup {
-	fn build(&mut self, group: &mut PluginGroupBuilder) {
+	fn build(&mut self, group: &mut PluginGroupBuilder) -> () {
 		group
+			.add(DataPlugin)
+			.add(TransformationPlugin)
 			.add(ColorsPlugin)
 			.add(PiecePlugin)
 			.add(PuzzlePlugin)

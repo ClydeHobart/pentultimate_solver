@@ -14,10 +14,10 @@ use {
 			InflatedPuzzleState
 		},
 		util::simd,
-		util_simd_deflate_deflate_puzzle_state				as deflate_puzzle_state_current,
-		util_simd_inflate_inflate_puzzle_state				as inflate_puzzle_state_current,
-		util_simd_inflate_inflate_puzzle_state_no_init		as inflate_puzzle_state_no_init,
-		util_simd_inflate_inflate_puzzle_state_no_arrays	as inflate_puzzle_state_no_arrays
+		util_simd_deflated_deflate_puzzle_state				as deflate_puzzle_state_current,
+		util_simd_inflated_inflate_puzzle_state				as inflate_puzzle_state_current,
+		// util_simd_inflated_inflate_puzzle_state_no_init		as inflate_puzzle_state_no_init,
+		// util_simd_inflated_inflate_puzzle_state_no_arrays	as inflate_puzzle_state_no_arrays
 	},
 	rand::prelude::*
 };
@@ -49,7 +49,7 @@ macro_rules! conversion_criterion {
 	};
 }
 
-conversion_criterion!(inflate, DeflatedPuzzleState, InflatedPuzzleState, inflate_puzzle_state_current, inflate_puzzle_state_no_arrays, inflate_puzzle_state_no_init);
+conversion_criterion!(inflate, DeflatedPuzzleState, InflatedPuzzleState, inflate_puzzle_state_current);
 conversion_criterion!(deflate, InflatedPuzzleState, DeflatedPuzzleState, deflate_puzzle_state_current);
 
 criterion_group!(convert_puzzle_state, inflate, deflate);

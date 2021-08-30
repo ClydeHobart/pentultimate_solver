@@ -15,6 +15,16 @@ use {
 
 mod camera;
 
+#[derive(Clone, Copy)]
+pub enum Key {
+	Key1,
+	Key2,
+	Key3,
+	Key4,
+	Key5,
+	Key6
+}
+
 pub struct UIPlugin;
 
 impl UIPlugin {

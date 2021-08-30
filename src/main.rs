@@ -18,7 +18,6 @@ use {
 		}
 	},
 	pentultimate_solver::{
-		prelude::*,
 		app,
 		math::polyhedra::{
 			Polyhedron,
@@ -30,12 +29,6 @@ use {
 
 fn init() -> () {
 	util::init_env_logger();
-}
-
-fn validate() -> Result<(), LogError> {
-	Data::validate_polyhedra()?;
-
-	Ok(())
 }
 
 fn _spawn_polyhedra_meshes(
@@ -118,7 +111,5 @@ fn _run_polyhedra_demo() -> () {
 
 fn main() -> () {
 	init();
-	log_result_err!(validate());
-	pentultimate_solver::puzzle::main();
-	// app::main();
+	app::main();
 }
