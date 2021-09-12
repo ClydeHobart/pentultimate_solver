@@ -131,6 +131,14 @@ impl Addr {
 			.. Self::default()
 		}
 	}
+
+	pub fn new(page_index: usize, line_index: usize, word_index: usize) -> Self {
+		Self {
+			page_index: page_index as i8,
+			line_index: line_index as i8,
+			word_index: word_index as i8
+		}
+	}
 }
 
 impl BitOr for Addr {
@@ -301,6 +309,21 @@ impl<T> FindWord<T> for Book<T>
 	}
 }
 
+pub trait GetWord<T> {
+	fn get_word(&self, addr: Addr) -> &Word<T>;
+	fn get_word_mut(&mut self, addr: Addr) -> &mut Word<T>;
+}
+
+impl<T> GetWord<T> for Book<T> {
+	fn get_word(&self, addr: Addr) -> &Word<T> {
+		&self[addr.page_index as usize][addr.line_index as usize][addr.word_index as usize]
+	}
+
+	fn get_word_mut(&mut self, addr: Addr) -> &mut Word<T> {
+		&mut self[addr.page_index as usize][addr.line_index as usize][addr.word_index as usize]
+	}
+}
+
 // A multi-tiered collection of transformations and associated data
 // Due to the alignment restrictions on Transformation, it wastes less space to store this as an SoA(oAoA) vs an A(oAoA)oS
 pub struct Library {
@@ -331,37 +354,37 @@ impl Library {
 
 		{
 			let (book_pack_data, orientation_data): (&mut BookPackData, &LongPage<OrientationData>) = (&mut transformation_library.book_pack_data, &transformation_library.orientation_data);
-	
+
 			{
 				let initial_pent_quat: Quat = icosidodecahedron_data.faces[PENTAGON_INDEX_OFFSET].quat;
 				let page_address: Addr = Addr::from_page(Type::Reorientation as usize);
-	
+
 				let mut page_pack_mut: PagePackMut = book_pack_data.get_page_pack_mut(Type::Reorientation as usize);
-	
+
 				crate::line_pack_iter_mut!(page_pack_mut, line_index, line_pack_mut, {
 					crate::word_pack_iter_mut!(line_pack_mut, word_index, word_pack_mut, {
 						let reorientation_quat: Quat = initial_pent_quat * orientation_data[line_index][word_index].quat.conjugate();
 						let (pos_array, rot_array): (&mut PuzzleStateComponent, &mut PuzzleStateComponent) = word_pack_mut.trfm.arrays_mut();
 
 						for piece_index in PIECE_RANGE {
-							let (pos, rot): (u32, u32) = icosidodecahedron_data.get_pos_and_rot(
+							let (pos, rot): (usize, usize) = icosidodecahedron_data.get_pos_and_rot(
 								&(reorientation_quat * icosidodecahedron_data.faces[piece_index].quat),
 								None // We could put a filter in here, but it'd be slower, and the quat math is precise enough that it's unnecessary here
 							);
-	
-							pos_array[piece_index] = pos;
-							rot_array[piece_index] = rot;
+
+							pos_array[piece_index] = pos as PieceStateComponent;
+							rot_array[piece_index] = rot as PieceStateComponent;
 						}
-	
+
 						*word_pack_mut.quat = reorientation_quat;
 						*word_pack_mut.mask = Mask::from_puzzle_states(&PuzzleState::SOLVED_STATE, word_pack_mut.trfm.as_ref());
 						*word_pack_mut.addr = Addr::default();
 					});
 				});
-	
+
 				let trfm_page:		&Page<Trfm>		= page_pack_mut.trfm;
 				let addr_page_mut:	&mut Page<Addr>	= page_pack_mut.addr;
-	
+
 				for (line_index, addr_line_mut) in addr_page_mut.iter_mut().enumerate() {
 					for (word_index, addr_word_mut) in addr_line_mut.iter_mut().enumerate() {
 						*addr_word_mut = trfm_page
@@ -373,36 +396,36 @@ impl Library {
 					}
 				}
 			}
-	
+
 			{
 				let mut page_pack_mut: PagePackMut = book_pack_data.get_page_pack_mut(Type::StandardRotation as usize);
-	
+
 				crate::line_pack_iter_mut!(page_pack_mut, line_index, line_pack_mut, {
 					let face_data: &FaceData = &icosidodecahedron_data.faces[line_index];
 					let mask: Mask = Mask::from_pentagon_index(line_index);
-	
+
 					crate::word_pack_iter_mut!(line_pack_mut, word_index, word_pack_mut, {
 						let rotation_quat: Quat = face_data.get_rotation_quat(word_index as u32);
-	
-						*word_pack_mut.mask = mask;
+						let mask: Mask = if word_index != 0 { mask } else { Mask(0_u32) };
 
 						let (pos_array, rot_array): (&mut PuzzleStateComponent, &mut PuzzleStateComponent) = word_pack_mut.trfm.arrays_mut();
-	
+
 						for piece_index in PIECE_RANGE {
-							if mask.affects_piece(piece_index) {
-								let (pos, rot): (u32, u32) = icosidodecahedron_data.get_pos_and_rot(
+							let (pos, rot): (usize, usize) = if mask.affects_piece(piece_index) {
+								icosidodecahedron_data.get_pos_and_rot(
 									&(rotation_quat * icosidodecahedron_data.faces[piece_index].quat),
 									None // We could put a filter in here, but it'd be slower, and the quat math should be precise enough that it's unnecessary here
-								);
-	
-								pos_array[piece_index] = pos;
-								rot_array[piece_index] = rot;
+								)
 							} else {
-								pos_array[piece_index] = piece_index as PieceStateComponent;
-								rot_array[piece_index] = 0 as PieceStateComponent;
-							}
+								(piece_index, 0)
+							};
+
+							pos_array[piece_index] = pos as PieceStateComponent;
+							rot_array[piece_index] = rot as PieceStateComponent;
 						}
-	
+
+						*word_pack_mut.quat = rotation_quat;
+						*word_pack_mut.mask = mask;
 						*word_pack_mut.addr = Addr::from((
 							Type::StandardRotation as usize,
 							line_index,

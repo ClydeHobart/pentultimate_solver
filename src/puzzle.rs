@@ -1,8 +1,7 @@
 use {
-	crate::app::prelude::*,
 	crate::{
 		prelude::*,
-		get_data,
+		app::prelude::*,
 		math::polyhedra::{
 			data::{
 				Data,
@@ -24,17 +23,23 @@ use {
 			},
 			Preferences
 		},
+		get_data,
 		strings::STRING_DATA
 	},
 	self::{
 		consts::*,
+		inflated::{
+			Animation,
+			PuzzleStateComponent
+		},
 		transformation::{
 			packs::*,
 			Addr,
 			Page,
 			Transformation,
 			Library as TransformationLibrary,
-			Type as TransformationType
+			Type as TransformationType,
+			GetWord
 		}
 	},
 	std::{
@@ -69,8 +74,8 @@ use {
 pub use {
 	deflated::PuzzleState as DeflatedPuzzleState,
 	inflated::{
-		PuzzleState as InflatedPuzzleState,
-		ExtendedPuzzleState
+		ExtendedPuzzleState,
+		PuzzleState as InflatedPuzzleState
 	},
 	transformation::{
 		TransformationPlugin,
@@ -97,7 +102,7 @@ pub mod consts {
 	pub const PENTAGON_INDEX_OFFSET:		usize			= Type::Pentagon.index_offset();				// 0
 	pub const TRIANGLE_INDEX_OFFSET:		usize			= Type::Triangle.index_offset();				// 12
 	pub const ROTATION_BIT_COUNT:			u32				= usize::BITS - (if PENTAGON_SIDE_COUNT > TRIANGLE_SIDE_COUNT { PENTAGON_SIDE_COUNT } else { TRIANGLE_SIDE_COUNT }).leading_zeros(); // 3
-	pub const ROTATION_BIT_MASK:			IPSC			= ((1 as IPSC) << ROTATION_BIT_COUNT) - 1;
+	pub const ROTATION_BIT_MASK:			IPSC			= ((1 as IPSC) << ROTATION_BIT_COUNT) - 1;		// 0b111
 	pub const PENTAGON_PIECE_COUNT_F32:		f32				= PENTAGON_PIECE_COUNT as f32;
 	pub const TRIANGLE_PIECE_COUNT_F32:		f32				= TRIANGLE_PIECE_COUNT as f32;
 	pub const PENTAGON_SIDE_COUNT_F32:		f32				= PENTAGON_SIDE_COUNT as f32;
@@ -628,39 +633,21 @@ impl PuzzlePlugin {
 		Ok(())
 	}
 
-	pub fn process_input(
+	pub fn run_app(
 		keyboard_input: Res<Input<KeyCode>>,
 		preferences: Res<Preferences>,
 		transformation_library: Res<TransformationLibraryRef>,
+		polyhedra_data_library: Res<PolyhedraDataLibrary>,
 		mut extended_puzzle_state: ResMut<ExtendedPuzzleState>,
-		mut queries: QuerySet<(Query<(&CameraComponent, &mut Transform)>, Query<(&PieceComponent, &mut Transform)>)>
+		mut queries: QuerySet<(Query<(&CameraComponent, &Transform)>, Query<(&PieceComponent, &mut Transform)>)>
 	) -> () {
 		let input_data: &InputData = &preferences.input;
-		// if extended_puzzle_state.animation
 
-		for input_index in 0_usize .. HALF_PENTAGON_PIECE_COUNT {
-			if keyboard_input.just_pressed(input_data.rotation_keys[input_index]) {
-				let (line_index, word_index): (usize, usize) = {
-					let mut rotations: isize = 1_isize;
+		if let Some(animation) = &extended_puzzle_state.animation {
+			let now: Instant = Instant::now();
+			let word_pack: WordPack = transformation_library.book_pack_data.get_word_pack(animation.addr);
 
-					if keyboard_input.pressed(input_data.rotate_twice) {
-						rotations += 1_isize;
-					}
-
-					if keyboard_input.pressed(input_data.counter_clockwise) {
-						rotations *= -1_isize;
-					}
-
-					(
-						if keyboard_input.pressed(input_data.alt_hemi) {
-							InflatedPuzzleState::invert_position(input_data.default_positions[input_index])
-						} else {
-							input_data.default_positions[input_index]
-						},
-						((rotations + PENTAGON_SIDE_COUNT as isize) % PENTAGON_SIDE_COUNT as isize) as usize
-					)
-				};
-				let word_pack: WordPack = transformation_library.book_pack_data.get_word_pack((TransformationType::StandardRotation as usize, line_index, word_index));
+			if animation.start + animation.duration <= now {
 				let next_puzzle_state: InflatedPuzzleState = &extended_puzzle_state.puzzle_state + word_pack.trfm;
 
 				for (piece_component, mut transform) in queries.q1_mut().iter_mut() {
@@ -672,6 +659,101 @@ impl PuzzlePlugin {
 				}
 
 				*extended_puzzle_state += word_pack.trfm;
+				extended_puzzle_state.animation = None;
+			} else {
+				let rotation: Quat = Quat::IDENTITY.short_slerp(*word_pack.quat, (now - animation.start).as_millis() as f32 / animation.duration.as_millis() as f32);
+				let puzzle_state: &InflatedPuzzleState = &extended_puzzle_state.puzzle_state;
+
+				for (piece_component, mut transform) in queries.q1_mut().iter_mut() {
+					let piece_index: usize = piece_component.index;
+
+					if word_pack.mask.affects_piece(extended_puzzle_state.puzzle_state.pos[piece_index] as usize) {
+						*transform = Transform::from_rotation(rotation * transformation_library.orientation_data[puzzle_state.pos[piece_index] as usize][puzzle_state.rot[piece_index] as usize].quat);
+					}
+				}
+
+				// A rotation is in progress, so don't process further input
+				return;
+			}
+		}
+
+		for input_index in 0_usize .. HALF_PENTAGON_PIECE_COUNT {
+			if keyboard_input.just_pressed(input_data.rotation_keys[input_index]) {
+				let reoriented_positions: &PuzzleStateComponent = {
+					let (camera_line_index, camera_word_index): (usize, usize) = queries
+						.q0()
+						.iter()
+						.next()
+						.map_or(
+							(0_usize, 0_usize),
+							|(_camera_component, transform): (&CameraComponent, &Transform)| -> (usize, usize) {
+								polyhedra_data_library.icosidodecahedron.get_pos_and_rot(
+									&Quat::from_rotation_mat4(&transform.compute_matrix()),
+									Some(Box::new(|face_data: &FaceData| -> bool {
+										face_data.get_size() == PENTAGON_SIDE_COUNT
+									}))
+								)
+							}
+						);
+
+					trace_expr!(camera_line_index, camera_word_index);
+
+					&transformation_library
+						.book_pack_data
+						.trfm
+						.get_word(
+							*transformation_library
+								.book_pack_data
+								.addr
+								.get_word(Addr::new(
+									TransformationType::Reorientation as usize,
+									camera_line_index,
+									camera_word_index
+								))
+						)
+						.as_ref()
+						.pos
+				};
+				let mut cycles: u32 = 1_u32;
+				let addr: Addr = {
+					let mut rotations: i32 = 1_i32;
+
+					if keyboard_input.pressed(input_data.rotate_twice) {
+						rotations += 1_i32;
+						cycles += 1_u32;
+					}
+
+					if keyboard_input.pressed(input_data.counter_clockwise) {
+						rotations *= -1_i32;
+					}
+
+					Addr::new(
+						TransformationType::StandardRotation as usize,
+						reoriented_positions[
+							if keyboard_input.pressed(input_data.alt_hemi) {
+								InflatedPuzzleState::invert_position(input_data.default_positions[input_index])
+							} else {
+								input_data.default_positions[input_index]
+							}
+						] as usize,
+						(rotations + PENTAGON_SIDE_COUNT as i32) as usize % PENTAGON_SIDE_COUNT
+					)
+				};
+
+				extended_puzzle_state.animation = Some(Animation {
+					addr,
+					start: Instant::now(),
+					duration: Duration::from_millis((
+						if preferences.speed.uniform_transformation_duration {
+							preferences.speed.rotation_millis
+						} else { 
+							cycles * preferences.speed.rotation_millis
+						}
+					) as u64)
+				});
+
+				// Don't accept multiple input actions on the same frame
+				return;
 			}
 		}
 	}
@@ -686,7 +768,8 @@ impl Plugin for PuzzlePlugin {
 				.label(STRING_DATA.labels.puzzle.as_ref())
 				.after(STRING_DATA.labels.piece_library.as_ref())
 				.after(STRING_DATA.labels.color_data_typed.as_ref())
-			);
+			)
+			.add_system(Self::run_app.system());
 	}
 }
 

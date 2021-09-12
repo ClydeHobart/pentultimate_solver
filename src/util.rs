@@ -7,6 +7,7 @@ pub mod prelude {
 	pub use super::{
 		log::prelude::*,
 		FromAlt,
+		ShortSlerp,
 		ToOption,
 		ToResult,
 		from_ron,
@@ -136,6 +137,20 @@ pub fn from_ron_or_default<T>(file_name: &str) -> T
 
 pub fn exit_app(mut exit: EventWriter<AppExit>) -> () {
 	exit.send(AppExit);
+}
+
+pub trait ShortSlerp where Self: Sized {
+	fn short_slerp(self, end: Self, s: f32) -> Self;
+}
+
+impl ShortSlerp for bevy::math::Quat {
+	fn short_slerp(self, end: Self, s: f32) -> Self {
+		if self.dot(end) >= 0.0_f32 {
+			self.slerp(end, s)
+		} else {
+			(-self).slerp(end, s)
+		}
+	}
 }
 
 // Macro adapted from https://stackoverflow.com/questions/66291962/how-do-i-use-macro-rules-to-define-a-struct-with-optional-cfg

@@ -3,15 +3,20 @@
 	m: {
 		"pentultimate_solver": (
 			f: Debug,
-			m: {}
-		),
-		"pentultimate_solver::math::polyhedra::data::generate_faces": (
-			f: Warn,
-			m: {}
-		),
-		"pentultimate_solver::ui": (
-			f: Trace,
-			m: {}
+			m: {
+				"math::polyhedra::data::generate_faces": (
+					f: Warn,
+					m: {}
+				),
+				"puzzle": (
+					f: Trace,
+					m: {}
+				),
+				"ui": (
+					f: Trace,
+					m: {}
+				),
+			}
 		),
 	},
 )

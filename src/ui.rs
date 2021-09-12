@@ -29,10 +29,6 @@ impl UIPlugin {
 	fn run_app(
 		time: Res<Time>,
 		mouse_button_input: Res<Input<MouseButton>>,
-		keyboard_input: Res<Input<KeyCode>>,
-		preferences: Res<Preferences>,
-		transformation_library: Res<TransformationLibraryRef>,
-		extended_puzzle_state: ResMut<ExtendedPuzzleState>,
 		mut mouse_motion_events: EventReader<MouseMotion>,
 		mut mouse_wheel_events: EventReader<MouseWheel>,
 		mut queries: QuerySet<(Query<(&CameraComponent, &mut Transform)>, Query<(&PieceComponent, &mut Transform)>)>
@@ -74,8 +70,6 @@ impl UIPlugin {
 				}
 			}
 		}
-
-		PuzzlePlugin::process_input(keyboard_input, preferences, transformation_library, extended_puzzle_state, queries);
 	}
 }
 

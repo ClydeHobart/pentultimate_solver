@@ -90,11 +90,11 @@ impl FaceData {
 
 	pub fn get_size(&self) -> usize { self.range.end - self.range.start }
 
-	pub fn get_rotation(&self, quat: &Quat) -> u32 {
-		let size: u32 = self.get_size() as u32;
+	pub fn get_rotation(&self, quat: &Quat) -> usize {
+		let size: usize = self.get_size();
 		let collapsed_result_up: Vec3 = Mat4::look_at_rh(Vec3::ZERO, -self.norm, self.norm.cross(self.quat * Vec3::Y)).transform_vector3(*quat * Vec3::Y);
 
-		((TAU - collapsed_result_up.y.atan2(collapsed_result_up.x)) * size as f32 / TAU).round() as u32 % size
+		((TAU - collapsed_result_up.y.atan2(collapsed_result_up.x)) * size as f32 / TAU).round() as usize % size
 	}
 
 	pub fn get_rotation_quat(&self, rotation: u32) -> Quat {
@@ -191,10 +191,10 @@ impl Data {
 			.unwrap()
 	}
 
-	pub fn get_pos_and_rot(&self, quat: &Quat, filter: OptionalPredicate<FaceData>) -> (u32, u32) {
+	pub fn get_pos_and_rot(&self, quat: &Quat, filter: OptionalPredicate<FaceData>) -> (usize, usize) {
 		let pos: usize = self.get_closest_face_index(&(*quat * Vec3::Z), filter);
 
-		(pos as u32, self.faces[pos].get_rotation(quat))
+		(pos, self.faces[pos].get_rotation(quat))
 	}
 
 	pub fn validate_polyhedra() -> LogErrorResult {
