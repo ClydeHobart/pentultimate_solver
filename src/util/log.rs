@@ -21,52 +21,15 @@ use {
 	},
 	core::fmt,
 	std::sync::Once,
-	::log::Level as LogLevel,
+	::log::{
+		Level,
+		LevelFilter
+	},
 	serde::Deserialize
 };
 
-#[derive(Deserialize, Debug)]
-enum LevelFilter { // A facsimile definition of log::LevelFilter, for trait derivation
-	Off,
-	Error,
-	Warn,
-	Info,
-	Debug,
-	Trace,
-}
-
-impl fmt::Display for LevelFilter {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		fmt::Debug::fmt(self, f)
-	}
-}
-
-#[derive(Debug)]
-#[repr(u8)]
-enum Level { // A facsimile definition of log::Level, for trait derivation
-	Error,
-	Warn,
-	Info,
-	Debug,
-	Trace,
-}
-
-impl From<u8> for Level {
-	fn from(val: u8) -> Self {
-		unsafe { std::mem::transmute(crate::clamp!(val, 0, Level::Trace as u8)) }
-	}
-}
-
-impl From<LogLevel> for Level {
-	fn from(level: LogLevel) -> Self {
-		match level {
-			LogLevel::Error	=> Level::Error,
-			LogLevel::Warn	=> Level::Warn,
-			LogLevel::Info	=> Level::Info,
-			LogLevel::Debug	=> Level::Debug,
-			LogLevel::Trace	=> Level::Trace
-		}
-	}
+fn usize_to_level(val: usize) -> Level {
+	unsafe { std::mem::transmute(crate::clamp!(val, Level::Error as usize, Level::Trace as usize)) }
 }
 
 #[derive(Deserialize, Debug)]
@@ -127,18 +90,18 @@ impl LogError {
 	}
 
 	fn get_message(&self) -> String {
-		for level_as_u8 in Level::Error as u8 ..= Level::Trace as u8 {
-			if !self[Level::from(level_as_u8)].is_empty() {
-				let mut message: String = format!("[{:?} {}]: {}", Level::from(level_as_u8), self.target, self[Level::from(level_as_u8)]);
+		for level_as_usize in Level::Error as usize ..= Level::Trace as usize {
+			if !self[usize_to_level(level_as_usize)].is_empty() {
+				let mut message: String = format!("[{:?} {}]: {}", usize_to_level(level_as_usize), self.target, self[usize_to_level(level_as_usize)]);
 				let mut other_messages: String = String::new();
 
-				for other_level_as_u8 in level_as_u8 + 1 ..= Level::Trace as u8 {
-					if !self[Level::from(other_level_as_u8)].is_empty() {
+				for other_level_as_usize in level_as_usize + 1 ..= Level::Trace as usize {
+					if !self[usize_to_level(other_level_as_usize)].is_empty() {
 						let is_first_message: bool = other_messages.is_empty();
 
 						other_messages.push_str(format!("{}{:?}",
 							if is_first_message { "" } else { ", " },
-							Level::from(other_level_as_u8)
+							usize_to_level(other_level_as_usize)
 						).as_str());
 					}
 				}
@@ -178,20 +141,6 @@ impl std::ops::IndexMut<Level> for LogError {
 			Level::Debug	=> &mut self.debug,
 			Level::Trace	=> &mut self.trace,
 		}
-	}
-}
-
-impl std::ops::Index<LogLevel> for LogError {
-	type Output = String;
-
-	fn index(&self, level: LogLevel) -> &Self::Output {
-		&self[Level::from(level)]
-	}
-}
-
-impl std::ops::IndexMut<LogLevel> for LogError {
-	fn index_mut(&mut self, level: LogLevel) -> &mut Self::Output {
-		&mut self[Level::from(level)]
 	}
 }
 

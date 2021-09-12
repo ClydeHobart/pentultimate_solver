@@ -1,9 +1,8 @@
 (
 	files: (
-		color_data_file:			"colorData.ron",
-		light_and_camera_data_file:	"lightAndCameraData.ron",
-		piece_library_data_file:	"pieceLibraryData.ron",
-		rust_log:					"RUST_LOG.ron"
+		preferences:				"preferences.ron",
+		piece_library_data:			"pieceLibraryData.ron",
+		rust_log:					"RUST_LOG.ron",
 	),
 	labels: (
 		color_data_typed_label:		"ColorDataTyped::startup_app()",

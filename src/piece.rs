@@ -2,7 +2,6 @@ use {
 	crate::{
 		prelude::*,
 		get_data,
-		colors::MatHdl,
 		math::{
 			*,
 			polyhedra::{
@@ -15,6 +14,7 @@ use {
 				properties::ICOSIDODECAHEDRON
 			}
 		},
+		preferences::colors::MatHdl,
 		strings::STRING_DATA
 	},
 	std::{
@@ -277,8 +277,8 @@ impl From<&Mesh> for BevyMesh {
 }
 
 pub struct PieceComponent {
-	_index:			usize,
-	_piece_type:	Type
+	pub index:		usize,
+	pub piece_type:	Type
 }
 
 struct Piece {
@@ -528,8 +528,8 @@ impl Piece {
 			commands
 				.spawn_bundle((
 					PieceComponent {
-						_index: index,
-						_piece_type: piece_type
+						index,
+						piece_type
 					},
 					// Transform::identity(),
 					Transform::from_matrix(Mat4::from_quat(faces[index].quat)),

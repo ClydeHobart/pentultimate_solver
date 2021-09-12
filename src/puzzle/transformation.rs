@@ -1,8 +1,7 @@
-mod packs;
+pub mod packs;
 
 use {
 	crate::{
-		prelude::*,
 		math::polyhedra::{
 			data::{
 				Data,
@@ -15,14 +14,16 @@ use {
 		consts::*,
 		inflated::{
 			PieceStateComponent,
-			PuzzleStateConsts,
-			PuzzleState
+			PuzzleState,
+			PuzzleStateComponent,
+			PuzzleStateConsts
 		}
 	},
 	bevy::prelude::*,
 	std::ops::{
+		BitOr,
 		Deref,
-		BitOr
+		Neg
 	}
 };
 
@@ -100,6 +101,7 @@ impl AddrConsts for Addr {
 }
 
 impl Addr {
+	#[cfg(test)]
 	pub fn is_valid(&self) -> bool {
 		self.page_index > Self::INVALID_INDEX &&
 		self.line_index > Self::INVALID_INDEX &&
@@ -163,17 +165,45 @@ impl From<(usize, usize, usize)> for Addr {
 	}
 }
 
-pub struct KeyInput {
-	alt:	bool,
-	key:	u8
-}
-
 pub struct OrientationData {
-	quat:				Quat,
-	key_inputs:			[KeyInput; PIECE_COUNT]
+	pub quat: Quat
 }
 
-pub type Transformation = PuzzleState;
+#[derive(Debug, Default, PartialEq)]
+pub struct Transformation(pub PuzzleState);
+
+impl Transformation {
+	pub fn arrays(&self) -> (&PuzzleStateComponent, &PuzzleStateComponent) {
+		self.0.arrays()
+	}
+
+	pub fn arrays_mut(&mut self) -> (&mut PuzzleStateComponent, &mut PuzzleStateComponent) {
+		self.0.arrays_mut()
+	}
+
+	pub fn as_ref(&self) -> &PuzzleState {
+		&self.0
+	}
+
+	pub fn as_ref_mut(&mut self) -> &mut PuzzleState {
+		&mut self.0
+	}
+
+	pub fn is_valid(&self) -> bool {
+		self.0.is_valid()
+	}
+}
+
+impl<'a> Neg for &'a Transformation {
+	type Output = Transformation;
+
+	fn neg(self: &'a Transformation) -> Self::Output {
+		let prev_state: PuzzleState = PuzzleState::SOLVED_STATE;
+		let curr_state: PuzzleState = &prev_state + self;
+
+		&curr_state - &prev_state
+	}
+}
 
 type Trfm = Transformation;
 
@@ -188,15 +218,17 @@ The TransformationPage means different things depending on its corresponding Typ
 */
 
 pub trait LibraryConsts {
-	const WORD_COUNT: usize;
-	const LINE_COUNT: usize;
-	const PAGE_COUNT: usize;
+	const WORD_COUNT:		usize;
+	const LINE_COUNT:		usize;
+	const LONG_LINE_COUNT:	usize;
+	const PAGE_COUNT:		usize;
 }
 
-pub type Word<T> = T;
-pub type Line<T> = [Word<T>; Library::WORD_COUNT];
-pub type Page<T> = [Line<T>; Library::LINE_COUNT];
-pub type Book<T> = [Page<T>; Library::PAGE_COUNT];
+pub type Word<T>		= T;
+pub type Line<T>		= [Word<T>; Library::WORD_COUNT];
+pub type Page<T>		= [Line<T>; Library::LINE_COUNT];
+pub type LongPage<T>	= [Line<T>; Library::LONG_LINE_COUNT];
+pub type Book<T>		= [Page<T>; Library::PAGE_COUNT];
 
 pub trait FindWord<T>
 	where
@@ -272,128 +304,126 @@ impl<T> FindWord<T> for Book<T>
 // A multi-tiered collection of transformations and associated data
 // Due to the alignment restrictions on Transformation, it wastes less space to store this as an SoA(oAoA) vs an A(oAoA)oS
 pub struct Library {
-	pub trfms:				Book<Trfm>,
-	pub quats:				Book<Quat>,
-	pub masks:				Book<Mask>,
-	pub addrs:				Book<Addr>,
-	pub orientation_data:	Page<OrientationData>
+	pub book_pack_data:		BookPackData,
+	pub orientation_data:	LongPage<OrientationData>
 }
 
 impl LibraryConsts for Library {
-	const WORD_COUNT: usize = PENTAGON_SIDE_COUNT;
-	const LINE_COUNT: usize = PENTAGON_PIECE_COUNT;
-	const PAGE_COUNT: usize = Type::Count as usize;
+	const WORD_COUNT:		usize = PENTAGON_SIDE_COUNT;
+	const LINE_COUNT:		usize = PENTAGON_PIECE_COUNT;
+	const LONG_LINE_COUNT:	usize = PIECE_COUNT;
+	const PAGE_COUNT:		usize = Type::Count as usize;
 }
 
 impl Library {
-	fn new() -> LogErrorResult<Self> {
-		let icosidodecahedron_data: &Data = option_to_result!(Data::get(Polyhedron::Icosidodecahedron))?;
+	fn new() -> Self {
+		let icosidodecahedron_data: &Data = Data::get(Polyhedron::Icosidodecahedron).unwrap();
 
 		let mut transformation_library: Library = unsafe { std::mem::MaybeUninit::<Library>::zeroed().assume_init() };
 
-		for (line_index, orientation_data_line) in transformation_library.orientation_data.iter_mut().enumerate() {
-			let face_data: &FaceData = &icosidodecahedron_data.faces[line_index];
+		for (long_line_index, orientation_data_long_line) in transformation_library.orientation_data.iter_mut().enumerate() {
+			let face_data: &FaceData = &icosidodecahedron_data.faces[long_line_index];
 
-			for (word_index, orientation_data_word) in orientation_data_line.iter_mut().enumerate() {
+			for (word_index, orientation_data_word) in orientation_data_long_line.iter_mut().enumerate() {
 				orientation_data_word.quat = face_data.get_rotated_quat(word_index as u32);
 			}
 		}
 
-		let mut book_pack_mut: BookPackMut = BookPackMut {
-			trfm: &mut transformation_library.trfms,
-			quat: &mut transformation_library.quats,
-			mask: &mut transformation_library.masks,
-			addr: &mut transformation_library.addrs
-		};
-
 		{
-			let initial_pent_quat: Quat = icosidodecahedron_data.faces[PENTAGON_INDEX_OFFSET].quat;
-			let page_address: Addr = Addr::from_page(Type::Reorientation as usize);
+			let (book_pack_data, orientation_data): (&mut BookPackData, &LongPage<OrientationData>) = (&mut transformation_library.book_pack_data, &transformation_library.orientation_data);
+	
+			{
+				let initial_pent_quat: Quat = icosidodecahedron_data.faces[PENTAGON_INDEX_OFFSET].quat;
+				let page_address: Addr = Addr::from_page(Type::Reorientation as usize);
+	
+				let mut page_pack_mut: PagePackMut = book_pack_data.get_page_pack_mut(Type::Reorientation as usize);
+	
+				crate::line_pack_iter_mut!(page_pack_mut, line_index, line_pack_mut, {
+					crate::word_pack_iter_mut!(line_pack_mut, word_index, word_pack_mut, {
+						let reorientation_quat: Quat = initial_pent_quat * orientation_data[line_index][word_index].quat.conjugate();
+						let (pos_array, rot_array): (&mut PuzzleStateComponent, &mut PuzzleStateComponent) = word_pack_mut.trfm.arrays_mut();
 
-			let mut page_pack_mut: PagePackMut = book_pack_mut.get_page_pack_mut(Type::Reorientation as usize);
-
-			crate::line_pack_iter_mut!(page_pack_mut).enumerate().map(|(line_index, line_pack_mut)| -> () {
-				crate::word_pack_iter_mut!(line_pack_mut).enumerate().map(|(word_index, word_pack_mut)| -> () {
-					let reorientation_quat: Quat = initial_pent_quat * transformation_library.orientation_data[line_index][word_index].quat.conjugate();
-
-					for piece_index in PIECE_RANGE {
-						let (pos, rot): (u32, u32) = icosidodecahedron_data.get_pos_and_rot(
-							&(reorientation_quat * icosidodecahedron_data.faces[piece_index].quat),
-							None // We could put a filter in here, but it'd be slower, and the quat math is precise enough that it's unnecessary here
-						);
-
-						word_pack_mut.trfm.pos[piece_index] = pos;
-						word_pack_mut.trfm.rot[piece_index] = rot;
-					}
-
-					*word_pack_mut.quat = reorientation_quat;
-					*word_pack_mut.mask = Mask::from_puzzle_states(&PuzzleState::SOLVED_STATE, word_pack_mut.trfm);
-					*word_pack_mut.addr = Addr::default();
-				});
-			});
-
-			let trfm_page:		&Page<Trfm>		= page_pack_mut.trfm;
-			let addr_page_mut:	&mut Page<Addr>	= page_pack_mut.addr;
-
-			for (line_index, addr_line_mut) in addr_page_mut.iter_mut().enumerate() {
-				for (word_index, addr_word_mut) in addr_line_mut.iter_mut().enumerate() {
-					*addr_word_mut = trfm_page
-					.find_word(&(-&trfm_page[line_index][word_index]))
-					.map(|address: Addr| -> Addr {
-						address | page_address
-					})
-					.unwrap_or_default();
-				}
-			}
-		}
-
-		{
-			let mut page_pack_mut: PagePackMut = book_pack_mut.get_page_pack_mut(Type::StandardRotation as usize);
-
-			for (line_index, line_pack_mut) in crate::line_pack_iter_mut!(page_pack_mut).enumerate() {
-				let face_data: &FaceData = &icosidodecahedron_data.faces[line_index];
-				let mask: Mask = Mask::from_pentagon_index(line_index);
-
-				for (word_index, word_pack_mut) in crate::word_pack_iter_mut!(line_pack_mut).enumerate() {
-					let rotation_quat: Quat = face_data.get_rotation_quat(word_index as u32);
-
-					*word_pack_mut.mask = mask;
-
-					for piece_index in PIECE_RANGE {
-						if mask.affects_piece(piece_index) {
+						for piece_index in PIECE_RANGE {
 							let (pos, rot): (u32, u32) = icosidodecahedron_data.get_pos_and_rot(
-								&(rotation_quat * icosidodecahedron_data.faces[piece_index].quat),
-								None // We could put a filter in here, but it'd be slower, and the quat math should be precise enough that it's unnecessary here
+								&(reorientation_quat * icosidodecahedron_data.faces[piece_index].quat),
+								None // We could put a filter in here, but it'd be slower, and the quat math is precise enough that it's unnecessary here
 							);
-
-							word_pack_mut.trfm.pos[piece_index] = pos;
-							word_pack_mut.trfm.rot[piece_index] = rot;
-						} else {
-							word_pack_mut.trfm.pos[piece_index] = piece_index as PieceStateComponent;
-							word_pack_mut.trfm.rot[piece_index] = 0 as PieceStateComponent;
+	
+							pos_array[piece_index] = pos;
+							rot_array[piece_index] = rot;
 						}
+	
+						*word_pack_mut.quat = reorientation_quat;
+						*word_pack_mut.mask = Mask::from_puzzle_states(&PuzzleState::SOLVED_STATE, word_pack_mut.trfm.as_ref());
+						*word_pack_mut.addr = Addr::default();
+					});
+				});
+	
+				let trfm_page:		&Page<Trfm>		= page_pack_mut.trfm;
+				let addr_page_mut:	&mut Page<Addr>	= page_pack_mut.addr;
+	
+				for (line_index, addr_line_mut) in addr_page_mut.iter_mut().enumerate() {
+					for (word_index, addr_word_mut) in addr_line_mut.iter_mut().enumerate() {
+						*addr_word_mut = trfm_page
+							.find_word(&(-&trfm_page[line_index][word_index]))
+							.map(|address: Addr| -> Addr {
+								address | page_address
+							})
+							.unwrap_or_default();
 					}
-
-					*word_pack_mut.addr = Addr::from((
-						Type::StandardRotation as usize,
-						line_index,
-						(Library::WORD_COUNT - word_index) % Library::WORD_COUNT
-					));
 				}
+			}
+	
+			{
+				let mut page_pack_mut: PagePackMut = book_pack_data.get_page_pack_mut(Type::StandardRotation as usize);
+	
+				crate::line_pack_iter_mut!(page_pack_mut, line_index, line_pack_mut, {
+					let face_data: &FaceData = &icosidodecahedron_data.faces[line_index];
+					let mask: Mask = Mask::from_pentagon_index(line_index);
+	
+					crate::word_pack_iter_mut!(line_pack_mut, word_index, word_pack_mut, {
+						let rotation_quat: Quat = face_data.get_rotation_quat(word_index as u32);
+	
+						*word_pack_mut.mask = mask;
+
+						let (pos_array, rot_array): (&mut PuzzleStateComponent, &mut PuzzleStateComponent) = word_pack_mut.trfm.arrays_mut();
+	
+						for piece_index in PIECE_RANGE {
+							if mask.affects_piece(piece_index) {
+								let (pos, rot): (u32, u32) = icosidodecahedron_data.get_pos_and_rot(
+									&(rotation_quat * icosidodecahedron_data.faces[piece_index].quat),
+									None // We could put a filter in here, but it'd be slower, and the quat math should be precise enough that it's unnecessary here
+								);
+	
+								pos_array[piece_index] = pos;
+								rot_array[piece_index] = rot;
+							} else {
+								pos_array[piece_index] = piece_index as PieceStateComponent;
+								rot_array[piece_index] = 0 as PieceStateComponent;
+							}
+						}
+	
+						*word_pack_mut.addr = Addr::from((
+							Type::StandardRotation as usize,
+							line_index,
+							(Library::WORD_COUNT - word_index) % Library::WORD_COUNT
+						));
+					});
+				});
 			}
 		}
 
-		Ok(transformation_library)
+		transformation_library
 	}
 
-	pub fn get() -> Option<&'static Self> { TRANSFOMATION_LIBRARY.as_ref() }
+	pub fn get() -> &'static Self { &TRANSFOMATION_LIBRARY }
 }
 
 pub struct LibraryRef(&'static Library);
 
 impl Default for LibraryRef {
 	fn default() -> Self {
-		LibraryRef(Library::get().unwrap())
+		LibraryRef(Library::get())
 	}
 }
 
@@ -410,18 +440,19 @@ pub struct TransformationPlugin;
 
 impl Plugin for TransformationPlugin {
 	fn build(&self, app: &mut AppBuilder) -> () {
-		log_option_none!(Library::get());
-
 		app.insert_resource::<LibraryRef>(LibraryRef::default());
 	}
 }
 
 #[cfg(test)]
 mod tests {
-	use super::*;
+	use {
+		crate::prelude::*,
+		super::*
+	};
 
 	fn test_validity(transformation_library: &Library) -> () {
-		let book_pack: BookPack = transformation_library.get_book_pack(());
+		let book_pack: BookPack = transformation_library.book_pack_data.get_book_pack(());
 
 		for (page_index, page_pack) in crate::page_pack_iter!(book_pack).enumerate()
 		{
@@ -448,8 +479,8 @@ mod tests {
 	}
 
 	fn test_reorientations(transformation_library: &Library) -> () {
-		let page_pack: PagePack = transformation_library.get_page_pack(Type::Reorientation as usize);
-		let standard_rotation_page: &Page<Transformation> = &transformation_library.trfms[Type::StandardRotation as usize];
+		let page_pack: PagePack = transformation_library.book_pack_data.get_page_pack(Type::Reorientation as usize);
+		let standard_rotation_page: &Page<Transformation> = &transformation_library.book_pack_data.trfm[Type::StandardRotation as usize];
 		let reorientation_tests: [Vec<(usize, usize)>; PENTAGON_PIECE_COUNT] = from_ron::<[Vec<(usize, usize)>; PENTAGON_PIECE_COUNT]>(STRING_DATA.tests.reorientation_tests.as_ref()).to_option().unwrap();
 
 		for (line_index, line_pack) in crate::line_pack_iter!(page_pack).enumerate() {
@@ -554,12 +585,12 @@ mod tests {
 	}
 
 	fn test_standard_rotations(transformation_library: &Library) -> () {
-		let page_pack: PagePack = transformation_library.get_page_pack(Type::StandardRotation as usize);
+		let page_pack: PagePack = transformation_library.book_pack_data.get_page_pack(Type::StandardRotation as usize);
 
 		for (line_index, line_pack) in crate::line_pack_iter!(page_pack).enumerate() {
 			for (word_index, word_pack) in crate::word_pack_iter!(line_pack).enumerate() {
 				let trfm:						&Trfm				= &word_pack.trfm;
-				let inv_trfm:					&Trfm				= &transformation_library.get_word_pack(*word_pack.addr).trfm;
+				let inv_trfm:					&Trfm				= &transformation_library.book_pack_data.get_word_pack(*word_pack.addr).trfm;
 
 				let mut curr_puzzle_state:		PuzzleState			= PuzzleState::SOLVED_STATE;
 				let mut curr_puzzle_state_alt:	PuzzleState			= PuzzleState::SOLVED_STATE;
@@ -610,7 +641,7 @@ mod tests {
 	fn test_transformation_library() -> () {
 		init_env_logger();
 
-		let transformation_library: &Library = Library::get().unwrap();
+		let transformation_library: &Library = Library::get();
 
 		test_validity(transformation_library);
 
@@ -622,5 +653,5 @@ mod tests {
 }
 
 lazy_static!{
-	static ref TRANSFOMATION_LIBRARY: Option<Library> = Library::new().to_option();
+	static ref TRANSFOMATION_LIBRARY: Library = Library::new();
 }

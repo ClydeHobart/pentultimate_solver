@@ -1,14 +1,8 @@
-mod transformation;
-
 use {
+	crate::app::prelude::*,
 	crate::{
 		prelude::*,
 		get_data,
-		colors::{
-			ColorDataWithMat,
-			ColorData,
-			MatHdl
-		},
 		math::polyhedra::{
 			data::{
 				Data,
@@ -21,14 +15,22 @@ use {
 			PiecePair,
 			Type
 		},
+		preferences::{
+			colors::{
+				traits::*,
+				ColorDataWithMat,
+				ColorData,
+				MatHdl
+			},
+			Preferences
+		},
 		strings::STRING_DATA
 	},
 	self::{
-		consts::{
-			PENTAGON_SIDE_COUNT_F32,
-			PIECE_COUNT
-		},
+		consts::*,
 		transformation::{
+			packs::*,
+			Addr,
 			Page,
 			Transformation,
 			Library as TransformationLibrary,
@@ -49,8 +51,11 @@ use {
 		ops::{
 			Add,
 			AddAssign,
-			Neg,
 			Sub
+		},
+		time::{
+			Duration,
+			Instant
 		}
 	},
 	bevy::prelude::*,
@@ -63,11 +68,19 @@ use {
 
 pub use {
 	deflated::PuzzleState as DeflatedPuzzleState,
-	inflated::PuzzleState as InflatedPuzzleState,
-	transformation::TransformationPlugin
+	inflated::{
+		PuzzleState as InflatedPuzzleState,
+		ExtendedPuzzleState
+	},
+	transformation::{
+		TransformationPlugin,
+		LibraryRef as TransformationLibraryRef
+	}
 };
 
-mod consts {
+mod transformation;
+
+pub mod consts {
 	use {
 		super::{
 			inflated::PieceStateComponent as IPSC,
@@ -76,32 +89,30 @@ mod consts {
 		std::ops::Range
 	};
 
-	pub const PENTAGON_PIECE_COUNT:		usize			= Type::Pentagon.instance_count();				// 12
-	pub const TRIANGLE_PIECE_COUNT:		usize			= Type::Triangle.instance_count();				// 20
-	pub const PIECE_COUNT:				usize			= PENTAGON_PIECE_COUNT + TRIANGLE_PIECE_COUNT;	// 32
-	pub const PENTAGON_SIDE_COUNT:		usize			= Type::Pentagon.side_count();					// 5
-	pub const TRIANGLE_SIDE_COUNT:		usize			= Type::Triangle.side_count();					// 3
-	pub const PENTAGON_INDEX_OFFSET:	usize			= Type::Pentagon.index_offset();				// 0
-	pub const TRIANGLE_INDEX_OFFSET:	usize			= Type::Triangle.index_offset();				// 12
-	pub const ROTATION_BIT_COUNT:		u32				= usize::BITS - (if PENTAGON_SIDE_COUNT > TRIANGLE_SIDE_COUNT { PENTAGON_SIDE_COUNT } else { TRIANGLE_SIDE_COUNT }).leading_zeros(); // 3
-	pub const ROTATION_BIT_MASK:		IPSC			= ((1 as IPSC) << ROTATION_BIT_COUNT) - 1;
-	pub const PENTAGON_PIECE_COUNT_F32:	f32				= PENTAGON_PIECE_COUNT as f32;
-	pub const TRIANGLE_PIECE_COUNT_F32:	f32				= TRIANGLE_PIECE_COUNT as f32;
-	pub const PENTAGON_SIDE_COUNT_F32:	f32				= PENTAGON_SIDE_COUNT as f32;
-	pub const TRIANGLE_SIDE_COUNT_F32:	f32				= TRIANGLE_SIDE_COUNT as f32;
-	pub const PENTAGON_SIDE_COUNT_IPSC:	IPSC			= PENTAGON_SIDE_COUNT as IPSC;
-	pub const TRIANGLE_SIDE_COUNT_IPSC:	IPSC			= TRIANGLE_SIDE_COUNT as IPSC;
-	pub const PENTAGON_PIECE_RANGE:		Range<usize>	= PENTAGON_INDEX_OFFSET .. PENTAGON_INDEX_OFFSET + PENTAGON_PIECE_COUNT;
-	pub const TRIANGLE_PIECE_RANGE:		Range<usize>	= TRIANGLE_INDEX_OFFSET .. TRIANGLE_INDEX_OFFSET + TRIANGLE_PIECE_COUNT;
-	pub const PIECE_RANGE:				Range<usize>	= 0_usize .. PIECE_COUNT;
+	pub const PENTAGON_PIECE_COUNT:			usize			= Type::Pentagon.instance_count();				// 12
+	pub const TRIANGLE_PIECE_COUNT:			usize			= Type::Triangle.instance_count();				// 20
+	pub const PIECE_COUNT:					usize			= PENTAGON_PIECE_COUNT + TRIANGLE_PIECE_COUNT;	// 32
+	pub const PENTAGON_SIDE_COUNT:			usize			= Type::Pentagon.side_count();					// 5
+	pub const TRIANGLE_SIDE_COUNT:			usize			= Type::Triangle.side_count();					// 3
+	pub const PENTAGON_INDEX_OFFSET:		usize			= Type::Pentagon.index_offset();				// 0
+	pub const TRIANGLE_INDEX_OFFSET:		usize			= Type::Triangle.index_offset();				// 12
+	pub const ROTATION_BIT_COUNT:			u32				= usize::BITS - (if PENTAGON_SIDE_COUNT > TRIANGLE_SIDE_COUNT { PENTAGON_SIDE_COUNT } else { TRIANGLE_SIDE_COUNT }).leading_zeros(); // 3
+	pub const ROTATION_BIT_MASK:			IPSC			= ((1 as IPSC) << ROTATION_BIT_COUNT) - 1;
+	pub const PENTAGON_PIECE_COUNT_F32:		f32				= PENTAGON_PIECE_COUNT as f32;
+	pub const TRIANGLE_PIECE_COUNT_F32:		f32				= TRIANGLE_PIECE_COUNT as f32;
+	pub const PENTAGON_SIDE_COUNT_F32:		f32				= PENTAGON_SIDE_COUNT as f32;
+	pub const TRIANGLE_SIDE_COUNT_F32:		f32				= TRIANGLE_SIDE_COUNT as f32;
+	pub const PENTAGON_SIDE_COUNT_IPSC:		IPSC			= PENTAGON_SIDE_COUNT as IPSC;
+	pub const TRIANGLE_SIDE_COUNT_IPSC:		IPSC			= TRIANGLE_SIDE_COUNT as IPSC;
+	pub const PENTAGON_PIECE_RANGE:			Range<usize>	= PENTAGON_INDEX_OFFSET .. PENTAGON_INDEX_OFFSET + PENTAGON_PIECE_COUNT;
+	pub const TRIANGLE_PIECE_RANGE:			Range<usize>	= TRIANGLE_INDEX_OFFSET .. TRIANGLE_INDEX_OFFSET + TRIANGLE_PIECE_COUNT;
+	pub const PIECE_RANGE:					Range<usize>	= 0_usize .. PIECE_COUNT;
+	pub const HALF_PENTAGON_PIECE_COUNT:	usize			= PENTAGON_PIECE_COUNT / 2;
 }
 
 // Compressed version for smaller memory footprint when keeping track of multiple states
 pub mod deflated {
-	use super::{
-		*,
-		consts::*
-	};
+	use super::*;
 
 	pub type PieceState = u8;
 
@@ -188,10 +199,7 @@ pub mod deflated {
 
 // Decompressed version for utilization of AVX2 SIMD instructions
 pub mod inflated {
-	use super::{
-		*,
-		consts::*
-	};
+	use super::*;
 
 	pub type PieceStateComponent = u32;
 
@@ -227,8 +235,9 @@ pub mod inflated {
 
 	macro_rules! puzzle_state_add {
 		($src_state:ident, $transformation:ident, $dest_state:ident) => {
-			let transformation_pos: &PuzzleStateComponent = &$transformation.pos;
-			let transformation_rot: &PuzzleStateComponent = &$transformation.rot;
+			// let transformation_pos: &PuzzleStateComponent = &$transformation.pos;
+			// let transformation_rot: &PuzzleStateComponent = &$transformation.rot;
+			let (transformation_pos, transformation_rot) = $transformation.arrays();
 
 			for pent_index in PENTAGON_PIECE_RANGE {
 				let curr_pos: usize = $src_state.pos[pent_index] as usize;
@@ -263,17 +272,17 @@ pub mod inflated {
 	}
 
 	impl PuzzleState {
-		// #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-		// pub fn apply_transformation(&mut self, transformation: &Transformation) -> () {
-		// 	use crate::util::simd;
+		pub fn arrays(&self) -> (&PuzzleStateComponent, &PuzzleStateComponent) {
+			(&self.pos, &self.rot)
+		}
 
-		// 	crate::util_simd_inflated_apply_transformation!(self, PuzzleState, transformation, Transformation);
-		// }
+		pub fn arrays_mut(&mut self) -> (&mut PuzzleStateComponent, &mut PuzzleStateComponent) {
+			(&mut self.pos, &mut self.rot)
+		}
 
-		// #[cfg(not(all(target_arch = "x86_64", target_feature = "avx2")))]
-		// pub fn apply_transformation(&mut self, transformation: &Transformation) -> () {
-		// 	Self::naive_apply_transformation_inline(self, transformation);
-		// }
+		pub fn invert_position(pos_index: usize) -> usize {
+			pos_index ^ 0b11_usize
+		}
 
 		pub fn is_standardized(&self) -> bool {
 			self.pos[0_usize] == 0 as PieceStateComponent && self.rot[0_usize] == 0 as PieceStateComponent
@@ -331,46 +340,6 @@ pub mod inflated {
 			puzzle_state_add!(self, transformation, self);
 		}
 
-		// pub fn naive_apply_transformation(&mut self, transformation: &Transformation) -> () {
-		// 	Self::naive_apply_transformation_inline(self, transformation);
-		// }
-
-		// #[inline]
-		// fn naive_apply_transformation_inline(&mut self, transformation: &Transformation) -> () {
-		// 	let transformation_pos: &PuzzleStateComponent = &transformation.pos;
-		// 	let transformation_rot: &PuzzleStateComponent = &transformation.rot;
-
-		// 	for pent_index in PENTAGON_PIECE_RANGE {
-		// 		let curr_pos: usize = self.pos[pent_index] as usize;
-
-		// 		self.pos[pent_index] = transformation_pos[curr_pos];
-		// 		self.rot[pent_index] = {
-		// 			let rot_sum: PieceStateComponent = self.rot[pent_index] + transformation_rot[curr_pos];
-
-		// 			if rot_sum >= PENTAGON_SIDE_COUNT_IPSC {
-		// 				rot_sum - PENTAGON_SIDE_COUNT_IPSC
-		// 			} else {
-		// 				rot_sum
-		// 			}
-		// 		};
-		// 	}
-
-		// 	for tri_index in TRIANGLE_PIECE_RANGE {
-		// 		let curr_pos: usize = self.pos[tri_index] as usize;
-
-		// 		self.pos[tri_index] = transformation_pos[curr_pos];
-		// 		self.rot[tri_index] = {
-		// 			let rot_sum: PieceStateComponent = self.rot[tri_index] + transformation_rot[curr_pos];
-
-		// 			if rot_sum >= TRIANGLE_SIDE_COUNT_IPSC {
-		// 				rot_sum - TRIANGLE_SIDE_COUNT_IPSC
-		// 			} else {
-		// 				rot_sum
-		// 			}
-		// 		};
-		// 	}
-		// }
-
 		pub fn naive_inflation(deflated_puzzle_state: &deflated::PuzzleState) -> Self {
 			Self::naive_inflation_inline(deflated_puzzle_state)
 		}
@@ -391,57 +360,8 @@ pub mod inflated {
 			inflated_puzzle_state
 		}
 
-		pub fn revert_transformation(&mut self, transformation: &Transformation) -> () {
-			let transformation_pos:	&PuzzleStateComponent	= &transformation.pos;
-			let transformation_rot:	&PuzzleStateComponent	= &transformation.rot;
-			let pent_pos_slice:		&[PieceStateComponent]	= &transformation_pos[PENTAGON_PIECE_RANGE];
-			let tri_pos_slice:		&[PieceStateComponent]	= &transformation_pos[TRIANGLE_PIECE_RANGE];
-
-			for pent_index in PENTAGON_PIECE_RANGE {
-				let curr_pos: usize = self.pos[pent_index] as usize;
-				let prev_pos: usize = pent_pos_slice
-					.iter()
-					.position(|pos: &PieceStateComponent| -> bool {
-						*pos as usize == curr_pos
-					})
-					.unwrap() + PENTAGON_INDEX_OFFSET;
-				
-				self.pos[pent_index] = prev_pos as PieceStateComponent;
-				self.rot[pent_index] = {
-					let rot_sum: PieceStateComponent = self.rot[pent_index] + PENTAGON_SIDE_COUNT_IPSC - transformation_rot[prev_pos];
-
-					if rot_sum >= PENTAGON_SIDE_COUNT_IPSC {
-						rot_sum - PENTAGON_SIDE_COUNT_IPSC
-					} else {
-						rot_sum
-					}
-				};
-			}
-
-			for tri_index in TRIANGLE_PIECE_RANGE {
-				let curr_pos: usize = self.pos[tri_index] as usize;
-				let prev_pos: usize = tri_pos_slice
-					.iter()
-					.position(|pos: &PieceStateComponent| -> bool {
-						*pos as usize == curr_pos
-					})
-					.unwrap() + TRIANGLE_INDEX_OFFSET;
-				
-				self.pos[tri_index] = prev_pos as PieceStateComponent;
-				self.rot[tri_index] = {
-					let rot_sum: PieceStateComponent = self.rot[tri_index] + TRIANGLE_SIDE_COUNT_IPSC - transformation_rot[prev_pos];
-
-					if rot_sum >= TRIANGLE_SIDE_COUNT_IPSC {
-						rot_sum - TRIANGLE_SIDE_COUNT_IPSC
-					} else {
-						rot_sum
-					}
-				};
-			}
-		}
-
 		pub fn standardize(&mut self) -> () {
-			self.standardize_with_reorientation_page(&TransformationLibrary::get().unwrap().trfms[TransformationType::Reorientation as usize])
+			self.standardize_with_reorientation_page(&TransformationLibrary::get().book_pack_data.trfm[TransformationType::Reorientation as usize])
 		}
 
 		pub fn standardize_with_reorientation_page(&mut self, reorientation_page: &Page<Transformation>) -> () {
@@ -563,17 +483,6 @@ pub mod inflated {
 		}
 	}
 
-	impl<'a> Neg for &'a Transformation {
-		type Output = Transformation;
-
-		fn neg(self: &'a Transformation) -> Self::Output {
-			let prev_state: PuzzleState = PuzzleState::SOLVED_STATE;
-			let curr_state: PuzzleState = &prev_state + self;
-
-			&curr_state - &prev_state
-		}
-	}
-
 	impl PartialEq for PuzzleState {
 		fn eq(&self, other: &Self) -> bool {
 			unsafe { memcmp(self as *const Self as *const c_void, other as *const Self as *const c_void, size_of::<Self>()) == 0 }
@@ -582,16 +491,17 @@ pub mod inflated {
 
 	impl<'a, 'b> Sub<&'b PuzzleState> for &'a PuzzleState {
 		type Output = Transformation;
-
+	
 		#[must_use]
 		fn sub(self, prev_state: &'b PuzzleState) -> Self::Output {
 			let mut transformation: Transformation = Transformation::default();
-
+			let (pos_array, rot_array): (&mut PuzzleStateComponent, &mut PuzzleStateComponent) = transformation.arrays_mut();
+	
 			for pent_index in PENTAGON_PIECE_RANGE {
-				transformation.pos[prev_state.pos[pent_index] as usize] = self.pos[pent_index];
-				transformation.rot[prev_state.pos[pent_index] as usize] = {
+				pos_array[prev_state.pos[pent_index] as usize] = self.pos[pent_index];
+				rot_array[prev_state.pos[pent_index] as usize] = {
 					let rot_sum: PieceStateComponent = PENTAGON_SIDE_COUNT_IPSC + self.rot[pent_index] - prev_state.rot[pent_index];
-
+	
 					if rot_sum >= PENTAGON_SIDE_COUNT_IPSC {
 						rot_sum - PENTAGON_SIDE_COUNT_IPSC
 					} else {
@@ -599,12 +509,12 @@ pub mod inflated {
 					}
 				};
 			}
-
+	
 			for tri_index in TRIANGLE_PIECE_RANGE {
-				transformation.pos[prev_state.pos[tri_index] as usize] = self.pos[tri_index];
-				transformation.rot[prev_state.pos[tri_index] as usize] = {
+				pos_array[prev_state.pos[tri_index] as usize] = self.pos[tri_index];
+				rot_array[prev_state.pos[tri_index] as usize] = {
 					let rot_sum: PieceStateComponent = TRIANGLE_SIDE_COUNT_IPSC + self.rot[tri_index] - prev_state.rot[tri_index];
-
+	
 					if rot_sum >= TRIANGLE_SIDE_COUNT_IPSC {
 						rot_sum - TRIANGLE_SIDE_COUNT_IPSC
 					} else {
@@ -612,22 +522,44 @@ pub mod inflated {
 					}
 				};
 			}
-
+	
 			transformation
 		}
+	}
+
+	pub struct Animation {
+		pub addr:		Addr,
+		pub start:		Instant,
+		pub duration:	Duration
 	}
 
 	#[repr(align(32))]
 	pub struct ExtendedPuzzleState {
 		pub puzzle_state:	PuzzleState,
-		pub pos_to_piece:	PuzzleStateComponent
+		pub pos_to_piece:	PuzzleStateComponent,
+		pub animation:		Option<Animation>
+	}
+
+	impl ExtendedPuzzleState {
+
+	}
+
+	impl<'a> AddAssign<&'a Transformation> for ExtendedPuzzleState {
+		fn add_assign(&mut self, transformation: &'a Transformation) -> () {
+			self.puzzle_state += transformation;
+
+			for piece_index in PIECE_RANGE {
+				self.pos_to_piece[self.puzzle_state.pos[piece_index] as usize] = piece_index as PieceStateComponent;
+			}
+		}
 	}
 
 	impl Default for ExtendedPuzzleState {
 		fn default() -> Self {
 			Self {
 				puzzle_state:	PuzzleState::SOLVED_STATE,
-				pos_to_piece:	PuzzleStateComponent::SOLVED_STATE
+				pos_to_piece:	PuzzleStateComponent::SOLVED_STATE,
+				animation:		None
 			}
 		}
 	}
@@ -639,16 +571,17 @@ impl PuzzlePlugin {
 	fn startup_app(
 		mut commands: Commands,
 		piece_library: Res<PieceLibrary>,
-		color_data: Res<ColorData<Color>>
+		preferences: Res<Preferences>
 	) -> () {
-		log_result_err!(Self::startup_app_internal(&mut commands, &piece_library, &color_data));
+		log_result_err!(Self::startup_app_internal(&mut commands, &piece_library, &preferences));
 	}
 
 	fn startup_app_internal(
 		commands: &mut Commands,
 		piece_library: &Res<PieceLibrary>,
-		color_data: &Res<ColorData<Color>>
+		preferences: &Res<Preferences>
 	) -> LogErrorResult {
+		let color_data: &ColorData<Color> = option_to_result!(preferences.color.try_get::<Color>())?;
 		let piece_pair: &PiecePair = match piece_library.pieces.get(&piece_library.data.default_design) {
 			Some(piece_pair) => piece_pair,
 			None => {
@@ -694,16 +627,66 @@ impl PuzzlePlugin {
 
 		Ok(())
 	}
+
+	pub fn process_input(
+		keyboard_input: Res<Input<KeyCode>>,
+		preferences: Res<Preferences>,
+		transformation_library: Res<TransformationLibraryRef>,
+		mut extended_puzzle_state: ResMut<ExtendedPuzzleState>,
+		mut queries: QuerySet<(Query<(&CameraComponent, &mut Transform)>, Query<(&PieceComponent, &mut Transform)>)>
+	) -> () {
+		let input_data: &InputData = &preferences.input;
+		// if extended_puzzle_state.animation
+
+		for input_index in 0_usize .. HALF_PENTAGON_PIECE_COUNT {
+			if keyboard_input.just_pressed(input_data.rotation_keys[input_index]) {
+				let (line_index, word_index): (usize, usize) = {
+					let mut rotations: isize = 1_isize;
+
+					if keyboard_input.pressed(input_data.rotate_twice) {
+						rotations += 1_isize;
+					}
+
+					if keyboard_input.pressed(input_data.counter_clockwise) {
+						rotations *= -1_isize;
+					}
+
+					(
+						if keyboard_input.pressed(input_data.alt_hemi) {
+							InflatedPuzzleState::invert_position(input_data.default_positions[input_index])
+						} else {
+							input_data.default_positions[input_index]
+						},
+						((rotations + PENTAGON_SIDE_COUNT as isize) % PENTAGON_SIDE_COUNT as isize) as usize
+					)
+				};
+				let word_pack: WordPack = transformation_library.book_pack_data.get_word_pack((TransformationType::StandardRotation as usize, line_index, word_index));
+				let next_puzzle_state: InflatedPuzzleState = &extended_puzzle_state.puzzle_state + word_pack.trfm;
+
+				for (piece_component, mut transform) in queries.q1_mut().iter_mut() {
+					let piece_index: usize = piece_component.index;
+
+					if word_pack.mask.affects_piece(extended_puzzle_state.puzzle_state.pos[piece_index] as usize) {
+						*transform = Transform::from_rotation(transformation_library.orientation_data[next_puzzle_state.pos[piece_index] as usize][next_puzzle_state.rot[piece_index] as usize].quat);
+					}
+				}
+
+				*extended_puzzle_state += word_pack.trfm;
+			}
+		}
+	}
 }
 
 impl Plugin for PuzzlePlugin {
 	fn build(&self, app: &mut AppBuilder) -> () {
-		app.add_startup_system(Self::startup_app
-			.system()
-			.label(STRING_DATA.labels.puzzle.as_ref())
-			.after(STRING_DATA.labels.piece_library.as_ref())
-			.after(STRING_DATA.labels.color_data_typed.as_ref())
-		);
+		app
+			.insert_resource(ExtendedPuzzleState::default())
+			.add_startup_system(Self::startup_app
+				.system()
+				.label(STRING_DATA.labels.puzzle.as_ref())
+				.after(STRING_DATA.labels.piece_library.as_ref())
+				.after(STRING_DATA.labels.color_data_typed.as_ref())
+			);
 	}
 }
 
@@ -712,7 +695,6 @@ mod tests {
 	use {
 		super::{
 			*,
-			consts::*,
 			deflated::{
 				PieceState as DPS,
 				PuzzleState as DeflatedPuzzleState
@@ -854,7 +836,7 @@ mod tests {
 	fn test_puzzle_state_properties() -> () {
 		const ITERATION_COUNT: usize = 10000000_usize;
 
-		let standard_rotations:									&Page<Transformation>		= &TransformationLibrary::get().unwrap().trfms[TransformationType::StandardRotation as usize];
+		let standard_rotations:									&Page<Transformation>		= &TransformationLibrary::get().book_pack_data.trfm[TransformationType::StandardRotation as usize];
 		let mut correct_pos_pent_piece_count_counts:			[u32; PENTAGON_PIECE_COUNT]	= [0_u32; PENTAGON_PIECE_COUNT];
 		let mut correct_pos_tri_piece_count_counts:				[u32; TRIANGLE_PIECE_COUNT]	= [0_u32; TRIANGLE_PIECE_COUNT];
 		let mut correct_rot_pent_piece_count_counts:			[u32; PENTAGON_PIECE_COUNT]	= [0_u32; PENTAGON_PIECE_COUNT];
@@ -919,7 +901,4 @@ mod tests {
 			all_tri_rot_sums_mod_3_are_zero
 		);
 	}
-}
-
-pub fn main() -> () {
 }

@@ -6,8 +6,7 @@ use {
 define_struct_with_default!(
 	#[derive(Deserialize)]
 	pub Files<String> {
-		pub color_data				= "colorData.ron",
-		pub light_and_camera_data	= "lightAndCameraData.ron",
+		pub preferences				= "preferences.ron",
 		pub piece_library_data		= "pieceLibraryData.ron",
 		pub rust_log				= "RUST_LOG.ron",
 	}
@@ -16,23 +15,23 @@ define_struct_with_default!(
 define_struct_with_default!(
 	#[derive(Deserialize)]
 	pub Labels<String> {
-		pub color_data_typed	= "ColorDataTyped::startup_app()",
-		pub piece_library		= "PieceLibrary::startup_app()",
-		pub puzzle				= "puzzle::startup_app()",
+		pub color_data_typed		= "ColorDataTyped::startup_app()",
+		pub piece_library			= "PieceLibrary::startup_app()",
+		pub puzzle					= "puzzle::startup_app()",
 	}
 );
 
 define_struct_with_default!(
 	#[derive(Deserialize)]
 	pub Misc<String> {
-		pub app_title	= "Pentultimate Solver",
+		pub app_title				= "Pentultimate Solver",
 	}
 );
 
 define_struct_with_default!(
 	#[derive(Deserialize)]
 	pub Tests<String> {
-		pub reorientation_tests	= "reorientationTests.ron",
+		pub reorientation_tests		= "reorientationTests.ron",
 	}
 );
 

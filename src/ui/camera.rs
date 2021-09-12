@@ -5,7 +5,8 @@ use {
 			data::Data,
 			Polyhedron
 		},
-		piece::Type
+		piece::Type,
+		preferences::Preferences
 	},
 	bevy::{
 		prelude::*,
@@ -14,13 +15,15 @@ use {
 	serde::Deserialize
 };
 
-#[derive(Deserialize)]
-struct PerspectiveProjection {
-	fov:			f32,
-	aspect_ratio:	f32,
-	near:			f32,
-	far:			f32,
-}
+define_struct_with_default!(
+	#[derive(Clone, Deserialize)]
+	pub PerspectiveProjection {
+		fov:			f32	= 0.5_f32,
+		aspect_ratio:	f32	= 1.0_f32,
+		near:			f32	= 1.0_f32,
+		far:			f32	= 1000.0_f32,
+	}
+);
 
 impl From<PerspectiveProjection> for BevyPerspectiveProjection {
 	fn from(persp_proj: PerspectiveProjection) -> Self {
@@ -44,28 +47,14 @@ impl From<BevyPerspectiveProjection> for PerspectiveProjection {
 	}
 }
 
-impl Default for PerspectiveProjection {
-	fn default() -> Self {
-		BevyPerspectiveProjection::default().into()
+define_struct_with_default!(
+	#[derive(Deserialize)]
+	pub LightAndCameraData {
+		pub light_pos:	[f32; 3]				= [0.0, 1.0, 10.0],
+		pub camera_pos:	[f32; 3]				= [0.0, 0.0, 10.0],
+		pub persp_proj:	PerspectiveProjection	= PerspectiveProjection::default(),
 	}
-}
-
-#[derive(Deserialize)]
-struct LightAndCameraData {
-	light_pos: [f32; 3],
-	camera_pos: [f32; 3],
-	persp_proj: PerspectiveProjection
-}
-
-impl Default for LightAndCameraData {
-	fn default() -> Self {
-		Self {
-			light_pos:	[5.0, 0.0, 3.0],
-			camera_pos:	[5.0, 0.0, 0.0],
-			persp_proj: PerspectiveProjection::default()
-		}
-	}
-}
+);
 
 pub struct CameraComponent;
 
@@ -73,7 +62,8 @@ pub struct CameraPlugin;
 
 impl CameraPlugin {
 	fn startup_app(
-		mut commands: Commands
+		mut commands: Commands,
+		preferences: Res<Preferences>
 	) -> () {
 		commands
 			.spawn_bundle((
@@ -82,7 +72,7 @@ impl CameraPlugin {
 				GlobalTransform::default()
 			))
 			.with_children(|child_builder: &mut ChildBuilder| -> () {
-				let light_and_camera_data: LightAndCameraData = from_ron_or_default::<LightAndCameraData>(&STRING_DATA.files.light_and_camera_data);
+				let light_and_camera_data: &LightAndCameraData = &preferences.light_and_camera;
 
 				child_builder.spawn_bundle(LightBundle {
 					transform: Transform::from_translation(Vec3::from(light_and_camera_data.light_pos)),
@@ -90,7 +80,7 @@ impl CameraPlugin {
 				});
 				child_builder.spawn_bundle(PerspectiveCameraBundle {
 					transform: Transform::from_translation(Vec3::from(light_and_camera_data.camera_pos)).looking_at(Vec3::ZERO, Vec3::Y),
-					perspective_projection: light_and_camera_data.persp_proj.into(),
+					perspective_projection: light_and_camera_data.persp_proj.clone().into(),
 					.. Default::default()
 				});
 			});

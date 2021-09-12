@@ -10,9 +10,9 @@ extern crate log;
 extern crate static_assertions as sa;
 
 pub mod app;
-pub mod colors;
 pub mod math;
 pub mod piece;
+pub mod preferences;
 pub mod prelude;
 pub mod puzzle;
 pub mod strings;

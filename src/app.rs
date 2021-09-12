@@ -1,8 +1,8 @@
 use {
 	crate::{
-		colors::ColorsPlugin,
 		math::polyhedra::data::DataPlugin,
 		piece::PiecePlugin,
+		preferences::colors::ColorsPlugin,
 		puzzle::{
 			PuzzlePlugin,
 			TransformationPlugin
@@ -14,6 +14,34 @@ use {
 		app::PluginGroupBuilder
 	}
 };
+
+pub mod prelude {
+	pub use crate::{
+		math::polyhedra::data::{
+			DataLibrary as PolyhedraDataLibrary,
+			DataPlugin as PolyhedraDataPlugin,
+		},
+		piece::{
+			PieceComponent,
+			PieceLibrary,
+			PiecePlugin
+		},
+		preferences::colors::{
+			ColorData,
+			ColorsPlugin
+		},
+		puzzle::{
+			ExtendedPuzzleState,
+			PuzzlePlugin,
+			TransformationLibraryRef
+		},
+		ui::{
+			camera::CameraComponent,
+			input::InputData,
+			UIPlugin
+		}
+	};
+}
 
 struct AppPlugin;
 

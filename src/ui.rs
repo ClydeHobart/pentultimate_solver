@@ -1,9 +1,10 @@
 use {
-	crate::prelude::*,
-	self::camera::{
-		CameraComponent,
-		CameraPlugin
+	crate::{
+		prelude::*,
+		app::prelude::*,
+		preferences::Preferences
 	},
+	self::camera::CameraPlugin,
 	bevy::{
 		prelude::*,
 		input::mouse::{
@@ -13,17 +14,8 @@ use {
 	},
 };
 
-mod camera;
-
-#[derive(Clone, Copy)]
-pub enum Key {
-	Key1,
-	Key2,
-	Key3,
-	Key4,
-	Key5,
-	Key6
-}
+pub mod camera;
+pub mod input;
 
 pub struct UIPlugin;
 
@@ -37,9 +29,13 @@ impl UIPlugin {
 	fn run_app(
 		time: Res<Time>,
 		mouse_button_input: Res<Input<MouseButton>>,
+		keyboard_input: Res<Input<KeyCode>>,
+		preferences: Res<Preferences>,
+		transformation_library: Res<TransformationLibraryRef>,
+		extended_puzzle_state: ResMut<ExtendedPuzzleState>,
 		mut mouse_motion_events: EventReader<MouseMotion>,
 		mut mouse_wheel_events: EventReader<MouseWheel>,
-		mut camera_component_query: Query<(&CameraComponent, &mut Transform)>
+		mut queries: QuerySet<(Query<(&CameraComponent, &mut Transform)>, Query<(&PieceComponent, &mut Transform)>)>
 	) -> () {
 		let time_delta: f32 = time.delta_seconds();
 		let mouse_wheel_delta: f32 = mouse_wheel_events
@@ -52,7 +48,7 @@ impl UIPlugin {
 		if mouse_wheel_delta.abs() > f32::EPSILON {
 			const ROLL_SCALING_FACTOR: f32 = 100.0_f32;
 
-			for (_, mut transform) in camera_component_query.iter_mut() {
+			for (_, mut transform) in queries.q0_mut().iter_mut() {
 				transform.rotate(Quat::from_rotation_z(mouse_wheel_delta / ROLL_SCALING_FACTOR));
 			}
 		}
@@ -73,17 +69,20 @@ impl UIPlugin {
 	
 				const PAN_SCALING_FACTOR: f32 = 10_000.0_f32;
 	
-				for (_, mut transform) in camera_component_query.iter_mut() {
+				for (_, mut transform) in queries.q0_mut().iter_mut() {
 					transform.rotate(Quat::from_axis_angle(axis, mouse_motion_delta.length() / PAN_SCALING_FACTOR));
 				}
 			}
 		}
+
+		PuzzlePlugin::process_input(keyboard_input, preferences, transformation_library, extended_puzzle_state, queries);
 	}
 }
 
 impl Plugin for UIPlugin {
 	fn build(&self, app: &mut AppBuilder) {
 		app
+			.insert_resource(from_ron_or_default::<Preferences>(&STRING_DATA.files.preferences))
 			.insert_resource(Msaa { samples: 4 })
 			.insert_resource(WindowDescriptor {
 				title: STRING_DATA.misc.app_title.clone(),
