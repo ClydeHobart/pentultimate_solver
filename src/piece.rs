@@ -686,6 +686,6 @@ impl Plugin for PiecePlugin {
 	fn build(&self, app: &mut AppBuilder) -> () {
 		app
 			.insert_resource(log_result_err!(PieceLibrary::try_from(STRING_DATA.files.piece_library_data.as_ref())))
-			.add_startup_system(Self::startup_app.system().label(STRING_DATA.labels.piece_library.as_ref()));
+			.add_startup_system(Self::startup_app.system().label(STRING_DATA.labels.piece_library_startup.as_ref()));
 	}
 }

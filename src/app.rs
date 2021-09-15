@@ -26,9 +26,12 @@ pub mod prelude {
 			PieceLibrary,
 			PiecePlugin
 		},
-		preferences::colors::{
-			ColorData,
-			ColorsPlugin
+		preferences::{
+			colors::{
+				ColorData,
+				ColorsPlugin
+			},
+			Preferences
 		},
 		puzzle::{
 			ExtendedPuzzleState,
@@ -36,7 +39,10 @@ pub mod prelude {
 			TransformationLibraryRef
 		},
 		ui::{
-			camera::CameraComponent,
+			camera::{
+				CameraComponent,
+				CameraPlugin
+			},
 			input::InputData,
 			UIPlugin
 		}

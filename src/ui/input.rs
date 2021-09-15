@@ -38,10 +38,12 @@ pub fn generate_default_positions() -> [usize; HALF_PENTAGON_PIECE_COUNT] {
 define_struct_with_default!(
 	#[derive(Deserialize)]
 	pub InputData {
-		pub default_positions:	[usize; HALF_PENTAGON_PIECE_COUNT]		= generate_default_positions(),
-		pub rotation_keys:		[KeyCode; HALF_PENTAGON_PIECE_COUNT]	= [KeyCode::Numpad0, KeyCode::Numpad1, KeyCode::Numpad4, KeyCode::Numpad5, KeyCode::Numpad6, KeyCode::Numpad3],
-		pub rotate_twice:		KeyCode									= KeyCode::D,
-		pub counter_clockwise:	KeyCode									= KeyCode::S,
-		pub alt_hemi:			KeyCode									= KeyCode::A,
+		pub default_positions:		[usize; HALF_PENTAGON_PIECE_COUNT]		= generate_default_positions(),
+		pub rotation_keys:			[KeyCode; HALF_PENTAGON_PIECE_COUNT]	= [KeyCode::Numpad0, KeyCode::Numpad1, KeyCode::Numpad4, KeyCode::Numpad5, KeyCode::Numpad6, KeyCode::Numpad3],
+		pub rotate_twice:			KeyCode									= KeyCode::D,
+		pub counter_clockwise:		KeyCode									= KeyCode::S,
+		pub alt_hemi:				KeyCode									= KeyCode::A,
+		pub recenter_camera:		KeyCode									= KeyCode::Space,
+		pub disable_recentering:	KeyCode									= KeyCode::X,
 	}
 );

@@ -308,6 +308,6 @@ pub struct ColorsPlugin;
 impl Plugin for ColorsPlugin {
 	fn build(&self, app: &mut AppBuilder) -> () {
 		app
-			.add_startup_system(ColorDataTyped::startup_app.system().label(STRING_DATA.labels.color_data_typed.as_ref()));
+			.add_startup_system(ColorDataTyped::startup_app.system().label(STRING_DATA.labels.color_data_typed_startup.as_ref()));
 	}
 }

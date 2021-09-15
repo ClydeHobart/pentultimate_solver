@@ -20,10 +20,17 @@ use {
 		}
 	},
 	bevy::prelude::*,
-	std::ops::{
-		BitOr,
-		Deref,
-		Neg
+	std::{
+		fmt::{
+			Debug,
+			Error,
+			Formatter
+		},
+		ops::{
+			BitOr,
+			Deref,
+			Neg
+		}
 	}
 };
 
@@ -101,14 +108,13 @@ impl AddrConsts for Addr {
 }
 
 impl Addr {
-	#[cfg(test)]
-	pub fn is_valid(&self) -> bool {
-		self.page_index > Self::INVALID_INDEX &&
-		self.line_index > Self::INVALID_INDEX &&
-		self.word_index > Self::INVALID_INDEX &&
-		self.page_index < Library::PAGE_COUNT as i8 &&
-		self.line_index < Library::LINE_COUNT as i8 &&
-		self.word_index < Library::WORD_COUNT as i8
+	#[inline(always)]
+	pub fn is_valid(&self) -> bool { self.is_valid_with_mask(Self::from((Some(0), Some(0), Some(0)))) }
+
+	pub fn is_valid_with_mask(&self, mask: Self) -> bool {
+		(mask.page_index == Self::INVALID_INDEX || self.page_index_is_valid()) &&
+		(mask.line_index == Self::INVALID_INDEX || self.line_index_is_valid()) &&
+		(mask.word_index == Self::INVALID_INDEX || self.word_index_is_valid())
 	}
 
 	pub fn from_page(page_index: usize) -> Self {
@@ -132,13 +138,23 @@ impl Addr {
 		}
 	}
 
-	pub fn new(page_index: usize, line_index: usize, word_index: usize) -> Self {
-		Self {
-			page_index: page_index as i8,
-			line_index: line_index as i8,
-			word_index: word_index as i8
-		}
-	}
+	#[inline(always)]
+	pub fn page_index_is_valid(&self) -> bool { self.page_index > Self::INVALID_INDEX && self.page_index < Library::PAGE_COUNT as i8 }
+
+	#[inline(always)]
+	pub fn line_index_is_valid(&self) -> bool { self.line_index > Self::INVALID_INDEX && self.line_index < Library::LINE_COUNT as i8 }
+
+	#[inline(always)]
+	pub fn word_index_is_valid(&self) -> bool { self.word_index > Self::INVALID_INDEX && self.word_index < Library::WORD_COUNT as i8 }
+
+	pub fn page_index(&self) -> usize { assert!(self.page_index_is_valid()); self.page_index as usize }
+	pub fn line_index(&self) -> usize { assert!(self.line_index_is_valid()); self.line_index as usize }
+	pub fn word_index(&self) -> usize { assert!(self.word_index_is_valid()); self.word_index as usize }
+
+	#[inline(always)]
+	pub fn long_line_index_is_valid(&self) -> bool { self.line_index > Self::INVALID_INDEX && self.line_index < Library::LONG_LINE_COUNT as i8 }
+
+	pub fn long_line_index(&self) -> usize { assert!(self.long_line_index_is_valid()); self.line_index as usize }
 }
 
 impl BitOr for Addr {
@@ -173,12 +189,22 @@ impl From<(usize, usize, usize)> for Addr {
 	}
 }
 
+impl From<(Option<usize>, Option<usize>, Option<usize>)> for Addr {
+	fn from((page_index, line_index, word_index): (Option<usize>, Option<usize>, Option<usize>)) -> Self {
+		Self {
+			page_index: page_index.map_or(Self::INVALID_INDEX, |page_index: usize| -> i8 { page_index as i8 }),
+			line_index: line_index.map_or(Self::INVALID_INDEX, |line_index: usize| -> i8 { line_index as i8 }),
+			word_index: word_index.map_or(Self::INVALID_INDEX, |word_index: usize| -> i8 { word_index as i8 })
+		}
+	}
+}
+
 pub struct OrientationData {
 	pub quat: Quat
 }
 
-#[derive(Debug, Default, PartialEq)]
-pub struct Transformation(pub PuzzleState);
+#[derive(Default, PartialEq)]
+pub struct Transformation(PuzzleState);
 
 impl Transformation {
 	pub fn arrays(&self) -> (&PuzzleStateComponent, &PuzzleStateComponent) {
@@ -202,6 +228,18 @@ impl Transformation {
 	}
 }
 
+impl Debug for Transformation {
+	fn fmt(&self, formatter: &mut Formatter<'_>) -> Result<(), Error> {
+		let (pos_string, rot_string): (String, String) = self.0.debug_strings();
+
+		formatter
+			.debug_struct("Transformation")
+			.field("pos", &pos_string)
+			.field("rot", &rot_string)
+			.finish()
+	}
+}
+
 impl<'a> Neg for &'a Transformation {
 	type Output = Transformation;
 
@@ -209,14 +247,14 @@ impl<'a> Neg for &'a Transformation {
 		let prev_state: PuzzleState = PuzzleState::SOLVED_STATE;
 		let curr_state: PuzzleState = &prev_state + self;
 
-		&curr_state - &prev_state
+		&prev_state - &curr_state
 	}
 }
 
 type Trfm = Transformation;
 
 /*
-The TransformationPage means different things depending on its corresponding Type
+The TrfmPage means different things depending on its corresponding Type
 * Reorientation:
 	* The first index is the current position of piece 0
 	* The second index is the current rotation of piece 0
@@ -314,18 +352,28 @@ pub trait GetWord<T> {
 	fn get_word_mut(&mut self, addr: Addr) -> &mut Word<T>;
 }
 
-impl<T> GetWord<T> for Book<T> {
+impl<T> GetWord<T> for LongPage<T> {
 	fn get_word(&self, addr: Addr) -> &Word<T> {
-		&self[addr.page_index as usize][addr.line_index as usize][addr.word_index as usize]
+		&self[addr.long_line_index()][addr.word_index()]
 	}
 
 	fn get_word_mut(&mut self, addr: Addr) -> &mut Word<T> {
-		&mut self[addr.page_index as usize][addr.line_index as usize][addr.word_index as usize]
+		&mut self[addr.long_line_index()][addr.word_index()]
+	}
+}
+
+impl<T> GetWord<T> for Book<T> {
+	fn get_word(&self, addr: Addr) -> &Word<T> {
+		&self[addr.page_index()][addr.line_index()][addr.word_index()]
+	}
+
+	fn get_word_mut(&mut self, addr: Addr) -> &mut Word<T> {
+		&mut self[addr.page_index()][addr.line_index()][addr.word_index()]
 	}
 }
 
 // A multi-tiered collection of transformations and associated data
-// Due to the alignment restrictions on Transformation, it wastes less space to store this as an SoA(oAoA) vs an A(oAoA)oS
+// Due to the alignment restrictions on Trfm, it wastes less space to store this as an SoA(oAoA) vs an A(oAoA)oS
 pub struct Library {
 	pub book_pack_data:		BookPackData,
 	pub orientation_data:	LongPage<OrientationData>
@@ -483,8 +531,10 @@ mod tests {
 			{
 				for (word_index, word_pack) in crate::word_pack_iter!(line_pack).enumerate()
 				{
-					if !word_pack.trfm.is_valid() {
-						log::error!("Transformation ({}, {}, {}) is invalid", page_index, line_index, word_index);
+					let trfm: &Trfm = word_pack.trfm;
+
+					if !trfm.is_valid() {
+						log::error!("Trfm ({}, {}, {}) is invalid", page_index, line_index, word_index);
 						error_expr!(word_pack.trfm);
 
 						panic!();
@@ -496,6 +546,32 @@ mod tests {
 
 						panic!();
 					}
+
+					let inv_addr: Addr = *word_pack.addr;
+					let inv_trfm: &Trfm = book_pack.get_word_pack(inv_addr).trfm;
+
+					if *trfm != -inv_trfm || -trfm != *inv_trfm {
+						log::error!("Transformation addressed by ({}, {}, {}), the associated address of transformation ({}, {}, {}) is not the true inverse transformation",
+							inv_addr.page_index, inv_addr.line_index, inv_addr.word_index,
+							page_index, line_index, word_index
+						);
+						error_expr!(trfm, -trfm, inv_trfm, -inv_trfm);
+
+						panic!();
+					}
+
+					let solved_state: PuzzleState = PuzzleState::SOLVED_STATE;
+					let middle_state: PuzzleState = &solved_state + trfm;
+					let end_state: PuzzleState = &middle_state + inv_trfm;
+
+					if end_state != solved_state {
+						log::error!("solved_state + trfm + inv_trfm != solved_state for transformation ({}, {}, {})",
+							page_index, line_index, word_index
+						);
+						error_expr!(solved_state, trfm, middle_state, inv_trfm, end_state);
+
+						panic!();
+					}
 				}
 			}
 		}
@@ -503,7 +579,7 @@ mod tests {
 
 	fn test_reorientations(transformation_library: &Library) -> () {
 		let page_pack: PagePack = transformation_library.book_pack_data.get_page_pack(Type::Reorientation as usize);
-		let standard_rotation_page: &Page<Transformation> = &transformation_library.book_pack_data.trfm[Type::StandardRotation as usize];
+		let standard_rotation_page: &Page<Trfm> = &transformation_library.book_pack_data.trfm[Type::StandardRotation as usize];
 		let reorientation_tests: [Vec<(usize, usize)>; PENTAGON_PIECE_COUNT] = from_ron::<[Vec<(usize, usize)>; PENTAGON_PIECE_COUNT]>(STRING_DATA.tests.reorientation_tests.as_ref()).to_option().unwrap();
 
 		for (line_index, line_pack) in crate::line_pack_iter!(page_pack).enumerate() {
@@ -583,10 +659,10 @@ mod tests {
 					panic!();
 				}
 
-				let transformation_from_states:	Transformation = &curr_puzzle_state - &prev_puzzle_state;
+				let transformation_from_states:	Trfm = &curr_puzzle_state - &prev_puzzle_state;
 
 				if transformation_from_states != *trfm {
-					log::error!("Transformation from previous to current state doesn't match applied transformation with pentagon {} and rotation {}", line_index, word_index);
+					log::error!("Trfm from previous to current state doesn't match applied transformation with pentagon {} and rotation {}", line_index, word_index);
 					error_expr!(trfm, prev_puzzle_state, curr_puzzle_state, transformation_from_states);
 
 					panic!();

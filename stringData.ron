@@ -7,7 +7,9 @@
 	labels: (
 		color_data_typed_label:		"ColorDataTyped::startup_app()",
 		piece_library_label:		"PieceLibrary::startup_app()",
-		puzzle_label:				"puzzle::startup_app()",
+		puzzle_startup:				"PuzzlePlugin::startup_app()",
+		camera_run:					"CameraPlugin::run_app()",
+		puzzle_run:					"PuzzlePlugin::run_app()",
 	),
 	misc: (
 		app_title:					"Pentultimate Solver",

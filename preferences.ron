@@ -21,15 +21,20 @@ Preferences(
 			base_color: "000000" // Black
 		)
 	)),
+	debug:				DebugData(
+		inv_camera_addr:	2
+	),
 	input:				InputData(
-		default_positions:	(	0,			5,			10,			1,			8,			4		),
-		rotation_keys:		(	Numpad0,	Numpad1,	Numpad4,	Numpad5,	Numpad6,	Numpad3	),
-		rotate_twice:		D,
-		counter_clockwise:	S,
-		alt_hemi:			A,
+		default_positions:		(	0,			5,			10,			1,			8,			4		),
+		rotation_keys:			(	Numpad0,	Numpad1,	Numpad4,	Numpad5,	Numpad6,	Numpad3	),
+		rotate_twice:			D,
+		counter_clockwise:		S,
+		alt_hemi:				A,
+		recenter_camera:		Space,
+		disable_recentering:	X,
 	),
 	light_and_camera:	LightAndCameraData(
-		light_pos:	( 0.0, 1.0, 10.0 ),
+		light_pos:	( 0.0, 0.0, 10.0 ),
 		camera_pos:	( 0.0, 0.0, 10.0 ),
 		persp_proj:	(
 			fov:			0.5,
@@ -39,7 +44,7 @@ Preferences(
 		)
 	),
 	speed:				SpeedData(
-		rotation_millis:					500,
+		rotation_millis:					250,
 		pan_speed:							50,
 		roll_speed:							50,
 		uniform_transformation_duration:	false,

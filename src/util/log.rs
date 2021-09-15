@@ -5,7 +5,12 @@ pub mod prelude {
 			debug_expr,
 			info_expr,
 			warn_expr,
-			error_expr
+			error_expr,
+			trace_expect,
+			debug_expect,
+			info_expect,
+			warn_expect,
+			error_expect
 		},
 		super::{
 			LogError,
@@ -328,6 +333,63 @@ macro_rules! error_expr {
 
 	($($expr:expr),+) => {
 		error_expr!(fmt: ":#?", $($expr),+)
+	};
+}
+
+#[cfg(debug_assertions)]
+#[macro_export(local_inner_macros)]
+macro_rules! log_expect {
+	($level:path, $expr:expr) => {
+		if $expr {
+			true
+		} else {
+			$level!("\"{}\" was false", std::stringify!($expr));
+
+			false
+		}
+	};
+}
+
+#[cfg(not(debug_assertions))]
+#[macro_export(local_inner_macros)]
+macro_rules! log_expect {
+	($_:path, $expr:expr) => {
+		$expr
+	}
+}
+
+#[macro_export(local_inner_macros)]
+macro_rules! trace_expect {
+	($expr:expr) => {
+		log_expect!(::log::trace, $expr)
+	};
+}
+
+#[macro_export(local_inner_macros)]
+macro_rules! debug_expect {
+	($expr:expr) => {
+		log_expect!(::log::debug, $expr)
+	};
+}
+
+#[macro_export(local_inner_macros)]
+macro_rules! info_expect {
+	($expr:expr) => {
+		log_expect!(::log::info, $expr)
+	};
+}
+
+#[macro_export(local_inner_macros)]
+macro_rules! warn_expect {
+	($expr:expr) => {
+		log_expect!(::log::warn, $expr)
+	};
+}
+
+#[macro_export(local_inner_macros)]
+macro_rules! error_expect {
+	($expr:expr) => {
+		log_expect!(::log::error, $expr)
 	};
 }
 

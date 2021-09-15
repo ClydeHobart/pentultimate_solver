@@ -45,6 +45,20 @@ pub struct PagePackMut<'a> {
 	pub addr:	&'a mut Page<Addr>
 }
 
+pub struct LongPagePack<'a> {
+	pub trfm:	&'a LongPage<Trfm>,
+	pub quat:	&'a LongPage<Quat>,
+	pub mask:	&'a LongPage<Mask>,
+	pub addr:	&'a LongPage<Addr>
+}
+
+pub struct LongPagePackMut<'a> {
+	pub trfm:	&'a mut LongPage<Trfm>,
+	pub quat:	&'a mut LongPage<Quat>,
+	pub mask:	&'a mut LongPage<Mask>,
+	pub addr:	&'a mut LongPage<Addr>
+}
+
 pub struct BookPack<'a> {
 	pub trfm:	&'a Book<Trfm>,
 	pub quat:	&'a Book<Quat>,
@@ -118,6 +132,40 @@ impl<'a, 'b> GetWordPackMut<'b, (usize, usize)> for PagePackMut<'a> where 'a: 'b
 	}
 }
 
+impl<'a, 'b> GetWordPack<'b, (usize, usize)> for LongPagePackMut<'a> where 'a: 'b {
+	fn get_word_pack(&'b self, (line_index, word_index): (usize, usize)) -> WordPack<'b> {
+		WordPack {
+			trfm: &self.trfm[line_index][word_index],
+			quat: &self.quat[line_index][word_index],
+			mask: &self.mask[line_index][word_index],
+			addr: &self.addr[line_index][word_index]
+		}
+	}
+}
+
+impl<'a, 'b> GetWordPackMut<'b, (usize, usize)> for LongPagePackMut<'a> where 'a: 'b {
+	fn get_word_pack_mut(&'b mut self, (line_index, word_index): (usize, usize)) -> WordPackMut<'b> {
+		WordPackMut {
+			trfm: &mut self.trfm[line_index][word_index],
+			quat: &mut self.quat[line_index][word_index],
+			mask: &mut self.mask[line_index][word_index],
+			addr: &mut self.addr[line_index][word_index]
+		}
+	}
+}
+
+impl<'a, 'b> GetWordPack<'b, Addr> for LongPagePackMut<'a> where 'a: 'b {
+	fn get_word_pack(&'b self, addr: Addr) -> WordPack<'b> {
+		self.get_word_pack((addr.long_line_index(), addr.word_index()))
+	}
+}
+
+impl<'a, 'b> GetWordPackMut<'b, Addr> for LongPagePackMut<'a> where 'a: 'b {
+	fn get_word_pack_mut(&'b mut self, addr: Addr) -> WordPackMut<'b> {
+		self.get_word_pack_mut((addr.long_line_index(), addr.word_index()))
+	}
+}
+
 impl<'a, 'b> GetWordPack<'b, (usize, usize, usize)> for BookPack<'a> where 'a: 'b {
 	fn get_word_pack(&'b self, (page_index, line_index, word_index): (usize, usize, usize)) -> WordPack<'b> {
 		WordPack {
@@ -142,13 +190,13 @@ impl<'a, 'b> GetWordPackMut<'b, (usize, usize, usize)> for BookPackMut<'a> where
 
 impl<'a, 'b> GetWordPack<'b, Addr> for BookPack<'a> where 'a: 'b {
 	fn get_word_pack(&'b self, address: Addr) -> WordPack<'b> {
-		self.get_word_pack((address.page_index as usize, address.line_index as usize, address.word_index as usize))
+		self.get_word_pack((address.page_index(), address.line_index(), address.word_index()))
 	}
 }
 
 impl<'a, 'b> GetWordPackMut<'b, Addr> for BookPackMut<'a> where 'a: 'b {
 	fn get_word_pack_mut(&'b mut self, address: Addr) -> WordPackMut<'b> {
-		self.get_word_pack_mut((address.page_index as usize, address.line_index as usize, address.word_index as usize))
+		self.get_word_pack_mut((address.page_index(), address.line_index(), address.word_index()))
 	}
 }
 
@@ -176,13 +224,13 @@ impl<'a, 'b> GetWordPackMut<'b, (usize, usize, usize)> for BookPackData where 'a
 
 impl<'a, 'b> GetWordPack<'b, Addr> for BookPackData where 'a: 'b {
 	fn get_word_pack(&'b self, address: Addr) -> WordPack<'b> {
-		self.get_word_pack((address.page_index as usize, address.line_index as usize, address.word_index as usize))
+		self.get_word_pack((address.page_index(), address.line_index(), address.word_index()))
 	}
 }
 
 impl<'a, 'b> GetWordPackMut<'b, Addr> for BookPackData where 'a: 'b {
 	fn get_word_pack_mut(&'b mut self, address: Addr) -> WordPackMut<'b> {
-		self.get_word_pack_mut((address.page_index as usize, address.line_index as usize, address.word_index as usize))
+		self.get_word_pack_mut((address.page_index(), address.line_index(), address.word_index()))
 	}
 }
 
