@@ -684,242 +684,38 @@ impl PuzzlePlugin {
 			let word_pack: WordPack = transformation_library.book_pack_data.get_word_pack(animation.addr);
 
 			if animation.is_done_at_time(&now) {
-				// trace_expr!(extended_puzzle_state.puzzle_state);
-
 				*extended_puzzle_state += word_pack.trfm;
 
-				let reorientation_addr: Addr = Addr::from((
+				let standardization_addr: Addr = Addr::from((
 					TransformationType::Reorientation as usize,
 					extended_puzzle_state.puzzle_state.pos[PENTAGON_INDEX_OFFSET] as usize,
 					extended_puzzle_state.puzzle_state.rot[PENTAGON_INDEX_OFFSET] as usize
 				));
 
-				// trace_expr!(extended_puzzle_state.puzzle_state);
-
-				*extended_puzzle_state += transformation_library.book_pack_data.trfm.get_word(reorientation_addr);
-
-				// trace_expr!(reorientation_addr, transformation_library.book_pack_data.trfm.get_word(reorientation_addr), extended_puzzle_state.puzzle_state);
+				*extended_puzzle_state += transformation_library.book_pack_data.trfm.get_word(standardization_addr);
 
 				for (piece_component, mut transform) in queries.q1_mut().iter_mut() {
 					let piece_index: usize = piece_component.index;
 
-					*transform = Transform::from_rotation(transformation_library.orientation_data[extended_puzzle_state.puzzle_state.pos[piece_index] as usize][extended_puzzle_state.puzzle_state.rot[piece_index] as usize].quat);
+					*transform = Transform::from_rotation(
+						transformation_library.orientation_data
+							[extended_puzzle_state.puzzle_state.pos[piece_index] as usize]
+							[extended_puzzle_state.puzzle_state.rot[piece_index] as usize]
+							.quat
+					);
 				}
 
 				extended_puzzle_state.animation = None;
 
-				// trace_expr!(extended_puzzle_state.puzzle_state.is_standardized());
-
 				if let Some((mut camera_component, mut transform)) = queries.q0_mut().iter_mut().next() {
-					let home_base_orientation:					Quat = transformation_library.orientation_data[PENTAGON_INDEX_OFFSET][PENTAGON_INDEX_OFFSET].quat;
-					let part_1_addr:							Addr = camera_component.prev_addr;
-					let inv_part_1_addr:						Addr = *transformation_library.book_pack_data.addr.get_word(part_1_addr);
-					let part_2_addr:							Addr = reorientation_addr;
-					let inv_part_1_rotation:					Quat = *transformation_library.book_pack_data.quat.get_word(inv_part_1_addr);
-					let part_2_rotation:						Quat = *transformation_library.book_pack_data.quat.get_word(part_2_addr);
-					let part_2_times_inv_part_1_rotation:		Quat = part_2_rotation * inv_part_1_rotation;
-					let part_2_times_inv_part_1_orientation:	Quat = part_2_times_inv_part_1_rotation				* home_base_orientation;
+					let standardization_rotation: Quat = *transformation_library.book_pack_data.quat.get_word(standardization_addr);
 
 					if camera_component.animation.is_some() {
-						transform.rotation = part_2_times_inv_part_1_orientation;
-						// transform.rotation = part_2_times_inv_part_1_conj_orientation;
+						transform.rotation = standardization_rotation * transformation_library.orientation_data.get_word(camera_component.prev_addr).quat;
 						camera_component.animation = None;
 					} else {
-						let part_1_orientation:					Quat = transformation_library.orientation_data.get_word(part_1_addr).quat;
-						let current_orientation:				Quat = transform.rotation;
-						let new_addr:							Addr = CameraPlugin::compute_camera_addr(polyhedra_data_library.icosidodecahedron, &part_2_times_inv_part_1_orientation);
-	
-						let new_orientation:					Quat = transformation_library.orientation_data.get_word(new_addr).quat;
-	
-						trace_expr!(new_orientation, part_2_times_inv_part_1_orientation, new_orientation.dot(part_2_times_inv_part_1_orientation), new_orientation.conjugate(), part_2_times_inv_part_1_orientation.conjugate());
-						let new_to_part_1_rotation:				Quat = part_1_orientation * new_orientation.conjugate();
-						let rotation_2_b:						Quat = new_to_part_1_rotation.conjugate() * part_1_orientation * (new_to_part_1_rotation.conjugate() * current_orientation).conjugate();
-	
-						// new_orientation == part_2_times_inv_part_1_orientation
-	
-						transform.rotation = rotation_2_b.conjugate() * part_2_times_inv_part_1_orientation;
+						transform.rotation = standardization_rotation * transform.rotation;
 					}
-
-					// let reorientation_quat_part_1: Quat = *transformation_library.book_pack_data.quat.get_word(camera_component.prev_addr); // The rotation from the camera address to the default (valid) address
-					// let inv_reorientation_addr: Addr = *transformation_library.book_pack_data.addr.get_word(reorientation_addr); // I don't know why the inverse of the reorientation applied to the puzzle state is needed here, but it is
-					// // let reorientation_quat_part_2: Quat = *transformation_library.book_pack_data.quat.get_word(reorientation_addr); // This is the one that makes the most sense?
-					// let reorientation_quat_part_2: Quat = *transformation_library.book_pack_data.quat.get_word(inv_reorientation_addr); // Not actually sure, just giving this a try
-					// let inv_reorientation_quat_full: Quat = (reorientation_quat_part_2 * reorientation_quat_part_1).conjugate(); // The rotation required to offset for the standardization, taking into account the camera's previous position
-
-					// let home_base_orientation: Quat = transformation_library.orientation_data[PENTAGON_INDEX_OFFSET][PENTAGON_INDEX_OFFSET].quat;
-
-					// let part_1_addr:		Addr = camera_component.prev_addr;
-					// let inv_part_1_addr:	Addr = *transformation_library.book_pack_data.addr.get_word(part_1_addr);
-					// let part_2_addr:		Addr = reorientation_addr;
-					// let inv_part_2_addr:	Addr = *transformation_library.book_pack_data.addr.get_word(part_2_addr);
-
-					// trace_expr!(0, part_1_addr, inv_part_1_addr, part_2_addr, inv_part_2_addr);
-
-					// let part_1_rotation:		Quat = *transformation_library.book_pack_data.quat.get_word(part_1_addr);
-					// let inv_part_1_rotation:	Quat = *transformation_library.book_pack_data.quat.get_word(inv_part_1_addr);
-					// let part_2_rotation:		Quat = *transformation_library.book_pack_data.quat.get_word(part_2_addr);
-					// let inv_part_2_rotation:	Quat = *transformation_library.book_pack_data.quat.get_word(inv_part_2_addr);
-
-					// trace_expr!(inv_part_1_rotation, part_1_rotation.conjugate(), part_2_rotation, inv_part_2_rotation.conjugate());
-
-					// let part_2_times_part_1_rotation:				Quat = part_2_rotation * part_1_rotation;
-					// let part_2_times_part_1_conj_rotation:			Quat = part_2_times_part_1_rotation.conjugate();
-					// let part_2_times_inv_part_1_rotation:			Quat = part_2_rotation * inv_part_1_rotation;
-					// let part_2_times_inv_part_1_conj_rotation:		Quat = part_2_times_inv_part_1_rotation.conjugate();
-					// let inv_part_2_times_part_1_rotation:			Quat = inv_part_2_rotation * part_1_rotation;
-					// let inv_part_2_times_part_1_conj_rotation:		Quat = inv_part_2_times_part_1_rotation.conjugate();
-					// let inv_part_2_times_inv_part_1_rotation:		Quat = inv_part_2_rotation * inv_part_1_rotation;
-					// let inv_part_2_times_inv_part_1_conj_rotation:	Quat = inv_part_2_times_inv_part_1_rotation.conjugate();
-
-					// let part_2_times_part_1_orientation:				Quat = part_2_times_part_1_rotation					* home_base_orientation;
-					// let part_2_times_part_1_conj_orientation:			Quat = part_2_times_part_1_conj_rotation			* home_base_orientation;
-					// let part_2_times_inv_part_1_orientation:			Quat = part_2_times_inv_part_1_rotation				* home_base_orientation;
-					// let part_2_times_inv_part_1_conj_orientation:		Quat = part_2_times_inv_part_1_conj_rotation		* home_base_orientation;
-					// let inv_part_2_times_part_1_orientation:			Quat = inv_part_2_times_part_1_rotation				* home_base_orientation;
-					// let inv_part_2_times_part_1_conj_orientation:		Quat = inv_part_2_times_part_1_conj_rotation		* home_base_orientation;
-					// let inv_part_2_times_inv_part_1_orientation:		Quat = inv_part_2_times_inv_part_1_rotation			* home_base_orientation;
-					// let inv_part_2_times_inv_part_1_conj_orientation:	Quat = inv_part_2_times_inv_part_1_conj_rotation	* home_base_orientation;
-
-					// let home_base_orientation: Quat = transformation_library.orientation_data[PENTAGON_INDEX_OFFSET][PENTAGON_INDEX_OFFSET].quat;
-					// let part_1_addr:		Addr = camera_component.prev_addr;
-					// let inv_part_1_addr:	Addr = *transformation_library.book_pack_data.addr.get_word(part_1_addr);
-					// let part_2_addr:		Addr = reorientation_addr;
-					// let inv_part_1_rotation:	Quat = *transformation_library.book_pack_data.quat.get_word(inv_part_1_addr);
-					// let part_2_rotation:		Quat = *transformation_library.book_pack_data.quat.get_word(part_2_addr);
-					// let part_2_times_inv_part_1_rotation:			Quat = part_2_rotation * inv_part_1_rotation;
-					// let part_2_times_inv_part_1_orientation:			Quat = part_2_times_inv_part_1_rotation				* home_base_orientation;
-
-					// if camera_component.animation.is_some() {
-					// 	transform.rotation = part_2_times_inv_part_1_orientation;
-					// 	// transform.rotation = part_2_times_inv_part_1_conj_orientation;
-					// 	camera_component.animation = None;
-					// } else {
-					// 	let part_1_orientation: Quat = transformation_library.orientation_data.get_word(part_1_addr).quat;
-					// 	let current_orientation: Quat = transform.rotation;
-					// 	let new_addr: Addr = CameraPlugin::compute_camera_addr(polyhedra_data_library.icosidodecahedron, &part_2_times_inv_part_1_orientation);
-	
-					// 	let new_orientation: Quat = transformation_library.orientation_data.get_word(new_addr).quat;
-	
-					// 	trace_expr!(new_orientation, part_2_times_inv_part_1_orientation, new_orientation.dot(part_2_times_inv_part_1_orientation), new_orientation.conjugate(), part_2_times_inv_part_1_orientation.conjugate());
-					// 	let new_to_part_1_rotation: Quat = part_1_orientation * new_orientation.conjugate();
-					// 	let rotation_2_b: Quat = new_to_part_1_rotation.conjugate() * part_1_orientation * (new_to_part_1_rotation.conjugate() * current_orientation).conjugate();
-	
-					// 	// new_orientation == part_2_times_inv_part_1_orientation
-	
-					// 	transform.rotation = rotation_2_b.conjugate() * part_2_times_inv_part_1_orientation;
-					// }
-
-					// let icosidodecahedron_data: &Data = polyhedra_data_library.icosidodecahedron;
-
-					// let part_2_times_part_1_addr:				Addr = CameraPlugin::compute_camera_addr(icosidodecahedron_data, &part_2_times_part_1_orientation);
-					// let part_2_times_part_1_conj_addr:			Addr = CameraPlugin::compute_camera_addr(icosidodecahedron_data, &part_2_times_part_1_conj_orientation);
-					// let part_2_times_inv_part_1_addr:			Addr = CameraPlugin::compute_camera_addr(icosidodecahedron_data, &part_2_times_inv_part_1_orientation);
-					// let part_2_times_inv_part_1_conj_addr:		Addr = CameraPlugin::compute_camera_addr(icosidodecahedron_data, &part_2_times_inv_part_1_conj_orientation);
-					// let inv_part_2_times_part_1_addr:			Addr = CameraPlugin::compute_camera_addr(icosidodecahedron_data, &inv_part_2_times_part_1_orientation);
-					// let inv_part_2_times_part_1_conj_addr:		Addr = CameraPlugin::compute_camera_addr(icosidodecahedron_data, &inv_part_2_times_part_1_conj_orientation);
-					// let inv_part_2_times_inv_part_1_addr:		Addr = CameraPlugin::compute_camera_addr(icosidodecahedron_data, &inv_part_2_times_inv_part_1_orientation);
-					// let inv_part_2_times_inv_part_1_conj_addr:	Addr = CameraPlugin::compute_camera_addr(icosidodecahedron_data, &inv_part_2_times_inv_part_1_conj_orientation);
-
-					// trace_expr!(0,
-					// 	part_2_times_part_1_addr,
-					// 	part_2_times_part_1_conj_addr,
-					// 	part_2_times_inv_part_1_addr,
-					// 	part_2_times_inv_part_1_conj_addr,
-					// 	inv_part_2_times_part_1_addr,
-					// 	inv_part_2_times_part_1_conj_addr,
-					// 	inv_part_2_times_inv_part_1_addr,
-					// 	inv_part_2_times_inv_part_1_conj_addr
-					// );
-
-
-
-					// if camera_component.animation.is_some() {
-					// 	// let final_transformation_quat: Quat = match preferences.debug.inv_camera_addr {
-					// 	// 	0 => part_2_times_part_1_rotation,
-					// 	// 	1 => part_2_times_part_1_conj_rotation,
-					// 	// 	2 => part_2_times_inv_part_1_rotation,
-					// 	// 	3 => part_2_times_inv_part_1_conj_rotation,
-					// 	// 	4 => inv_part_2_times_part_1_rotation,
-					// 	// 	5 => inv_part_2_times_part_1_conj_rotation,
-					// 	// 	6 => inv_part_2_times_inv_part_1_rotation,
-					// 	// 	7 => inv_part_2_times_inv_part_1_conj_rotation,
-					// 	// 	8 => part_1_rotation,
-					// 	// 	9 => inv_part_1_rotation,
-					// 	// 	10 => part_2_rotation,
-					// 	// 	11 => inv_part_2_rotation,
-					// 	// 	_ => inv_reorientation_quat_full
-					// 	// };
-
-					// 	// let corresponding_reorientation_orientation: Quat = part_2_rotation.conjugate() * (part_1_rotation * home_base_orientation);
-					// 	// let corresponding_reorientation_addr: Addr = CameraPlugin::compute_camera_addr(icosidodecahedron_data, &corresponding_reorientation_orientation)
-					// 	// let dirty_camera_quat: Quat = final_transformation_quat * transformation_library.orientation_data[PENTAGON_INDEX_OFFSET][PENTAGON_INDEX_OFFSET].quat;
-					// 	// let dirty_camera_quat: Quat = home_base_orientation * (part_2_rotation.conjugate() * (part_1_rotation * home_base_orientation)).conjugate() * home_base_orientation;
-					// 	// transform.rotation = dirty_camera_quat;
-					// 	transform.rotation = part_2_times_inv_part_1_orientation;
-					// 	// transform.rotation = part_2_times_inv_part_1_conj_orientation;
-					// 	camera_component.animation = None;
-					// } else {
-					// 	// transform.rotate(inv_reorientation_quat_full);
-					// 	// let part_1_orientation: Quat = transformation_library.orientation_data.get_word(part_1_addr).quat;
-					// 	// let current_orientation: Quat = transform.rotation;
-					// 	// let current_to_part_1_rotation: Quat = part_1_orientation * current_orientation.conjugate();
-
-					// 	// transform.rotation = part_2_times_inv_part_1_conj_rotation * (current_orientation * part_1_orientation.conjugate()) * home_base_orientation;
-					// 	// transform.rotation = (part_1_orientation * current_orientation.conjugate()) * part_2_times_inv_part_1_orientation;
-					// 	// transform.rotation = (current_orientation * part_1_orientation.conjugate()) * part_2_times_inv_part_1_orientation;
-
-					// 	// transform.rotate(current_to_part_1_rotation.conjugate() * part_2_times_inv_part_1_rotation * current_to_part_1_rotation);
-					// 	// transform.rotate(current_to_part_1_rotation.conjugate() * part_2_times_inv_part_1_rotation.conjugate() * current_to_part_1_rotation);
-					// 	// transform.rotate(part_2_times_inv_part_1_rotation.conjugate());
-					// 	// transform.rotate(current_to_part_1_rotation);
-					// 	// let new_addr: Addr = CameraPlugin::compute_camera_addr(polyhedra_data_library.icosidodecahedron, &part_2_times_inv_part_1_orientation);
-					// 	// let rotation_1: Quat = polyhedra_data_library.icosidodecahedron.faces[new_addr.line_index()].get_rotation_quat(((PENTAGON_SIDE_COUNT + part_1_addr.word_index() - new_addr.word_index()) % PENTAGON_SIDE_COUNT) as u32);
-
-					// 	// let rotation_1_a: Quat = rotation_1 * part_1_orientation * (rotation_1 * current_orientation).conjugate();
-					// 	// let rotation_1_b: Quat = rotation_1.conjugate() * part_1_orientation * (rotation_1.conjugate() * current_orientation).conjugate();
-
-					// 	// let new_orientation: Quat = transformation_library.orientation_data.get_word(new_addr).quat;
-
-					// 	// trace_expr!(new_orientation, part_2_times_inv_part_1_orientation, new_orientation.dot(part_2_times_inv_part_1_orientation), new_orientation.conjugate(), part_2_times_inv_part_1_orientation.conjugate());
-					// 	// let new_to_part_1_rotation: Quat = part_1_orientation * new_orientation.conjugate();
-
-					// 	// let rotation_2_a: Quat = new_to_part_1_rotation * part_1_orientation * (new_to_part_1_rotation * current_orientation).conjugate();
-					// 	// let rotation_2_b: Quat = new_to_part_1_rotation.conjugate() * part_1_orientation * (new_to_part_1_rotation.conjugate() * current_orientation).conjugate();
-
-					// 	// transform.rotation = match camera_component.debug_camera_logic {
-					// 	// 	1 => { (part_1_orientation * part_2_times_inv_part_1_orientation.conjugate()) * current_to_part_1_rotation.conjugate() * part_2_times_inv_part_1_orientation },
-					// 	// 	2 => { current_to_part_1_rotation.conjugate() * (part_1_orientation * part_2_times_inv_part_1_orientation.conjugate()) * part_2_times_inv_part_1_orientation },
-					// 	// 	3 => { (part_2_times_inv_part_1_orientation * part_1_orientation.conjugate()) * current_to_part_1_rotation.conjugate() * part_2_times_inv_part_1_orientation },
-					// 	// 	4 => { current_to_part_1_rotation.conjugate() * (part_2_times_inv_part_1_orientation * part_1_orientation.conjugate()) * part_2_times_inv_part_1_orientation },
-					// 	// 	5 => { (part_1_orientation * part_2_times_inv_part_1_orientation.conjugate()) * current_orientation.conjugate() * part_2_times_inv_part_1_orientation },
-					// 	// 	6 => { (part_1_orientation * part_2_times_inv_part_1_orientation.conjugate()) * (part_1_orientation * part_2_times_inv_part_1_orientation.conjugate()) * current_to_part_1_rotation.conjugate() * part_2_times_inv_part_1_orientation },
-					// 	// 	7 => { current_to_part_1_rotation * rotation_1 * part_2_times_inv_part_1_orientation },
-					// 	// 	8 => { current_to_part_1_rotation * part_2_times_inv_part_1_orientation },
-					// 	// 	9 => { current_to_part_1_rotation.conjugate() * part_2_times_inv_part_1_orientation },
-					// 	// 	10 => { rotation_1_a * part_2_times_inv_part_1_orientation },
-					// 	// 	11 => { rotation_1_a.conjugate() * part_2_times_inv_part_1_orientation },
-					// 	// 	12 => { rotation_1_b * part_2_times_inv_part_1_orientation },
-					// 	// 	13 => { rotation_1_b.conjugate() * part_2_times_inv_part_1_orientation }, // promising, only works when rotating face 0 when looking at face 0 (only one that can do that, though)
-					// 	// 	14 => { rotation_2_a * part_2_times_inv_part_1_orientation },
-					// 	// 	15 => { rotation_2_a.conjugate() * part_2_times_inv_part_1_orientation },
-					// 	// 	16 => { rotation_2_b * part_2_times_inv_part_1_orientation },
-					// 	// 	17 => { rotation_2_b.conjugate() * part_2_times_inv_part_1_orientation }, // WE HAVE A WINNER, BABEEEEE
-					// 	// 	_ => { part_2_times_inv_part_1_orientation },
-					// 	// };
-					// 	// transform.rotate(current_to_part_1_rotation);
-
-					// 	// transform.rotation = match camera_component.debug_camera_logic {
-					// 	// 	1 => { rotation_2_b.conjugate() * new_orientation },
-					// 	// 	2 => { rotation_2_b.conjugate() * new_orientation.conjugate() },
-					// 	// 	_ => { rotation_2_b.conjugate() * part_2_times_inv_part_1_orientation },
-					// 	// };
-					// }
-
-					// let rotation_quat: Quat = transform.rotation * transformation_library.orientation_data[PENTAGON_INDEX_OFFSET][PENTAGON_INDEX_OFFSET].quat.conjugate();
-
-					// transform.rotation = transformation_library.orientation_data.get_word(*transformation_library.book_pack_data.addr.get_word(reorientation_addr)).quat;
-					// transform.rotation = transformation_library.orientation
-					// transform.rotate(*transformation_library.book_pack_data.quat.get_word(*transformation_library.book_pack_data.addr.get_word(reorientation_addr)));
 				}
 			} else {
 				let rotation: Quat = Quat::IDENTITY.short_slerp(*word_pack.quat, animation.s_at_time(&now));
