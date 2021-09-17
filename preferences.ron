@@ -21,9 +21,6 @@ Preferences(
 			base_color: "000000" // Black
 		)
 	)),
-	debug:				DebugData(
-		inv_camera_addr:	2
-	),
 	input:				InputData(
 		default_positions:		(	0,			5,			10,			1,			8,			4		),
 		rotation_keys:			(	Numpad0,	Numpad1,	Numpad4,	Numpad5,	Numpad6,	Numpad3	),

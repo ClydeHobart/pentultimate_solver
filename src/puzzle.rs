@@ -679,22 +679,6 @@ impl PuzzlePlugin {
 	) -> () {
 		let input_data: &InputData = &preferences.input;
 
-		if keyboard_input.just_pressed(KeyCode::Return) {
-			const CAMERA_LOGIC_KEYS: [KeyCode; 6] = [KeyCode::Key0, KeyCode::Key9, KeyCode::Key8, KeyCode::Key7, KeyCode::Key6, KeyCode::Key5];
-	
-			let mut bit_field: i32 = 0_i32;
-
-			for (index, key_code) in CAMERA_LOGIC_KEYS.iter().enumerate() {
-				if keyboard_input.pressed(*key_code) {
-					bit_field |= 1_i32 << index;
-				}
-			}
-
-			if let Some((mut camera_component, _)) = queries.q0_mut().iter_mut().next() {
-				camera_component.debug_camera_logic = bit_field;
-			}
-		}
-
 		if let Some(animation) = &extended_puzzle_state.animation {
 			let now: Instant = Instant::now();
 			let word_pack: WordPack = transformation_library.book_pack_data.get_word_pack(animation.addr);
@@ -706,7 +690,7 @@ impl PuzzlePlugin {
 
 				*extended_puzzle_state += standardization_word_pack.trfm;
 
-				assert!(extended_puzzle_state.puzzle_state.is_standardized());
+				warn_expect!(extended_puzzle_state.puzzle_state.is_standardized());
 
 				let puzzle_state: &InflatedPuzzleState = &extended_puzzle_state.puzzle_state;
 

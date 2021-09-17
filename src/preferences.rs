@@ -25,17 +25,9 @@ define_struct_with_default!(
 	}
 );
 
-define_struct_with_default!(
-	#[derive(Deserialize)]
-	pub DebugData {
-		pub inv_camera_addr:	i32 = -1,
-	}
-);
-
 #[derive(Default, Deserialize)]
 pub struct Preferences {
 	pub color:				ColorDataTyped,
-	pub debug:				DebugData,
 	pub input:				InputData,
 	pub light_and_camera:	LightAndCameraData,
 	pub speed:				SpeedData,

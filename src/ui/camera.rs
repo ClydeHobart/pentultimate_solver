@@ -81,8 +81,7 @@ pub struct Animation {
 #[derive(Default)]
 pub struct CameraComponent {
 	pub animation: Option<Animation>,
-	pub prev_addr: Addr,
-	pub debug_camera_logic: i32
+	pub prev_addr: Addr
 }
 
 pub struct CameraPlugin;
@@ -95,11 +94,7 @@ impl CameraPlugin {
 	) -> () {
 		commands
 			.spawn_bundle((
-				// CameraComponent::default(),
-				CameraComponent {
-					debug_camera_logic: -1_i32,
-					.. CameraComponent::default()
-				},
+				CameraComponent::default(),
 				Transform::from_rotation(polyhedra_data_library.icosidodecahedron.faces[Type::Pentagon.index_offset()].quat),
 				GlobalTransform::default()
 			))
