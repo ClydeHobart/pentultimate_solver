@@ -11,7 +11,10 @@ use {
 		puzzle::{
 			consts::PENTAGON_SIDE_COUNT,
 			inflated::Animation as PuzzleAnimation,
-			transformation::Addr
+			transformation::{
+				Addr,
+				GetWord
+			}
 		}
 	},
 	std::time::{
@@ -167,14 +170,19 @@ impl CameraPlugin {
 				camera_component.animation = None;
 			} else if warn_expect!(animation.puzzle_animation.addr.is_valid_with_mask(Addr::from((None, Some(0), Some(0))))) {
 				let now: Instant = Instant::now();
-				let addr: Addr = animation.puzzle_animation.addr;
-				let end_quat: Quat = transformation_library.orientation_data[addr.line_index()][addr.word_index()].quat;
+				let end_quat: Quat = transformation_library.orientation_data.get_word(animation.puzzle_animation.addr).quat;
 	
-				if animation.puzzle_animation.is_done_at_time(&now) {
-					*transform = Transform::from_rotation(end_quat);
+				transform.rotation = if animation.puzzle_animation.is_done_at_time(&now) {
+					end_quat
 				} else {
-					*transform = Transform::from_rotation(animation.start_quat.short_slerp(end_quat, animation.puzzle_animation.s_at_time(&now)));
-				}
+					animation.start_quat.short_slerp(end_quat, animation.puzzle_animation.s_at_time(&now))
+				};
+
+				// if animation.puzzle_animation.is_done_at_time(&now) {
+				// 	*transform = Transform::from_rotation(end_quat);
+				// } else {
+				// 	*transform = Transform::from_rotation(animation.start_quat.short_slerp(end_quat, animation.puzzle_animation.s_at_time(&now)));
+				// }
 			}
 		} else if keyboard_input.just_pressed(preferences.input.recenter_camera) {
 			camera_component.animation = Some(Animation {

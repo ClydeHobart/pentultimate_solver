@@ -92,6 +92,12 @@ pub enum Type {
 	Count				// Not an actual transformation, this allows us to statically allocate memory for a type that has a variant for each "valid" Type variant
 }
 
+impl Type {
+	pub fn addr(self) -> Addr {
+		Addr::from_page(self as usize)
+	}
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct Addr {
 	page_index: i8,
@@ -350,6 +356,16 @@ impl<T> FindWord<T> for Book<T>
 pub trait GetWord<T> {
 	fn get_word(&self, addr: Addr) -> &Word<T>;
 	fn get_word_mut(&mut self, addr: Addr) -> &mut Word<T>;
+}
+
+impl<T> GetWord<T> for Page<T> {
+	fn get_word(&self, addr: Addr) -> &Word<T> {
+		&self[addr.line_index()][addr.word_index()]
+	}
+
+	fn get_word_mut(&mut self, addr: Addr) -> &mut Word<T> {
+		&mut self[addr.line_index()][addr.word_index()]
+	}
 }
 
 impl<T> GetWord<T> for LongPage<T> {
