@@ -20,6 +20,7 @@ use {
 		}
 	},
 	bevy::prelude::*,
+	bit_field::BitField,
 	std::{
 		fmt::{
 			Debug,
@@ -27,10 +28,11 @@ use {
 			Formatter
 		},
 		ops::{
-			BitOr,
 			Deref,
-			Neg
-		}
+			Neg,
+			Range
+		},
+		mem::transmute
 	}
 };
 
@@ -85,122 +87,324 @@ impl Mask {
 	}
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Type {
 	Reorientation,		// This transformation standardizes the puzzle state (reorients piece 0 to be at position 0 with rotation 0)
 	StandardRotation,	// This transformation rotates one of the hemispherical halves about one of the 12 pentagonal pieces n fifth-rotations, where n is in [0, 5)
 	Count				// Not an actual transformation, this allows us to statically allocate memory for a type that has a variant for each "valid" Type variant
 }
 
-impl Type {
-	pub fn addr(self) -> Addr {
-		Addr::from_page(self as usize)
+pub trait Addr {
+	fn get_page_index(&self)		-> usize { unimplemented!(); }
+	fn get_line_index(&self)		-> usize { unimplemented!(); }
+	fn get_long_line_index(&self)	-> usize { unimplemented!(); }
+	fn get_word_index(&self)		-> usize { unimplemented!(); }
+
+	fn set_page_index(&mut self, _page_index: usize)			-> &mut Self { unimplemented!(); }
+	fn set_line_index(&mut self, _line_index: usize)			-> &mut Self { unimplemented!(); }
+	fn set_long_line_index(&mut self, _long_line_index: usize)	-> &mut Self { unimplemented!(); }
+	fn set_word_index(&mut self, _word_index: usize)			-> &mut Self { unimplemented!(); }
+}
+
+pub trait HalfAddrConsts {
+	const INVALID: u8;
+	const LINE_INDEX_BITS: Range<usize>;
+	const WORD_INDEX_BITS: Range<usize>;
+}
+
+#[derive(Clone, Copy)]
+pub struct HalfAddr(u8);
+
+impl HalfAddr {
+	#[inline(always)]
+	pub fn is_valid(&self) -> bool { self.0 != Self::INVALID && self.word_index_is_valid()}
+
+	#[inline(always)]
+	pub fn line_index_is_valid(&self) -> bool { Self::is_valid_line_index(unsafe { self.get_line_index_unchecked() }) }
+
+	#[inline(always)]
+	pub fn is_valid_line_index(line_index: usize) -> bool { line_index < Library::LINE_COUNT }
+
+	#[inline(always)]
+	pub fn is_valid_long_line_index(long_line_index: usize) -> bool { long_line_index < Library::LONG_LINE_COUNT }
+
+	#[inline(always)]
+	pub fn word_index_is_valid(&self) -> bool { Self::is_valid_word_index(unsafe { self.get_word_index_unchecked() }) }
+
+	#[inline(always)]
+	pub fn is_valid_word_index(word_index: usize) -> bool { word_index < Library::WORD_COUNT }
+
+	pub fn new(line_index: usize, word_index: usize) -> Self {
+		*Self::default()
+			.set_long_line_index(line_index) // Accomodate long line indices
+			.set_word_index(word_index)
+	}
+
+	pub fn invalidate(&mut self) -> () {
+		self.0 = Self::INVALID;
+	}
+
+	#[inline(always)]
+	unsafe fn get_line_index_unchecked(&self) -> usize {
+		self.0.get_bits(Self::LINE_INDEX_BITS) as usize
+	}
+
+	#[inline(always)]
+	unsafe fn get_word_index_unchecked(&self) -> usize {
+		self.0.get_bits(Self::WORD_INDEX_BITS) as usize
 	}
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct Addr {
-	page_index: i8,
-	line_index: i8,
-	word_index: i8
+impl HalfAddrConsts for HalfAddr {
+	const INVALID: u8 = u8::MAX;
+	const LINE_INDEX_BITS: Range<usize> = 3_usize .. u8::BIT_LENGTH;
+	const WORD_INDEX_BITS: Range<usize> = 0_usize .. 3_usize;
 }
 
-pub trait AddrConsts {
+impl Addr for HalfAddr {
+	fn get_line_index(&self) -> usize {
+		assert!(self.is_valid() && self.line_index_is_valid());
+
+		// Safe: checked above
+		unsafe { self.get_line_index_unchecked() }
+	}
+
+	fn get_long_line_index(&self) -> usize {
+		const_assert!(Library::LONG_LINE_COUNT <= 1_usize << (HalfAddr::LINE_INDEX_BITS.end - HalfAddr::LINE_INDEX_BITS.start));
+		assert!(self.is_valid());
+
+		// Safe: checked above (const_assert! shows the long line index is always valid)
+		unsafe { self.get_line_index_unchecked() }
+	}
+
+	fn get_word_index(&self) -> usize {
+		assert!(self.is_valid());
+
+		// Safe: checked above
+		unsafe { self.get_word_index_unchecked() }
+	}
+
+	fn set_line_index(&mut self, line_index: usize) -> &mut Self {
+		assert!(Self::is_valid_line_index(line_index));
+		self.0.set_bits(Self::LINE_INDEX_BITS, line_index as u8);
+
+		self
+	}
+
+	fn set_long_line_index(&mut self, long_line_index: usize) -> &mut Self {
+		// This assert is unnecessary, since the call to set_bits() would panic if this weren't the case, but it makes
+		// the issue more clear
+		assert!(Self::is_valid_long_line_index(long_line_index));
+		self.0.set_bits(Self::LINE_INDEX_BITS, long_line_index as u8);
+
+		self
+	}
+
+	fn set_word_index(&mut self, word_index: usize) -> &mut Self {
+		assert!(Self::is_valid_word_index(word_index));
+		self.0.set_bits(Self::WORD_INDEX_BITS, word_index as u8);
+
+		self
+	}
+}
+
+impl From<(usize, usize)> for HalfAddr {
+	fn from((line_index, word_index): (usize, usize)) -> Self { Self::new(line_index, word_index) }
+}
+
+impl Debug for HalfAddr {
+	fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+		formatter
+			.debug_struct("HalfAddr")
+			.field("line_index", unsafe { &self.get_line_index_unchecked() })
+			.field("word_index", unsafe { &self.get_word_index_unchecked() })
+			.finish()
+	}
+}
+
+impl Default for HalfAddr {
+	fn default() -> Self {
+		Self(Self::INVALID)
+	}
+}
+
+pub trait FullAddrConsts {
 	const INVALID_INDEX: i8;
 }
 
-impl AddrConsts for Addr {
+#[derive(Clone, Copy)]
+pub struct FullAddr {
+	page_index:	i8,
+	half_addr:	HalfAddr
+}
+
+impl FullAddrConsts for FullAddr {
 	const INVALID_INDEX: i8 = -1_i8;
 }
 
-impl Addr {
+impl FullAddr {
 	#[inline(always)]
-	pub fn is_valid(&self) -> bool { self.is_valid_with_mask(Self::from((Some(0), Some(0), Some(0)))) }
+	pub fn is_valid(&self) -> bool { self.page_index_is_valid() && self.half_addr_is_valid() }
 
-	pub fn is_valid_with_mask(&self, mask: Self) -> bool {
-		(mask.page_index == Self::INVALID_INDEX || self.page_index_is_valid()) &&
-		(mask.line_index == Self::INVALID_INDEX || self.line_index_is_valid()) &&
-		(mask.word_index == Self::INVALID_INDEX || self.word_index_is_valid())
-	}
+	#[inline(always)]
+	pub fn page_index_is_valid(&self) -> bool { Self::is_valid_page_index(unsafe { self.get_page_index_unchecked() }) }
 
-	pub fn from_page(page_index: usize) -> Self {
-		Self {
-			page_index: page_index as i8,
-			.. Self::default()
+	#[inline(always)]
+	pub fn is_valid_page_index(page_index: usize) -> bool { page_index < Library::PAGE_COUNT }
+
+	#[inline(always)]
+	pub fn half_addr_is_valid(&self) -> bool { self.line_index_is_valid() && self.word_index_is_valid() }
+
+	#[inline(always)]
+	pub fn line_index_is_valid(&self) -> bool { self.half_addr.line_index_is_valid() }
+
+	#[inline(always)]
+	pub fn word_index_is_valid(&self) -> bool { self.half_addr.word_index_is_valid() }
+
+	pub fn get_page_index_type(&self) -> Option<Type> {
+		if self.page_index_is_valid() {
+			Some(unsafe { transmute(self.page_index) })
+		} else {
+			None
 		}
 	}
 
-	pub fn from_line(line_index: usize) -> Self {
-		Self {
-			line_index: line_index as i8,
-			.. Self::default()
-		}
+	pub fn get_half_addr(&self) -> HalfAddr { self.half_addr }
+
+	pub fn set_half_addr(&mut self, half_addr: HalfAddr) -> &mut FullAddr {
+		assert!(half_addr.is_valid() && half_addr.line_index_is_valid());
+		self.half_addr = half_addr;
+
+		self
 	}
 
-	pub fn from_word(word_index: usize) -> Self {
-		Self {
-			word_index: word_index as i8,
-			.. Self::default()
-		}
+	pub fn invalidate(&mut self) -> () {
+		*self = Self::default()
+	}
+
+	pub fn invalidate_page_index(&mut self) -> () {
+		self.page_index = Self::INVALID_INDEX;
+	}
+
+	pub fn invalidate_half_addr(&mut self) -> () {
+		self.half_addr.invalidate();
 	}
 
 	#[inline(always)]
-	pub fn page_index_is_valid(&self) -> bool { self.page_index > Self::INVALID_INDEX && self.page_index < Library::PAGE_COUNT as i8 }
-
-	#[inline(always)]
-	pub fn line_index_is_valid(&self) -> bool { self.line_index > Self::INVALID_INDEX && self.line_index < Library::LINE_COUNT as i8 }
-
-	#[inline(always)]
-	pub fn word_index_is_valid(&self) -> bool { self.word_index > Self::INVALID_INDEX && self.word_index < Library::WORD_COUNT as i8 }
-
-	pub fn page_index(&self) -> usize { assert!(self.page_index_is_valid()); self.page_index as usize }
-	pub fn line_index(&self) -> usize { assert!(self.line_index_is_valid()); self.line_index as usize }
-	pub fn word_index(&self) -> usize { assert!(self.word_index_is_valid()); self.word_index as usize }
-
-	#[inline(always)]
-	pub fn long_line_index_is_valid(&self) -> bool { self.line_index > Self::INVALID_INDEX && self.line_index < Library::LONG_LINE_COUNT as i8 }
-
-	pub fn long_line_index(&self) -> usize { assert!(self.long_line_index_is_valid()); self.line_index as usize }
-}
-
-impl BitOr for Addr {
-	type Output = Self;
-
-	fn bitor(self, rhs: Self) -> Self::Output {
-		Self {
-			page_index: if self.page_index == Self::INVALID_INDEX { rhs.page_index } else { self.page_index },
-			line_index: if self.line_index == Self::INVALID_INDEX { rhs.line_index } else { self.line_index },
-			word_index: if self.word_index == Self::INVALID_INDEX { rhs.word_index } else { self.word_index },
-		}
+	unsafe fn get_page_index_unchecked(&self) -> usize {
+		if self.page_index < 0 { usize::MAX } else { self.page_index as usize }
 	}
 }
 
-impl Default for Addr {
+impl Addr for FullAddr {
+	fn get_page_index(&self) -> usize {
+		assert!(self.page_index_is_valid());
+
+		self.page_index as usize
+	}
+
+	fn get_line_index(&self) -> usize {
+		// asserts in HalfAddr::get_line_index()
+		self.half_addr.get_line_index()
+	}
+
+	fn get_word_index(&self) -> usize {
+		// asserts in HalfAddr::get_word_index()
+		self.half_addr.get_word_index()
+	}
+
+	fn set_page_index(&mut self, page_index: usize) -> &mut FullAddr {
+		assert!(Self::is_valid_page_index(page_index));
+		self.page_index = page_index as i8;
+
+		self
+	}
+
+	fn set_line_index(&mut self, line_index: usize) -> &mut FullAddr {
+		// asserts in HalfAddr::set_line_index()
+		self.half_addr.set_line_index(line_index);
+
+		self
+	}
+
+	fn set_word_index(&mut self, word_index: usize) -> &mut FullAddr {
+		// asserts in HalfAddr::set_word_index()
+		self.half_addr.set_word_index(word_index);
+
+		self
+	}
+}
+
+impl Debug for FullAddr {
+	fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+		let mut debug_struct: std::fmt::DebugStruct = formatter.debug_struct("FullAddr");
+		let mut page_index_type_local: Type = Type::Count;
+
+		debug_struct.field("page_index", &self.get_page_index_type()
+			.map_or(
+				&"[invalid]" as &dyn std::fmt::Debug,
+				|page_index_type: Type| -> &dyn std::fmt::Debug {
+					page_index_type_local = page_index_type; &page_index_type_local
+				}
+			)
+		);
+
+		if self.half_addr.is_valid() && self.half_addr.line_index_is_valid() {
+			debug_struct.field("line_index", &self.half_addr.get_line_index());
+			debug_struct.field("word_index", &self.half_addr.get_word_index());
+		} else {
+			debug_struct.field("half_addr", &"[invalid]");
+		}
+
+		debug_struct.finish()
+	}
+}
+
+impl Default for FullAddr {
 	fn default() -> Self {
 		Self {
 			page_index: Self::INVALID_INDEX,
-			line_index: Self::INVALID_INDEX,
-			word_index: Self::INVALID_INDEX
+			half_addr: HalfAddr::default()
 		}
 	}
 }
 
-impl From<(usize, usize, usize)> for Addr {
+impl From<(usize, usize, usize)> for FullAddr {
 	fn from((page_index, line_index, word_index): (usize, usize, usize)) -> Self {
 		Self {
-			page_index: page_index as i8,
-			line_index: line_index as i8,
-			word_index: word_index as i8
+			page_index: if Self::is_valid_page_index(page_index) { page_index as i8 } else { Self::INVALID_INDEX },
+			half_addr: if HalfAddr::is_valid_line_index(line_index) && HalfAddr::is_valid_word_index(word_index) {
+				HalfAddr::new(line_index, word_index)
+			} else {
+				HalfAddr::default()
+			}
 		}
 	}
 }
 
-impl From<(Option<usize>, Option<usize>, Option<usize>)> for Addr {
-	fn from((page_index, line_index, word_index): (Option<usize>, Option<usize>, Option<usize>)) -> Self {
+impl From<Type> for FullAddr {
+	fn from(page_index_type: Type) -> Self {
 		Self {
-			page_index: page_index.map_or(Self::INVALID_INDEX, |page_index: usize| -> i8 { page_index as i8 }),
-			line_index: line_index.map_or(Self::INVALID_INDEX, |line_index: usize| -> i8 { line_index as i8 }),
-			word_index: word_index.map_or(Self::INVALID_INDEX, |word_index: usize| -> i8 { word_index as i8 })
+			page_index: page_index_type as i8,
+			.. Self::default()
+		}
+	}
+}
+
+impl From<HalfAddr> for FullAddr {
+	fn from(half_addr: HalfAddr) -> Self {
+		Self {
+			half_addr: if half_addr.line_index_is_valid() { half_addr } else { HalfAddr::default() },
+			.. Self::default()
+		}
+	}
+}
+
+impl From<(Type, HalfAddr)> for FullAddr {
+	fn from((page_index_type, half_addr): (Type, HalfAddr)) -> Self {
+		Self {
+			page_index: page_index_type as i8,
+			half_addr
 		}
 	}
 }
@@ -286,16 +490,16 @@ pub trait FindWord<T>
 	where
 		T: PartialEq
 {
-	fn find_word(&self, word: &Word<T>) -> Option<Addr>;
+	fn find_word(&self, word: &Word<T>) -> Option<FullAddr>;
 }
 
 impl<T> FindWord<T> for Word<T>
 	where
 		T: PartialEq
 {
-	fn find_word(&self, target_word: &Word<T>) -> Option<Addr> {
+	fn find_word(&self, target_word: &Word<T>) -> Option<FullAddr> {
 		if self == target_word {
-			Some(Addr::default())
+			Some(FullAddr::default())
 		} else {
 			None
 		}
@@ -306,12 +510,10 @@ impl<T> FindWord<T> for Line<T>
 	where
 		T: PartialEq
 {
-	fn find_word(&self, target_word: &Word<T>) -> Option<Addr> {
+	fn find_word(&self, target_word: &Word<T>) -> Option<FullAddr> {
 		for (word_index, word) in self.iter().enumerate() {
 			if let Some(mut address) = word.find_word(target_word) {
-				address.word_index = word_index as i8;
-
-				return Some(address)
+				return Some(*address.set_word_index(word_index));
 			}
 		}
 
@@ -323,12 +525,10 @@ impl<T> FindWord<T> for Page<T>
 	where
 		T: PartialEq
 {
-	fn find_word(&self, target_word: &Word<T>) -> Option<Addr> {
+	fn find_word(&self, target_word: &Word<T>) -> Option<FullAddr> {
 		for (line_index, line) in self.iter().enumerate() {
 			if let Some(mut address) = line.find_word(target_word) {
-				address.line_index = line_index as i8;
-
-				return Some(address)
+				return Some(*address.set_line_index(line_index));
 			}
 		}
 
@@ -340,12 +540,10 @@ impl<T> FindWord<T> for Book<T>
 	where
 		T: PartialEq
 {
-	fn find_word(&self, target_word: &Word<T>) -> Option<Addr> {
+	fn find_word(&self, target_word: &Word<T>) -> Option<FullAddr> {
 		for (page_index, page) in self.iter().enumerate() {
 			if let Some(mut address) = page.find_word(target_word) {
-				address.page_index = page_index as i8;
-
-				return Some(address)
+				return Some(*address.set_page_index(page_index));
 			}
 		}
 
@@ -353,38 +551,38 @@ impl<T> FindWord<T> for Book<T>
 	}
 }
 
-pub trait GetWord<T> {
-	fn get_word(&self, addr: Addr) -> &Word<T>;
-	fn get_word_mut(&mut self, addr: Addr) -> &mut Word<T>;
+pub trait GetWord<A : Addr, T> {
+	fn get_word(&self, addr: A) -> &Word<T>;
+	fn get_word_mut(&mut self, addr: A) -> &mut Word<T>;
 }
 
-impl<T> GetWord<T> for Page<T> {
-	fn get_word(&self, addr: Addr) -> &Word<T> {
-		&self[addr.line_index()][addr.word_index()]
+impl<A : Addr + Sized, T> GetWord<A, T> for Page<T> {
+	fn get_word(&self, addr: A) -> &Word<T> {
+		&self[addr.get_line_index()][addr.get_word_index()]
 	}
 
-	fn get_word_mut(&mut self, addr: Addr) -> &mut Word<T> {
-		&mut self[addr.line_index()][addr.word_index()]
-	}
-}
-
-impl<T> GetWord<T> for LongPage<T> {
-	fn get_word(&self, addr: Addr) -> &Word<T> {
-		&self[addr.long_line_index()][addr.word_index()]
-	}
-
-	fn get_word_mut(&mut self, addr: Addr) -> &mut Word<T> {
-		&mut self[addr.long_line_index()][addr.word_index()]
+	fn get_word_mut(&mut self, addr: A) -> &mut Word<T> {
+		&mut self[addr.get_line_index()][addr.get_word_index()]
 	}
 }
 
-impl<T> GetWord<T> for Book<T> {
-	fn get_word(&self, addr: Addr) -> &Word<T> {
-		&self[addr.page_index()][addr.line_index()][addr.word_index()]
+impl<A : Addr + Sized, T> GetWord<A, T> for LongPage<T> {
+	fn get_word(&self, addr: A) -> &Word<T> {
+		&self[addr.get_long_line_index()][addr.get_word_index()]
 	}
 
-	fn get_word_mut(&mut self, addr: Addr) -> &mut Word<T> {
-		&mut self[addr.page_index()][addr.line_index()][addr.word_index()]
+	fn get_word_mut(&mut self, addr: A) -> &mut Word<T> {
+		&mut self[addr.get_long_line_index()][addr.get_word_index()]
+	}
+}
+
+impl<A : Addr + Sized, T> GetWord<A, T> for Book<T> {
+	fn get_word(&self, addr: A) -> &Word<T> {
+		&self[addr.get_page_index()][addr.get_line_index()][addr.get_word_index()]
+	}
+
+	fn get_word_mut(&mut self, addr: A) -> &mut Word<T> {
+		&mut self[addr.get_page_index()][addr.get_line_index()][addr.get_word_index()]
 	}
 }
 
@@ -421,7 +619,7 @@ impl Library {
 
 			{
 				let initial_pent_quat: Quat = icosidodecahedron_data.faces[PENTAGON_INDEX_OFFSET].quat;
-				let page_address: Addr = Addr::from_page(Type::Reorientation as usize);
+				let reorientation_page_index: usize = Type::Reorientation as usize;
 
 				let mut page_pack_mut: PagePackMut = book_pack_data.get_page_pack_mut(Type::Reorientation as usize);
 
@@ -442,19 +640,19 @@ impl Library {
 
 						*word_pack_mut.quat = reorientation_quat;
 						*word_pack_mut.mask = Mask::from_puzzle_states(&PuzzleState::SOLVED_STATE, word_pack_mut.trfm.as_ref());
-						*word_pack_mut.addr = Addr::default();
+						*word_pack_mut.addr = FullAddr::default();
 					});
 				});
 
 				let trfm_page:		&Page<Trfm>		= page_pack_mut.trfm;
-				let addr_page_mut:	&mut Page<Addr>	= page_pack_mut.addr;
+				let addr_page_mut:	&mut Page<FullAddr>	= page_pack_mut.addr;
 
 				for (line_index, addr_line_mut) in addr_page_mut.iter_mut().enumerate() {
 					for (word_index, addr_word_mut) in addr_line_mut.iter_mut().enumerate() {
 						*addr_word_mut = trfm_page
 							.find_word(&(-&trfm_page[line_index][word_index]))
-							.map(|address: Addr| -> Addr {
-								address | page_address
+							.map(|mut address: FullAddr| -> FullAddr {
+								*address.set_page_index(reorientation_page_index)
 							})
 							.unwrap_or_default();
 					}
@@ -490,7 +688,7 @@ impl Library {
 
 						*word_pack_mut.quat = rotation_quat;
 						*word_pack_mut.mask = mask;
-						*word_pack_mut.addr = Addr::from((
+						*word_pack_mut.addr = FullAddr::from((
 							Type::StandardRotation as usize,
 							line_index,
 							(Library::WORD_COUNT - word_index) % Library::WORD_COUNT
@@ -560,12 +758,12 @@ mod tests {
 						panic!();
 					}
 
-					let inv_addr: Addr = *word_pack.addr;
+					let inv_addr: FullAddr = *word_pack.addr;
 					let inv_trfm: &Trfm = book_pack.get_word_pack(inv_addr).trfm;
 
 					if *trfm != -inv_trfm || -trfm != *inv_trfm {
 						log::error!("Transformation addressed by ({}, {}, {}), the associated address of transformation ({}, {}, {}) is not the true inverse transformation",
-							inv_addr.page_index, inv_addr.line_index, inv_addr.word_index,
+							inv_addr.get_page_index(), inv_addr.get_line_index(), inv_addr.get_word_index(),
 							page_index, line_index, word_index
 						);
 						error_expr!(trfm, -trfm, inv_trfm, -inv_trfm);

@@ -15,8 +15,8 @@ use {
 			consts::PENTAGON_SIDE_COUNT,
 			inflated::Animation as PuzzleAnimation,
 			transformation::{
-				Addr,
-				GetWord
+				GetWord,
+				HalfAddr
 			}
 		}
 	},
@@ -117,7 +117,7 @@ pub struct Animation {
 #[derive(Default)]
 pub struct CameraComponent {
 	pub animation: Option<Animation>,
-	pub prev_addr: Addr
+	pub prev_addr: HalfAddr
 }
 
 pub struct CameraPlugin;
@@ -202,9 +202,9 @@ impl CameraPlugin {
 		if let Some(animation) = &camera_component.animation {
 			if rotated_or_panned {
 				camera_component.animation = None;
-			} else if warn_expect!(animation.puzzle_animation.addr.is_valid_with_mask(Addr::from((None, Some(0), Some(0))))) {
+			} else if warn_expect!(animation.puzzle_animation.addr.half_addr_is_valid()) {
 				let now: Instant = Instant::now();
-				let end_quat: Quat = transformation_library.orientation_data.get_word(animation.puzzle_animation.addr).quat;
+				let end_quat: Quat = transformation_library.orientation_data.get_word(animation.puzzle_animation.addr.get_half_addr()).quat;
 	
 				transform.rotation = if animation.puzzle_animation.is_done_at_time(&now) {
 					end_quat
@@ -215,7 +215,7 @@ impl CameraPlugin {
 		} else if matches!(input_state.pending_action, PendingAction::RecenterCamera) {
 			camera_component.animation = Some(Animation {
 				puzzle_animation: PuzzleAnimation {
-					addr: Self::compute_camera_addr(&polyhedra_data_library.icosidodecahedron, &transform.rotation),
+					addr: Self::compute_camera_addr(&polyhedra_data_library.icosidodecahedron, &transform.rotation).into(),
 					start: Instant::now(),
 					duration: Duration::from_millis(preferences.speed.rotation_millis as u64)
 				},
@@ -224,15 +224,13 @@ impl CameraPlugin {
 		}
 	}
 
-	pub fn compute_camera_addr(icosidodecahedron_data: &Data, quat: &Quat) -> Addr {
-		let (line_index, word_index): (usize, usize) = icosidodecahedron_data.get_pos_and_rot(
+	pub fn compute_camera_addr(icosidodecahedron_data: &Data, quat: &Quat) -> HalfAddr {
+		icosidodecahedron_data.get_pos_and_rot(
 			&quat,
 			Some(Box::new(|face_data: &FaceData| -> bool {
 				face_data.get_size() == PENTAGON_SIDE_COUNT
 			}))
-		);
-
-		Addr::from((None, Some(line_index), Some(word_index)))
+		).into()
 	}
 }
 

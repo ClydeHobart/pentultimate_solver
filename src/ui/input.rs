@@ -227,7 +227,7 @@ impl InputPlugin {
 
 		for (default_position, key_code) in input_data.rotation_keys.iter().enumerate() {
 			if keyboard_input.just_pressed((*key_code).into()) {
-				pending_action = PendingAction::Transformation{ default_position };
+				pending_action = PendingAction::Transformation{ default_position: input_data.default_positions[default_position] };
 
 				break;
 			}

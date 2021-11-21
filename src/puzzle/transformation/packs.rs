@@ -1,7 +1,8 @@
 use super::{
 	*,
+	Addr as AddrTrait,
 	Transformation as Trfm,
-	Addr as Addr
+	FullAddr as Addr
 };
 pub struct WordPack<'a> {
 	pub trfm:	&'a Word<Trfm>,
@@ -244,15 +245,15 @@ impl<'a, 'b> GetWordPackMut<'b, (usize, usize)> for LongPagePackMut<'a> where 'a
 	}
 }
 
-impl<'a, 'b> GetWordPack<'b, Addr> for LongPagePackMut<'a> where 'a: 'b {
-	fn get_word_pack(&'b self, addr: Addr) -> WordPack<'b> {
-		self.get_word_pack((addr.long_line_index(), addr.word_index()))
+impl<'a, 'b> GetWordPack<'b, HalfAddr> for LongPagePackMut<'a> where 'a: 'b {
+	fn get_word_pack(&'b self, addr: HalfAddr) -> WordPack<'b> {
+		self.get_word_pack((addr.get_long_line_index(), addr.get_word_index()))
 	}
 }
 
-impl<'a, 'b> GetWordPackMut<'b, Addr> for LongPagePackMut<'a> where 'a: 'b {
-	fn get_word_pack_mut(&'b mut self, addr: Addr) -> WordPackMut<'b> {
-		self.get_word_pack_mut((addr.long_line_index(), addr.word_index()))
+impl<'a, 'b> GetWordPackMut<'b, HalfAddr> for LongPagePackMut<'a> where 'a: 'b {
+	fn get_word_pack_mut(&'b mut self, addr: HalfAddr) -> WordPackMut<'b> {
+		self.get_word_pack_mut((addr.get_long_line_index(), addr.get_word_index()))
 	}
 }
 
@@ -278,15 +279,15 @@ impl<'a, 'b> GetWordPackMut<'b, (usize, usize, usize)> for BookPackMut<'a> where
 	}
 }
 
-impl<'a, 'b> GetWordPack<'b, Addr> for BookPack<'a> where 'a: 'b {
-	fn get_word_pack(&'b self, address: Addr) -> WordPack<'b> {
-		self.get_word_pack((address.page_index(), address.line_index(), address.word_index()))
+impl<'a, 'b> GetWordPack<'b, FullAddr> for BookPack<'a> where 'a: 'b {
+	fn get_word_pack(&'b self, address: FullAddr) -> WordPack<'b> {
+		self.get_word_pack((address.get_page_index(), address.get_line_index(), address.get_word_index()))
 	}
 }
 
-impl<'a, 'b> GetWordPackMut<'b, Addr> for BookPackMut<'a> where 'a: 'b {
-	fn get_word_pack_mut(&'b mut self, address: Addr) -> WordPackMut<'b> {
-		self.get_word_pack_mut((address.page_index(), address.line_index(), address.word_index()))
+impl<'a, 'b> GetWordPackMut<'b, FullAddr> for BookPackMut<'a> where 'a: 'b {
+	fn get_word_pack_mut(&'b mut self, address: FullAddr) -> WordPackMut<'b> {
+		self.get_word_pack_mut((address.get_page_index(), address.get_line_index(), address.get_word_index()))
 	}
 }
 
@@ -312,15 +313,15 @@ impl<'a, 'b> GetWordPackMut<'b, (usize, usize, usize)> for BookPackData where 'a
 	}
 }
 
-impl<'a, 'b> GetWordPack<'b, Addr> for BookPackData where 'a: 'b {
-	fn get_word_pack(&'b self, address: Addr) -> WordPack<'b> {
-		self.get_word_pack((address.page_index(), address.line_index(), address.word_index()))
+impl<'a, 'b> GetWordPack<'b, FullAddr> for BookPackData where 'a: 'b {
+	fn get_word_pack(&'b self, address: FullAddr) -> WordPack<'b> {
+		self.get_word_pack((address.get_page_index(), address.get_line_index(), address.get_word_index()))
 	}
 }
 
-impl<'a, 'b> GetWordPackMut<'b, Addr> for BookPackData where 'a: 'b {
-	fn get_word_pack_mut(&'b mut self, address: Addr) -> WordPackMut<'b> {
-		self.get_word_pack_mut((address.page_index(), address.line_index(), address.word_index()))
+impl<'a, 'b> GetWordPackMut<'b, FullAddr> for BookPackData where 'a: 'b {
+	fn get_word_pack_mut(&'b mut self, address: FullAddr) -> WordPackMut<'b> {
+		self.get_word_pack_mut((address.get_page_index(), address.get_line_index(), address.get_word_index()))
 	}
 }
 

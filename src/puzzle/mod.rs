@@ -37,7 +37,8 @@ use {
 		},
 		transformation::{
 			packs::*,
-			Addr,
+			FullAddr,
+			HalfAddr,
 			Page,
 			Transformation,
 			Library as TransformationLibrary,
@@ -280,12 +281,12 @@ pub mod inflated {
 	}
 
 	impl PuzzleState {
-		pub fn addr(&self, piece_index: usize) -> Addr {
-			Addr::from((None, Some(self.pos[piece_index] as usize), Some(self.rot[piece_index] as usize)))
+		pub fn half_addr(&self, piece_index: usize) -> HalfAddr {
+			HalfAddr::new(self.pos[piece_index] as usize, self.rot[piece_index] as usize)
 		}
 
-		pub fn addr_with_page(&self, piece_index: usize) -> Addr {
-			self.addr(piece_index) | TransformationType::Reorientation.addr()
+		pub fn full_addr(&self, piece_index: usize) -> FullAddr {
+			(TransformationType::Reorientation, self.half_addr(piece_index)).into()
 		}
 
 		pub fn arrays(&self) -> (&PuzzleStateComponent, &PuzzleStateComponent) {
@@ -399,12 +400,12 @@ pub mod inflated {
 			inflated_puzzle_state
 		}
 
-		pub fn standardization_addr(&self) -> Addr {
-			self.addr(PENTAGON_INDEX_OFFSET)
+		pub fn standardization_half_addr(&self) -> HalfAddr {
+			self.half_addr(PENTAGON_INDEX_OFFSET)
 		}
 
-		pub fn standardization_addr_with_page(&self) -> Addr {
-			self.addr_with_page(PENTAGON_INDEX_OFFSET)
+		pub fn standardization_full_addr(&self) -> FullAddr {
+			self.full_addr(PENTAGON_INDEX_OFFSET)
 		}
 
 		pub fn standardize(&mut self) -> () {
@@ -412,7 +413,7 @@ pub mod inflated {
 		}
 
 		pub fn standardize_with_reorientation_page(&mut self, reorientation_page: &Page<Transformation>) -> () {
-			*self += reorientation_page.get_word(self.standardization_addr());
+			*self += reorientation_page.get_word(self.standardization_half_addr());
 		}
 	}
 
@@ -559,7 +560,7 @@ pub mod inflated {
 
 	#[derive(Clone)]
 	pub struct Animation {
-		pub addr:		Addr,
+		pub addr:		FullAddr,
 		pub start:		Instant,
 		pub duration:	Duration
 	}
@@ -682,7 +683,7 @@ impl PuzzlePlugin {
 			if animation.is_done_at_time(&now) {
 				*extended_puzzle_state += word_pack.trfm;
 
-				let standardization_word_pack: WordPack = transformation_library.book_pack_data.get_word_pack(extended_puzzle_state.puzzle_state.standardization_addr_with_page());
+				let standardization_word_pack: WordPack = transformation_library.book_pack_data.get_word_pack(extended_puzzle_state.puzzle_state.standardization_full_addr());
 
 				*extended_puzzle_state += standardization_word_pack.trfm;
 
@@ -691,7 +692,7 @@ impl PuzzlePlugin {
 				let puzzle_state: &InflatedPuzzleState = &extended_puzzle_state.puzzle_state;
 
 				for (piece_component, mut transform) in queries.q1_mut().iter_mut() {
-					transform.rotation = transformation_library.orientation_data.get_word(puzzle_state.addr(piece_component.index)).quat;
+					transform.rotation = transformation_library.orientation_data.get_word(puzzle_state.half_addr(piece_component.index)).quat;
 				}
 
 				extended_puzzle_state.animation = None;
@@ -712,7 +713,7 @@ impl PuzzlePlugin {
 					let piece_index: usize = piece_component.index;
 
 					if word_pack.mask.affects_piece(extended_puzzle_state.puzzle_state.pos[piece_index] as usize) {
-						transform.rotation = rotation * transformation_library.orientation_data.get_word(puzzle_state.addr(piece_index)).quat;
+						transform.rotation = rotation * transformation_library.orientation_data.get_word(puzzle_state.half_addr(piece_index)).quat;
 					}
 				}
 
@@ -727,16 +728,16 @@ impl PuzzlePlugin {
 
 		match input_state.pending_action {
 			PendingAction::Transformation{ default_position } => {
-				let camera_addr: Addr = queries
+				let camera_addr: FullAddr = queries
 					.q0_mut()
 					.iter_mut()
 					.next()
 					.map_or(
-						Addr::default(),
-						|(_camera_component, transform): (Mut<CameraComponent>, Mut<Transform>)| -> Addr {
-							CameraPlugin::compute_camera_addr(&polyhedra_data_library.icosidodecahedron, &transform.rotation)
+						FullAddr::default(),
+						|(_camera_component, transform): (Mut<CameraComponent>, Mut<Transform>)| -> FullAddr {
+							(TransformationType::Reorientation, CameraPlugin::compute_camera_addr(&polyhedra_data_library.icosidodecahedron, &transform.rotation)).into()
 						}
-					) | TransformationType::Reorientation.addr();
+					);
 
 				if !warn_expect!(camera_addr.is_valid()) {
 					return;
@@ -755,7 +756,7 @@ impl PuzzlePlugin {
 						.as_ref()
 						.pos;
 				let mut cycles: u32 = 1_u32;
-				let addr: Addr = {
+				let addr: FullAddr = {
 					let mut rotations: i32 = 1_i32;
 
 					if input_state.rotate_twice {
@@ -767,7 +768,7 @@ impl PuzzlePlugin {
 						rotations *= -1_i32;
 					}
 
-					Addr::from((
+					FullAddr::from((
 						TransformationType::StandardRotation as usize,
 						reoriented_positions[
 							if input_state.alt_hemi {
@@ -796,7 +797,7 @@ impl PuzzlePlugin {
 
 				let (mut camera_component, transform): (Mut<CameraComponent>, Mut<Transform>) = log_option_none!(queries.q0_mut().iter_mut().next());
 
-				camera_component.prev_addr = camera_addr;
+				camera_component.prev_addr = camera_addr.get_half_addr();
 
 				if !input_state.disable_recentering {
 					animation.addr = camera_addr;
@@ -806,7 +807,6 @@ impl PuzzlePlugin {
 					});
 				}
 			},
-			PendingAction::RecenterCamera => {},
 			_ => {}
 		}
 	}
