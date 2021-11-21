@@ -1,9 +1,12 @@
-use serde::Deserialize;
+use {
+	bevy_inspector_egui::Inspectable,
+	serde::Deserialize
+};
 
 pub mod data;
 pub mod properties;
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Inspectable, Ord, PartialEq, PartialOrd)]
 #[repr(u8)]
 pub enum Polyhedron {
 	Invalid,

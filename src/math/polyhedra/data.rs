@@ -1,6 +1,6 @@
 use {
 	crate::{
-			math::{
+		math::{
 			*,
 			polyhedra::{
 				Polyhedron,

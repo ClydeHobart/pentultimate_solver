@@ -14,7 +14,7 @@ use {
 				properties::ICOSIDODECAHEDRON
 			}
 		},
-		preferences::colors::MatHdl,
+		preferences::colors::ColAndMat,
 		strings::STRING_DATA
 	},
 	std::{
@@ -517,7 +517,7 @@ impl Piece {
 	pub fn add_entities(
 		&self,
 		commands: &mut Commands,
-		(base_mat, color_mats, faces): &(&MatHdl, &Vec<MatHdl>, &Vec<FaceData>)
+		(base_mat, color_mats, faces): &(&ColAndMat, &Vec<ColAndMat>, &Vec<FaceData>)
 	) -> () {
 		let piece_type: Type = self.piece_type;
 		let index_offset: usize = piece_type.index_offset();
@@ -541,7 +541,7 @@ impl Piece {
 						child_builder
 							.spawn_bundle(PbrBundle {
 								mesh: self.base_mesh.bevy_mesh.as_ref().unwrap().clone(),
-								material: (*base_mat).clone(),
+								material: base_mat.mat.clone(),
 								.. Default::default()
 							});
 
@@ -549,7 +549,15 @@ impl Piece {
 							child_builder
 								.spawn_bundle(PbrBundle {
 									mesh: color_mesh.bevy_mesh.as_ref().unwrap().clone(),
-									material: color_mats[color_mesh.face_indices.as_ref().unwrap()[index - index_offset]].clone(),
+									material: color_mats[
+										color_mesh
+											.face_indices
+											.as_ref()
+											.unwrap()
+											[index - index_offset]
+									]
+										.mat
+										.clone(),
 									.. Default::default()
 								});
 						}
@@ -591,7 +599,7 @@ impl PiecePair {
 	pub fn add_entities(
 		&self,
 		commands: &mut Commands,
-		param_bundle: &(&MatHdl, &Vec<MatHdl>, &Vec<FaceData>)
+		param_bundle: &(&ColAndMat, &Vec<ColAndMat>, &Vec<FaceData>)
 	) -> () {
 		self.pentagon.add_entities(commands, param_bundle);
 		self.triangle.add_entities(commands, param_bundle);

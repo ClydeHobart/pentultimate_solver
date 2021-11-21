@@ -7,7 +7,10 @@ use {
 			FaceData
 		},
 		piece::Type,
-		preferences::Preferences,
+		preferences::{
+			Preferences,
+			Update
+		},
 		puzzle::{
 			consts::PENTAGON_SIDE_COUNT,
 			inflated::Animation as PuzzleAnimation,
@@ -16,6 +19,13 @@ use {
 				GetWord
 			}
 		}
+	},
+	super::{
+		input::{
+			InputState,
+			PendingAction
+		},
+		View
 	},
 	std::time::{
 		Duration,
@@ -29,11 +39,12 @@ use {
 		},
 		render::camera::PerspectiveProjection as BevyPerspectiveProjection
 	},
+	bevy_inspector_egui::Inspectable,
 	serde::Deserialize
 };
 
 define_struct_with_default!(
-	#[derive(Clone, Deserialize)]
+	#[derive(Clone, Deserialize, Inspectable, PartialEq)]
 	pub PerspectiveProjection {
 		fov:			f32	= 0.5_f32,
 		aspect_ratio:	f32	= 1.0_f32,
@@ -65,13 +76,38 @@ impl From<BevyPerspectiveProjection> for PerspectiveProjection {
 }
 
 define_struct_with_default!(
-	#[derive(Deserialize)]
+	#[derive(Clone, Deserialize, Inspectable, PartialEq)]
 	pub LightAndCameraData {
-		pub light_pos:	[f32; 3]				= [0.0, 1.0, 10.0],
-		pub camera_pos:	[f32; 3]				= [0.0, 0.0, 10.0],
+		pub light_pos:	[f32; 3]				= [0.0_f32, 0.0_f32, 10.0_f32],
+		pub camera_pos:	[f32; 3]				= [0.0_f32, 0.0_f32, 10.0_f32],
+		#[inspectable(collapse)]
 		pub persp_proj:	PerspectiveProjection	= PerspectiveProjection::default(),
 	}
 );
+
+impl Update for LightAndCameraData {
+	fn update(&self, world: &mut World) -> () {
+		if let Some((_, mut transform)) = world
+			.query::<(&bevy::pbr::Light, &mut Transform)>()
+			.iter_mut(world)
+			.next()
+		{
+			transform.translation = Vec3::from(self.light_pos);
+		}
+
+		if let Some((
+			mut transform,
+			mut bevy_perspective_projection
+		)) = world
+			.query::<(&mut Transform, &mut BevyPerspectiveProjection)>()
+			.iter_mut(world)
+			.next()
+		{
+			transform.translation = Vec3::from(self.camera_pos);
+			*bevy_perspective_projection = self.persp_proj.clone().into();
+		}
+	}
+}
 
 pub struct Animation {
 	pub puzzle_animation: PuzzleAnimation,
@@ -87,7 +123,7 @@ pub struct CameraComponent {
 pub struct CameraPlugin;
 
 impl CameraPlugin {
-	fn startup_app(
+	fn startup(
 		mut commands: Commands,
 		polyhedra_data_library: Res<PolyhedraDataLibrary>,
 		preferences: Res<Preferences>
@@ -113,17 +149,20 @@ impl CameraPlugin {
 			});
 	}
 
-	fn run_app(
+	fn run(
+		view: Res<View>,
 		time: Res<Time>,
-		keyboard_input: Res<Input<KeyCode>>,
 		mouse_button_input: Res<Input<MouseButton>>,
 		transformation_library: Res<TransformationLibraryRef>,
 		polyhedra_data_library: Res<PolyhedraDataLibrary>,
 		preferences: Res<Preferences>,
+		input_state: Res<InputState>,
 		mut mouse_motion_events: EventReader<MouseMotion>,
 		mut mouse_wheel_events: EventReader<MouseWheel>,
 		mut camera_component_query: Query<(&mut CameraComponent, &mut Transform)>
 	) -> () {
+		if let View::Main = *view {} else { return; }
+
 		let time_delta: f32 = time.delta_seconds();
 		let mouse_wheel_delta: f32 = mouse_wheel_events
 			.iter()
@@ -152,7 +191,7 @@ impl CameraPlugin {
 			if !mouse_motion_delta.abs_diff_eq(Vec2::ZERO, f32::EPSILON) {
 				let pan_direction: Vec3 = Vec3::new(mouse_motion_delta.x, -mouse_motion_delta.y, 0.0_f32);
 				let axis: Vec3 = pan_direction.cross(Vec3::Z).normalize();
-	
+
 				const PAN_SCALING_FACTOR: f32 = 500_000.0_f32;
 
 				transform.rotate(Quat::from_axis_angle(axis, mouse_motion_delta.length() / PAN_SCALING_FACTOR * preferences.speed.pan_speed as f32));
@@ -172,14 +211,8 @@ impl CameraPlugin {
 				} else {
 					animation.start_quat.short_slerp(end_quat, animation.puzzle_animation.s_at_time(&now))
 				};
-
-				// if animation.puzzle_animation.is_done_at_time(&now) {
-				// 	*transform = Transform::from_rotation(end_quat);
-				// } else {
-				// 	*transform = Transform::from_rotation(animation.start_quat.short_slerp(end_quat, animation.puzzle_animation.s_at_time(&now)));
-				// }
 			}
-		} else if keyboard_input.just_pressed(preferences.input.recenter_camera) {
+		} else if matches!(input_state.pending_action, PendingAction::RecenterCamera) {
 			camera_component.animation = Some(Animation {
 				puzzle_animation: PuzzleAnimation {
 					addr: Self::compute_camera_addr(&polyhedra_data_library.icosidodecahedron, &transform.rotation),
@@ -206,8 +239,8 @@ impl CameraPlugin {
 impl Plugin for CameraPlugin {
 	fn build(&self, app: &mut AppBuilder) -> () {
 		app
-			.add_startup_system(Self::startup_app.system())
-			.add_system(Self::run_app
+			.add_startup_system(Self::startup.system())
+			.add_system(Self::run
 				.system()
 				.label(STRING_DATA.labels.camera_run.as_ref())
 				.after(STRING_DATA.labels.puzzle_run.as_ref())

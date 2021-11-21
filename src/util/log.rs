@@ -39,14 +39,21 @@ fn usize_to_level(val: usize) -> Level {
 
 #[derive(Deserialize, Debug)]
 struct Module {
+	#[serde(default = "Module::default_level_filter")]
 	f:	LevelFilter,								// Filter
+
+	#[serde(default)]
 	m:	std::collections::HashMap<String, Module>	// Modules
+}
+
+impl Module {
+	fn default_level_filter() -> LevelFilter { LevelFilter::Off }
 }
 
 impl Default for Module {
 	fn default() -> Self {
 		Self {
-			f: LevelFilter::Off,
+			f: Self::default_level_filter(),
 			m: std::collections::HashMap::<String, Module>::default()
 		}
 	}

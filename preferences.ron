@@ -1,9 +1,9 @@
 Preferences(
-	color:				Strings((
+	color:				ColorData(
 		colors_without_mat: (),
 		colors_with_mat: (
-			polyhedron_to_colors: {
-				Dodecahedron: [
+			polyhedron_to_colors: [
+				(Dodecahedron, [
 					"FFFFFF", // White
 					"0000FF", // Blue
 					"80C0FF", // Light Blue
@@ -16,11 +16,11 @@ Preferences(
 					"FFFFA0", // Light Yellow
 					"FFFF00", // Yellow
 					"FF8000", // Orange
-				]
-			},
+				])
+			],
 			base_color: "000000" // Black
 		)
-	)),
+	),
 	input:				InputData(
 		default_positions:		(	0,			5,			10,			1,			8,			4		),
 		rotation_keys:			(	Numpad0,	Numpad1,	Numpad4,	Numpad5,	Numpad6,	Numpad3	),

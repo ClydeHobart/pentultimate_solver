@@ -12,7 +12,8 @@ use {
 	bevy::{
 		prelude::*,
 		app::PluginGroupBuilder
-	}
+	},
+	bevy_inspector_egui::bevy_egui::EguiPlugin
 };
 
 pub mod prelude {
@@ -43,7 +44,11 @@ pub mod prelude {
 				CameraComponent,
 				CameraPlugin
 			},
-			input::InputData,
+			input::{
+				InputData,
+				InputPlugin,
+				InputState
+			},
 			UIPlugin
 		}
 	};
@@ -54,7 +59,8 @@ struct AppPlugin;
 impl Plugin for AppPlugin {
 	fn build(&self, app: &mut AppBuilder) {
 		app
-			.add_plugins(DefaultPlugins);
+			.add_plugins(DefaultPlugins)
+			.add_plugin(EguiPlugin);
 	}
 }
 

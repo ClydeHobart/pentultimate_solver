@@ -24,11 +24,33 @@ pub struct LinePack<'a> {
 	pub addr:	&'a Line<Addr>
 }
 
+impl<'a> LinePack<'a> {
+	pub fn iter<F>(&self, mut f: F) -> ()
+		where
+			F: FnMut(usize, WordPack) -> ()
+	{
+		for word_index in 0_usize .. Library::WORD_COUNT {
+			f(word_index, self.get_word_pack(word_index))
+		}
+	}
+}
+
 pub struct LinePackMut<'a> {
 	pub trfm:	&'a mut Line<Trfm>,
 	pub quat:	&'a mut Line<Quat>,
 	pub mask:	&'a mut Line<Mask>,
 	pub addr:	&'a mut Line<Addr>
+}
+
+impl<'a> LinePackMut<'a> {
+	pub fn iter_mut<F>(&mut self, mut f: F) -> ()
+		where
+			F: FnMut(usize, WordPackMut) -> ()
+	{
+		for word_index in 0_usize .. Library::WORD_COUNT {
+			f(word_index, self.get_word_pack_mut(word_index))
+		}
+	}
 }
 
 pub struct PagePack<'a> {
@@ -38,11 +60,33 @@ pub struct PagePack<'a> {
 	pub addr:	&'a Page<Addr>
 }
 
+impl<'a> PagePack<'a> {
+	pub fn iter<F>(&self, mut f: F) -> ()
+		where
+			F: FnMut(usize, LinePack) -> ()
+	{
+		for line_index in 0_usize .. Library::LINE_COUNT {
+			f(line_index, self.get_line_pack(line_index))
+		}
+	}
+}
+
 pub struct PagePackMut<'a> {
 	pub trfm:	&'a mut Page<Trfm>,
 	pub quat:	&'a mut Page<Quat>,
 	pub mask:	&'a mut Page<Mask>,
 	pub addr:	&'a mut Page<Addr>
+}
+
+impl<'a> PagePackMut<'a> {
+	pub fn iter_mut<F>(&mut self, mut f: F) -> ()
+		where
+			F: FnMut(usize, LinePackMut) -> ()
+	{
+		for line_index in 0_usize .. Library::LINE_COUNT {
+			f(line_index, self.get_line_pack_mut(line_index))
+		}
+	}
 }
 
 pub struct LongPagePack<'a> {
@@ -52,11 +96,33 @@ pub struct LongPagePack<'a> {
 	pub addr:	&'a LongPage<Addr>
 }
 
+impl<'a> LongPagePack<'a> {
+	pub fn iter<F>(&self, mut f: F) -> ()
+		where
+			F: FnMut(usize, LinePack) -> ()
+	{
+		for line_index in 0_usize .. Library::LONG_LINE_COUNT {
+			f(line_index, self.get_line_pack(line_index))
+		}
+	}
+}
+
 pub struct LongPagePackMut<'a> {
 	pub trfm:	&'a mut LongPage<Trfm>,
 	pub quat:	&'a mut LongPage<Quat>,
 	pub mask:	&'a mut LongPage<Mask>,
 	pub addr:	&'a mut LongPage<Addr>
+}
+
+impl<'a> LongPagePackMut<'a> {
+	pub fn iter_mut<F>(&mut self, mut f: F) -> ()
+		where
+			F: FnMut(usize, LinePackMut) -> ()
+	{
+		for line_index in 0_usize .. Library::LONG_LINE_COUNT {
+			f(line_index, self.get_line_pack_mut(line_index))
+		}
+	}
 }
 
 pub struct BookPack<'a> {
@@ -66,11 +132,35 @@ pub struct BookPack<'a> {
 	pub addr:	&'a Book<Addr>
 }
 
+impl<'a> BookPack<'a> {
+	pub fn iter<'b, F>(&'b self, mut f: F) -> ()
+		where
+			F: FnMut(usize, PagePack<'b>) -> (),
+			'a: 'b,
+	{
+		for page_index in 0_usize .. Library::PAGE_COUNT {
+			f(page_index, self.get_page_pack(page_index))
+		}
+	}
+}
+
 pub struct BookPackMut<'a> {
 	pub trfm:	&'a mut Book<Trfm>,
 	pub quat:	&'a mut Book<Quat>,
 	pub mask:	&'a mut Book<Mask>,
 	pub addr:	&'a mut Book<Addr>
+}
+
+impl<'a> BookPackMut<'a> {
+	pub fn iter_mut<'b, F>(&'b mut self, mut f: F) -> ()
+		where
+			F: FnMut(usize, PagePackMut) -> (),
+			'a: 'b
+	{
+		for page_index in 0_usize .. Library::PAGE_COUNT {
+			f(page_index, self.get_page_pack_mut(page_index))
+		}
+	}
 }
 
 pub struct BookPackData {
@@ -264,6 +354,28 @@ impl<'a, 'b> GetLinePackMut<'b, usize> for PagePackMut<'a> where 'a: 'b {
 	}
 }
 
+impl<'a, 'b> GetLinePack<'b, usize> for LongPagePack<'a> where 'a: 'b {
+	fn get_line_pack(&'b self, line_index: usize) -> LinePack<'b> {
+		LinePack {
+			trfm: &self.trfm[line_index],
+			quat: &self.quat[line_index],
+			mask: &self.mask[line_index],
+			addr: &self.addr[line_index]
+		}
+	}
+}
+
+impl<'a, 'b> GetLinePackMut<'b, usize> for LongPagePackMut<'a> where 'a: 'b {
+	fn get_line_pack_mut(&'b mut self, line_index: usize) -> LinePackMut<'b> {
+		LinePackMut {
+			trfm: &mut self.trfm[line_index],
+			quat: &mut self.quat[line_index],
+			mask: &mut self.mask[line_index],
+			addr: &mut self.addr[line_index]
+		}
+	}
+}
+
 impl<'a, 'b> GetLinePack<'b, (usize, usize)> for BookPack<'a> where 'a: 'b {
 	fn get_line_pack(&'b self, (page_index, line_index): (usize, usize)) -> LinePack<'b> {
 		LinePack {
@@ -388,89 +500,4 @@ impl<'b> GetBookPackMut<'b, ()> for BookPackData {
 			addr: &mut self.addr
 		}
 	}
-}
-
-// I would like it to be known that I, Zeke Baker, absolutely *despise* Rust's lifetime system.
-// It is cumbersome, convoluted, and the borrow checker isn't smart enough to see the soundness of many complex borrowing situations.
-
-#[macro_export]
-macro_rules! page_pack_iter {
-	($book_pack:ident) => {
-		(0_usize .. Library::PAGE_COUNT)
-		.map(|page_index: usize| -> PagePack {
-			$book_pack.get_page_pack(page_index)
-		});
-	};
-}
-
-#[macro_export]
-macro_rules! line_pack_iter {
-	($page_pack:ident) => {
-		(0_usize .. Library::LINE_COUNT)
-		.map(|line_index: usize| -> LinePack {
-			$page_pack.get_line_pack(line_index)
-		});
-	};
-}
-
-#[macro_export]
-macro_rules! word_pack_iter {
-	($line_pack:ident) => {
-		(0_usize .. Library::WORD_COUNT)
-		.map(|word_index: usize| -> WordPack {
-			$line_pack.get_word_pack(word_index)
-		});
-	};
-}
-
-#[macro_export]
-macro_rules! page_pack_iter_mut {
-	($book_pack_mut:ident) => {
-		(0_usize .. Library::PAGE_COUNT)
-		.map(|page_index: usize| -> PagePackMut {
-			$book_pack_mut.get_page_pack_mut(page_index)
-		});
-	};
-}
-
-#[macro_export]
-macro_rules! line_pack_iter_mut {
-	($page_pack_mut:ident, $line_pack_mut:ident, $block:block) => {
-		(0_usize .. Library::LINE_COUNT)
-		.for_each(|line_index: usize| -> () {
-			let mut $line_pack_mut: LinePackMut = $page_pack_mut.get_line_pack_mut(line_index);
-
-			$block
-		});
-	};
-
-	($page_pack_mut:ident, $line_index:ident, $line_pack_mut:ident, $block:block) => {
-		(0_usize .. Library::LINE_COUNT)
-		.for_each(|$line_index: usize| -> () {
-			let mut $line_pack_mut: LinePackMut = $page_pack_mut.get_line_pack_mut($line_index);
-
-			$block
-		});
-	};
-}
-
-#[macro_export]
-macro_rules! word_pack_iter_mut {
-	($line_pack_mut:ident, $word_pack_mut:ident, $block:block) => {
-		(0_usize .. Library::WORD_COUNT)
-		.for_each(|word_index: usize| -> () {
-			let $word_pack_mut: WordPackMut = $line_pack_mut.get_word_pack_mut(word_index);
-
-			$block
-		});
-	};
-
-	($line_pack_mut:ident, $word_index:ident, $word_pack_mut:ident, $block:block) => {
-		(0_usize .. Library::WORD_COUNT)
-		.for_each(|$word_index: usize| -> () {
-			let $word_pack_mut: WordPackMut = $line_pack_mut.get_word_pack_mut($word_index);
-
-			$block
-		});
-	};
 }

@@ -6,15 +6,12 @@
 			m: {
 				"math::polyhedra::data::generate_faces": (
 					f: Warn,
-					m: {}
 				),
 				"puzzle": (
 					f: Trace,
-					m: {}
 				),
 				"ui": (
 					f: Trace,
-					m: {}
 				),
 			}
 		),

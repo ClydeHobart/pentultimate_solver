@@ -8,17 +8,20 @@ edition = "2018"
 
 [dependencies]
 bevy = { version = "0.5.0", features = ["serialize"] }
+bevy_egui = "0.6.2"
+bevy-inspector-egui = "0.6.1"
+egui = "0.13.1"
 env_logger = "0.8.3"
-hexf = "0.2.1"
 fnv = "1.0.7"
 gltf-json = "0.16.0"
+hexf = "0.2.1"
 json5 = "0.3.0"
 lazy_static = "1.4.0"
 libc = "0.2.99"
 log = { version = "0.4.14", features = ["serde"] }
-serde = "1.0.125"
 rand = "0.8.4"
 ron = "*"
+serde = "1.0.125"
 static_assertions = "1.1.0"
 
 [dev-dependencies]

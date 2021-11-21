@@ -16,14 +16,17 @@ use {
 		},
 		preferences::{
 			colors::{
-				traits::*,
-				ColorDataWithMat,
-				ColorData,
-				MatHdl
+				ColAndMat,
+				ColorDataWithMat
 			},
 			Preferences
 		},
-		ui::camera::Animation as CameraAnimation,
+		ui::{
+			camera::Animation as CameraAnimation,
+			input::PendingAction,
+			View
+		},
+		util::inspectable_bin_map::*,
 		get_data
 	},
 	self::{
@@ -296,23 +299,23 @@ pub mod inflated {
 		pub fn debug_strings(&self) -> (String, String) {
 			let mut pos_string: String = "[".into();
 			let mut rot_string: String = "[".into();
-	
+
 			for pent_index in PENTAGON_PIECE_RANGE {
 				write!(pos_string, "{: >3}", &format!("{:#X}", self.pos[pent_index])[2 ..]).unwrap();
 				write!(rot_string, "{: >3}", &format!("{:#X}", self.rot[pent_index])[2 ..]).unwrap();
 			}
-	
+
 			pos_string += " |";
 			rot_string += " |";
-	
+
 			for tri_index in TRIANGLE_PIECE_RANGE {
 				write!(pos_string, "{: >3}", &format!("{:#X}", self.pos[tri_index])[2 ..]).unwrap();
 				write!(rot_string, "{: >3}", &format!("{:#X}", self.rot[tri_index])[2 ..]).unwrap();
 			}
-	
+
 			pos_string += " ]";
 			rot_string += " ]";
-	
+
 			(pos_string, rot_string)
 		}
 
@@ -518,17 +521,17 @@ pub mod inflated {
 
 	impl<'a, 'b> Sub<&'b PuzzleState> for &'a PuzzleState {
 		type Output = Transformation;
-	
+
 		#[must_use]
 		fn sub(self, prev_state: &'b PuzzleState) -> Self::Output {
 			let mut transformation: Transformation = Transformation::default();
 			let (pos_array, rot_array): (&mut PuzzleStateComponent, &mut PuzzleStateComponent) = transformation.arrays_mut();
-	
+
 			for pent_index in PENTAGON_PIECE_RANGE {
 				pos_array[prev_state.pos[pent_index] as usize] = self.pos[pent_index];
 				rot_array[prev_state.pos[pent_index] as usize] = {
 					let rot_sum: PieceStateComponent = PENTAGON_SIDE_COUNT_IPSC + self.rot[pent_index] - prev_state.rot[pent_index];
-	
+
 					if rot_sum >= PENTAGON_SIDE_COUNT_IPSC {
 						rot_sum - PENTAGON_SIDE_COUNT_IPSC
 					} else {
@@ -536,12 +539,12 @@ pub mod inflated {
 					}
 				};
 			}
-	
+
 			for tri_index in TRIANGLE_PIECE_RANGE {
 				pos_array[prev_state.pos[tri_index] as usize] = self.pos[tri_index];
 				rot_array[prev_state.pos[tri_index] as usize] = {
 					let rot_sum: PieceStateComponent = TRIANGLE_SIDE_COUNT_IPSC + self.rot[tri_index] - prev_state.rot[tri_index];
-	
+
 					if rot_sum >= TRIANGLE_SIDE_COUNT_IPSC {
 						rot_sum - TRIANGLE_SIDE_COUNT_IPSC
 					} else {
@@ -549,7 +552,7 @@ pub mod inflated {
 					}
 				};
 			}
-	
+
 			transformation
 		}
 	}
@@ -606,20 +609,20 @@ pub mod inflated {
 pub struct PuzzlePlugin;
 
 impl PuzzlePlugin {
-	fn startup_app(
+	fn startup(
 		mut commands: Commands,
 		piece_library: Res<PieceLibrary>,
 		preferences: Res<Preferences>
 	) -> () {
-		log_result_err!(Self::startup_app_internal(&mut commands, &piece_library, &preferences));
+		log_result_err!(Self::startup_internal(&mut commands, &piece_library, &preferences));
 	}
 
-	fn startup_app_internal(
+	fn startup_internal(
 		commands: &mut Commands,
 		piece_library: &Res<PieceLibrary>,
 		preferences: &Res<Preferences>
 	) -> LogErrorResult {
-		let color_data: &ColorData<Color> = option_to_result!(preferences.color.try_get::<Color>())?;
+		let color_data_with_mat: &ColorDataWithMat = &preferences.color.colors_with_mat;
 		let piece_pair: &PiecePair = match piece_library.pieces.get(&piece_library.data.default_design) {
 			Some(piece_pair) => piece_pair,
 			None => {
@@ -631,20 +634,14 @@ impl PuzzlePlugin {
 				))
 			}
 		};
-		let (base_mat, color_mats): (&MatHdl, &Vec<MatHdl>) = {
-			let mats: &ColorDataWithMat<MatHdl> = match color_data.mats.as_ref() {
-				Some(mats) => mats,
-				None => {
-					return Err(log_error!(
-						Level::Error,
-						format!("ColorData had None for mats")
-					));
-				}
-			};
-
+		let inspectable_bin_map: InspectableBinMap<(Polyhedron, Vec<ColAndMat>)> =
+			color_data_with_mat
+				.polyhedron_to_colors
+				.as_inspectable_bin_map();
+		let (base_col_and_mat, col_and_mats): (&ColAndMat, &Vec<ColAndMat>) = {
 			(
-				&mats.base_color,
-				match mats.polyhedron_to_colors.get(&piece_library.data.default_design.as_polyhedron()) {
+				&color_data_with_mat.base_color,
+				match inspectable_bin_map.get(&piece_library.data.default_design.as_polyhedron()) {
 					Some(color_mats) => color_mats,
 					None => {
 						return Err(log_error!(
@@ -659,15 +656,16 @@ impl PuzzlePlugin {
 			)
 		};
 		let faces: &Vec<FaceData> = &get_data!(Icosidodecahedron).faces;
-		let param_bundle: (&MatHdl, &Vec<MatHdl>, &Vec<FaceData>) = (base_mat, color_mats, faces);
+		let param_bundle: (&ColAndMat, &Vec<ColAndMat>, &Vec<FaceData>) = (base_col_and_mat, col_and_mats, faces);
 
 		piece_pair.add_entities(commands, &param_bundle);
 
 		Ok(())
 	}
 
-	pub fn run_app(
-		keyboard_input: Res<Input<KeyCode>>,
+	fn run(
+		view: Res<View>,
+		input_state: Res<InputState>,
 		preferences: Res<Preferences>,
 		transformation_library: Res<TransformationLibraryRef>,
 		polyhedra_data_library: Res<PolyhedraDataLibrary>,
@@ -677,8 +675,6 @@ impl PuzzlePlugin {
 			Query<(&PieceComponent, &mut Transform)>
 		)>
 	) -> () {
-		let input_data: &InputData = &preferences.input;
-
 		if let Some(animation) = &extended_puzzle_state.animation {
 			let now: Instant = Instant::now();
 			let word_pack: WordPack = transformation_library.book_pack_data.get_word_pack(animation.addr);
@@ -725,8 +721,12 @@ impl PuzzlePlugin {
 			}
 		}
 
-		for input_index in 0_usize .. HALF_PENTAGON_PIECE_COUNT {
-			if keyboard_input.just_pressed(input_data.rotation_keys[input_index]) {
+		if !matches!(*view, View::Main) {
+			return;
+		}
+
+		match input_state.pending_action {
+			PendingAction::Transformation{ default_position } => {
 				let camera_addr: Addr = queries
 					.q0_mut()
 					.iter_mut()
@@ -758,22 +758,22 @@ impl PuzzlePlugin {
 				let addr: Addr = {
 					let mut rotations: i32 = 1_i32;
 
-					if keyboard_input.pressed(input_data.rotate_twice) {
+					if input_state.rotate_twice {
 						rotations += 1_i32;
 						cycles += 1_u32;
 					}
 
-					if keyboard_input.pressed(input_data.counter_clockwise) {
+					if input_state.counter_clockwise {
 						rotations *= -1_i32;
 					}
 
 					Addr::from((
 						TransformationType::StandardRotation as usize,
 						reoriented_positions[
-							if keyboard_input.pressed(input_data.alt_hemi) {
-								InflatedPuzzleState::invert_position(input_data.default_positions[input_index])
+							if input_state.alt_hemi {
+								InflatedPuzzleState::invert_position(default_position)
 							} else {
-								input_data.default_positions[input_index]
+								default_position
 							}
 						] as usize,
 						(rotations + PENTAGON_SIDE_COUNT as i32) as usize % PENTAGON_SIDE_COUNT
@@ -798,17 +798,16 @@ impl PuzzlePlugin {
 
 				camera_component.prev_addr = camera_addr;
 
-				if !keyboard_input.pressed(preferences.input.disable_recentering) {
+				if !input_state.disable_recentering {
 					animation.addr = camera_addr;
 					camera_component.animation = Some(CameraAnimation {
 						puzzle_animation: animation,
 						start_quat: transform.rotation
 					});
 				}
-
-				// Don't accept multiple input actions on the same frame
-				return;
-			}
+			},
+			PendingAction::RecenterCamera => {},
+			_ => {}
 		}
 	}
 }
@@ -817,13 +816,13 @@ impl Plugin for PuzzlePlugin {
 	fn build(&self, app: &mut AppBuilder) -> () {
 		app
 			.insert_resource(ExtendedPuzzleState::default())
-			.add_startup_system(Self::startup_app
+			.add_startup_system(Self::startup
 				.system()
 				.label(STRING_DATA.labels.puzzle_startup.as_ref())
 				.after(STRING_DATA.labels.piece_library_startup.as_ref())
-				.after(STRING_DATA.labels.color_data_typed_startup.as_ref())
+				.after(STRING_DATA.labels.color_data_startup.as_ref())
 			)
-			.add_system(Self::run_app
+			.add_system(Self::run
 				.system()
 				.label(STRING_DATA.labels.puzzle_run.as_ref())
 			);

@@ -1,17 +1,17 @@
 (
 	files: (
-		preferences:				"preferences.ron",
-		piece_library_data:			"pieceLibraryData.ron",
-		rust_log:					"RUST_LOG.ron",
+		preferences:			"preferences.ron",
+		piece_library_data:		"pieceLibraryData.ron",
+		rust_log:				"RUST_LOG.ron",
 	),
 	labels: (
-		color_data_typed_label:		"ColorDataTyped::startup_app()",
-		piece_library_label:		"PieceLibrary::startup_app()",
-		puzzle_startup:				"PuzzlePlugin::startup_app()",
-		camera_run:					"CameraPlugin::run_app()",
-		puzzle_run:					"PuzzlePlugin::run_app()",
+		color_data_label:		"ColorData::startup()",
+		piece_library_label:	"PieceLibrary::startup()",
+		puzzle_startup:			"PuzzlePlugin::startup()",
+		camera_run:				"CameraPlugin::run()",
+		puzzle_run:				"PuzzlePlugin::run()",
 	),
 	misc: (
-		app_title:					"Pentultimate Solver",
+		app_title:				"Pentultimate Solver",
 	),
 )

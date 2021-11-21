@@ -18,6 +18,8 @@ pub mod prelude {
 	};
 }
 
+pub mod inspectable_bin_map;
+
 pub use crate::util::log::init_env_logger;
 
 use {
@@ -132,7 +134,14 @@ pub fn from_ron_or_default<T>(file_name: &str) -> T
 	where
 		T: Default + for<'de> Deserialize<'de>
 {
-	log_result_err!(from_ron(file_name), T::default())
+	match from_ron(file_name) {
+		Ok(value) => { value },
+		Err(err) => {
+			::log::warn!("Error encountered deserializing \"{}\": {:?}", file_name, err);
+
+			T::default()
+		}
+	}
 }
 
 pub fn exit_app(mut exit: EventWriter<AppExit>) -> () {
@@ -157,14 +166,18 @@ impl ShortSlerp for bevy::math::Quat {
 #[macro_export(local_inner_macros)]
 macro_rules! define_struct_with_default {
 	(
-		$(#[$meta_macro:meta])?
+		$(#[$struct_attr:meta])?
 		$struct_vis:vis $struct_name:ident {
-			$( $field_vis:vis $field:ident : $field_type:ty = $value:expr , )*
+			$(
+				$(#[$field_attr:meta])?
+				$field_vis:vis $field:ident : $field_type:ty = $value:expr,
+			)*
 		}
 	) => {
-		$(#[$meta_macro])?
+		$(#[$struct_attr])?
 		$struct_vis struct $struct_name {
 			$(
+				$(#[$field_attr])?
 				$field_vis $field: $field_type,
 			)*
 		}
@@ -181,14 +194,18 @@ macro_rules! define_struct_with_default {
 	};
 
 	(
-		$(#[$meta_macro:meta])?
+		$(#[$struct_attr:meta])?
 		$struct_vis:vis $struct_name:ident <$field_type:ty> {
-			$( $field_vis:vis $field:ident = $value:expr , )*
+			$(
+				$(#[$field_attr:meta])?
+				$field_vis:vis $field:ident = $value:expr,
+			)*
 		}
 	) => {
-		$(#[$meta_macro])?
+		$(#[$struct_attr])?
 		$struct_vis struct $struct_name {
 			$(
+				$(#[$field_attr])?
 				$field_vis $field: $field_type,
 			)*
 		}

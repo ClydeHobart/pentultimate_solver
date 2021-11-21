@@ -425,8 +425,8 @@ impl Library {
 
 				let mut page_pack_mut: PagePackMut = book_pack_data.get_page_pack_mut(Type::Reorientation as usize);
 
-				crate::line_pack_iter_mut!(page_pack_mut, line_index, line_pack_mut, {
-					crate::word_pack_iter_mut!(line_pack_mut, word_index, word_pack_mut, {
+				page_pack_mut.iter_mut(|line_index: usize, mut line_pack_mut: LinePackMut| -> () {
+					line_pack_mut.iter_mut(|word_index: usize, word_pack_mut: WordPackMut| -> () {
 						let reorientation_quat: Quat = initial_pent_quat * orientation_data[line_index][word_index].quat.conjugate();
 						let (pos_array, rot_array): (&mut PuzzleStateComponent, &mut PuzzleStateComponent) = word_pack_mut.trfm.arrays_mut();
 
@@ -464,11 +464,11 @@ impl Library {
 			{
 				let mut page_pack_mut: PagePackMut = book_pack_data.get_page_pack_mut(Type::StandardRotation as usize);
 
-				crate::line_pack_iter_mut!(page_pack_mut, line_index, line_pack_mut, {
+				page_pack_mut.iter_mut(|line_index: usize, mut line_pack_mut: LinePackMut| -> () {
 					let face_data: &FaceData = &icosidodecahedron_data.faces[line_index];
 					let mask: Mask = Mask::from_pentagon_index(line_index);
 
-					crate::word_pack_iter_mut!(line_pack_mut, word_index, word_pack_mut, {
+					line_pack_mut.iter_mut(|word_index: usize, word_pack_mut: WordPackMut| -> () {
 						let rotation_quat: Quat = face_data.get_rotation_quat(word_index as u32);
 						let mask: Mask = if word_index != 0 { mask } else { Mask(0_u32) };
 
@@ -541,12 +541,9 @@ mod tests {
 	fn test_validity(transformation_library: &Library) -> () {
 		let book_pack: BookPack = transformation_library.book_pack_data.get_book_pack(());
 
-		for (page_index, page_pack) in crate::page_pack_iter!(book_pack).enumerate()
-		{
-			for (line_index, line_pack) in crate::line_pack_iter!(page_pack).enumerate()
-			{
-				for (word_index, word_pack) in crate::word_pack_iter!(line_pack).enumerate()
-				{
+		book_pack.iter(|page_index: usize, page_pack: PagePack| -> () {
+			page_pack.iter(|line_index: usize, line_pack: LinePack| -> () {
+				line_pack.iter(|word_index: usize, word_pack: WordPack| -> () {
 					let trfm: &Trfm = word_pack.trfm;
 
 					if !trfm.is_valid() {
@@ -588,9 +585,9 @@ mod tests {
 
 						panic!();
 					}
-				}
-			}
-		}
+				});
+			});
+		});
 	}
 
 	fn test_reorientations(transformation_library: &Library) -> () {
@@ -598,7 +595,7 @@ mod tests {
 		let standard_rotation_page: &Page<Trfm> = &transformation_library.book_pack_data.trfm[Type::StandardRotation as usize];
 		let reorientation_tests: [Vec<(usize, usize)>; PENTAGON_PIECE_COUNT] = from_ron::<[Vec<(usize, usize)>; PENTAGON_PIECE_COUNT]>(STRING_DATA.tests.reorientation_tests.as_ref()).to_option().unwrap();
 
-		for (line_index, line_pack) in crate::line_pack_iter!(page_pack).enumerate() {
+		page_pack.iter(|line_index: usize, line_pack: LinePack| -> () {
 			let pent_puzzle_state: PuzzleState = {
 				let mut solved_state: PuzzleState = PuzzleState::SOLVED_STATE;
 
@@ -616,7 +613,7 @@ mod tests {
 				panic!();
 			}
 
-			for (word_index, word_pack) in crate::word_pack_iter!(line_pack).enumerate() {
+			line_pack.iter(|word_index: usize, word_pack: WordPack| -> () {
 				let prev_puzzle_state: PuzzleState	= {
 					let mut pent_puzzle_state_clone: PuzzleState = pent_puzzle_state.clone();
 
@@ -695,15 +692,15 @@ mod tests {
 						panic!();
 					}
 				}
-			}
-		}
+			});
+		});
 	}
 
 	fn test_standard_rotations(transformation_library: &Library) -> () {
 		let page_pack: PagePack = transformation_library.book_pack_data.get_page_pack(Type::StandardRotation as usize);
 
-		for (line_index, line_pack) in crate::line_pack_iter!(page_pack).enumerate() {
-			for (word_index, word_pack) in crate::word_pack_iter!(line_pack).enumerate() {
+		page_pack.iter(|line_index: usize, line_pack: LinePack| -> () {
+			line_pack.iter(|word_index: usize, word_pack: WordPack| -> () {
 				let trfm:						&Trfm				= &word_pack.trfm;
 				let inv_trfm:					&Trfm				= &transformation_library.book_pack_data.get_word_pack(*word_pack.addr).trfm;
 
@@ -748,8 +745,8 @@ mod tests {
 
 					panic!();
 				}
-			}
-		}
+			});
+		});
 	}
 
 	#[test]

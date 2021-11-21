@@ -15,11 +15,12 @@ define_struct_with_default!(
 define_struct_with_default!(
 	#[derive(Deserialize)]
 	pub Labels<String> {
-		pub color_data_typed_startup	= "ColorDataTyped::startup_app()",
-		pub piece_library_startup		= "PieceLibrary::startup_app()",
-		pub puzzle_startup				= "PuzzlePlugin::startup_app()",
-		pub camera_run					= "CameraPlugin::run_app()",
-		pub puzzle_run					= "PuzzlePlugin::run_app()",
+		pub camera_run					= "CameraPlugin::run()",
+		pub color_data_startup			= "ColorData::startup()",
+		pub input_run					= "InputPlugin::run()",
+		pub piece_library_startup		= "PieceLibrary::startup()",
+		pub puzzle_run					= "PuzzlePlugin::run()",
+		pub puzzle_startup				= "PuzzlePlugin::startup()",
 	}
 );
 

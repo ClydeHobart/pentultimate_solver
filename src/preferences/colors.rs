@@ -1,107 +1,171 @@
 use {
 	crate::{
-		prelude::*,
 		math::polyhedra::Polyhedron,
-		strings::STRING_DATA
+		preferences::Update,
+		strings::STRING_DATA,
+		util::inspectable_bin_map::*,
+		log_option_none
 	},
 	super::Preferences,
-	self::traits::*,
-	std::collections::HashMap,
-	bevy::prelude::*,
-	serde::Deserialize
+	bevy::{
+		prelude::*,
+		render::color::{
+			Color as BevyColor,
+			HexColorError
+		}
+	},
+	bevy_inspector_egui::{
+		egui::{
+			self,
+			Ui
+		},
+		Context,
+		Inspectable
+	},
+	serde::{
+		de::{
+			Error,
+			Visitor
+		},
+		Deserialize,
+		Deserializer
+	}
 };
 
-pub mod traits {
-	use super::ColorData;
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Color(pub BevyColor);
 
-	pub trait AsTypeInternal<T> {
-		fn as_internal			(self)		-> Self;
+impl Color {
+	fn as_rgba_f32s(&self) -> [f32; 4] {
+		self.0.as_rgba_f32()
 	}
-	
-	pub trait IsTypeInternal<T> where Self: TryGetTypeInternal<T> {
-		fn is_internal			(&self)		-> bool																{ self.try_get_internal().is_some() }
-	}
-	
-	pub trait SetTypeInternal<T> where Self: AsTypeInternal<T> + Clone + IsTypeInternal<T> + Sized {
-		fn set_internal			(&mut self)	-> ()																{ if !self.is_internal() { *self = self.clone().as_internal(); }}
-	}
-	
-	pub trait TryGetTypeInternal<T> {
-		fn try_get_internal		(&self)		-> Option<&ColorData<T>>											{ None }
-		fn try_get_mut_internal	(&mut self)	-> Option<&mut ColorData<T>>										{ None }
-	}
-	
-	pub trait AsType where Self: Sized {
-		fn as_type<T>			(self)		-> Self							where Self: AsTypeInternal<T>		{ self.as_internal() }
-	}
-	
-	pub trait IsType {
-		fn is<T>				(&self)		-> bool							where Self: IsTypeInternal<T>		{ self.is_internal() }
-	}
-	
-	pub trait SetType {
-		fn set<T>				(&mut self)	-> ()							where Self: SetTypeInternal<T>		{ self.set_internal() }
-	}
-	
-	pub trait TryGetType {
-		fn try_get<T>			(&self)		-> Option<&ColorData<T>>		where Self: TryGetTypeInternal<T>	{ self.try_get_internal() }
-		fn try_get_mut<T>		(&mut self)	-> Option<&mut ColorData<T>>	where Self: TryGetTypeInternal<T>	{ self.try_get_mut_internal() }
-	}
-}
 
-impl FromAlt<&Color> for String {
-	fn from_alt(color: &Color) -> String {
-		let rgba_f32s: [f32; 4] = color.as_rgba_f32();
+	fn as_rgba_u8s(&self) -> [u8; 4] {
+		let rgba_f32s: [f32; 4] = self.as_rgba_f32s();
 		let mut rgba_u8s: [u8; 4] = [0_u8; 4];
 
 		for (index, rgba_f32) in rgba_f32s.iter().enumerate() {
 			rgba_u8s[index] = (rgba_f32 * u8::MAX as f32).round() as u8;
 		}
 
-		let rgba_u32: u32 = u32::from_be_bytes(rgba_u8s);
+		rgba_u8s
+	}
+}
 
-		if rgba_u32 & u8::MAX as u32 == u8::MAX as u32 {
-			format!("{:06X}", rgba_u32 >> u8::BITS)
-		} else {
-			format!("{:08X}", rgba_u32)
+struct ColorVisitor;
+
+impl<'de> Visitor<'de> for ColorVisitor {
+	type Value = BevyColor;
+
+	fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+		write!(formatter, "a hex string in \"RGB\", \"RGBA\", \"RRGGBB\", or \"RRGGBBAA\" format in sRGB colorspace")
+	}
+
+	fn visit_str<E: Error>(self, v: &str) -> Result<Self::Value, E> {
+		BevyColor::hex(v).map_err(|hex_color_error: HexColorError| -> E {
+			E::custom(format!("{:?}", hex_color_error))
+		})
+	}
+}
+
+impl<'de> Deserialize<'de> for Color {
+	fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+		deserializer.deserialize_str(ColorVisitor).map(|bevy_color: BevyColor| -> Self {
+			Self(bevy_color)
+		})
+	}
+}
+
+impl From<&str> for Color {
+	fn from(v: &str) -> Self {
+		Self(BevyColor::hex(v).unwrap_or(BevyColor::default()))
+	}
+}
+
+impl From<BevyColor> for Color {
+	fn from(bevy_color: BevyColor) -> Self { Self(bevy_color) }
+}
+
+impl From<Color> for u32 {
+	fn from(color: Color) -> Self {
+		u32::from_be_bytes(color.as_rgba_u8s())
+	}
+}
+
+impl Inspectable for Color {
+	type Attributes = ();
+
+	fn ui(&mut self, ui: &mut Ui, _: Self::Attributes, _: &Context) -> bool {
+		let mut rgba_u8s: [u8; 4] = self.as_rgba_u8s();
+		let changed: bool = ui.color_edit_button_srgba_unmultiplied(&mut rgba_u8s).changed();
+
+		if changed {
+			self.0 = BevyColor::rgba_u8(rgba_u8s[0], rgba_u8s[1], rgba_u8s[2], rgba_u8s[3]);
+		}
+
+		changed
+	}
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Inspectable, PartialEq)]
+struct ColorDataWithoutMat {}
+
+pub type MatHdl = Handle<StandardMaterial>;
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ColAndMat {
+	pub col: Color,
+	pub mat: MatHdl
+}
+
+impl ColAndMat {
+	fn set_hdl(&mut self, materials: &mut Assets<StandardMaterial>) -> () {
+		self.mat = materials.add(StandardMaterial {
+			base_color: self.col.0,
+			roughness: 0.5_f32,
+			reflectance: 0.35_f32,
+			.. StandardMaterial::default()
+		});
+	}
+}
+
+impl<'de> Deserialize<'de> for ColAndMat {
+	fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+		deserializer.deserialize_str(ColorVisitor).map(|bevy_color: BevyColor| -> Self {
+			Self {
+				col: bevy_color.into(),
+				mat: MatHdl::default()
+			}
+		})
+	}
+}
+
+impl From<Color> for ColAndMat {
+	fn from(col: Color) -> Self {
+		Self {
+			col,
+			.. Self::default()
 		}
 	}
 }
 
-impl FromAlt<&String> for Color {
-	fn from_alt(string: &String) -> Self {
-		Color::hex(string.as_str()).unwrap_or(Default::default())
+impl Inspectable for ColAndMat {
+	type Attributes = <Color as Inspectable>::Attributes;
+
+	fn ui(&mut self, ui: &mut egui::Ui, options: Self::Attributes, context: &Context) -> bool {
+		self.col.ui(ui, options, context)
 	}
 }
 
-#[derive(Clone, Deserialize, Debug)]
-struct ColorDataWithoutMat<T> {
-
-	#[serde(skip)]
-	phantom: std::marker::PhantomData<T>
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct ColorDataWithMat {
+	pub polyhedron_to_colors: Vec<(Polyhedron, Vec<ColAndMat>)>,
+	pub base_color: ColAndMat
 }
 
-impl<T, U> FromAlt<ColorDataWithoutMat<U>> for ColorDataWithoutMat<T> {
-	fn from_alt(_: ColorDataWithoutMat<U>) -> Self {
-		Default::default()
-	}
-}
-
-impl<T> Default for ColorDataWithoutMat<T> {
+impl Default for ColorDataWithMat {
 	fn default() -> Self {
-		ColorDataWithoutMat::<T> { phantom: Default::default() }
-	}
-}
-
-#[derive(Clone, Deserialize, Debug)]
-pub struct ColorDataWithMat<T> {
-	pub polyhedron_to_colors: HashMap<Polyhedron, Vec<T>>,
-	pub base_color: T
-}
-
-impl Default for ColorDataWithMat<String> {
-	fn default() -> Self {
-		ColorDataWithMat::<String> {
+		ColorDataWithMat {
 			polyhedron_to_colors: [
 				(
 					Polyhedron::Dodecahedron,
@@ -120,187 +184,97 @@ impl Default for ColorDataWithMat<String> {
 						"FF8000", // Orange
 					]
 						.iter()
-						.map(|slice: &&str| -> String { (*slice).into() })
+						.map(|slice: &&str| -> ColAndMat { Color::from(*slice).into() })
 						.collect()
 				)
 			]
 				.iter()
 				.cloned()
 				.collect(),
-			base_color: "000000".into()
+			base_color: Color::from("000000").into()
 		}
 	}
 }
 
-impl<T, U> FromAlt<ColorDataWithMat<U>> for ColorDataWithMat<T>
-	where
-		T: for<'a> FromAlt<&'a U>
-{
-	fn from_alt(data: ColorDataWithMat<U>) -> Self {
-		ColorDataWithMat::<T> {
-			polyhedron_to_colors: data.polyhedron_to_colors
-				.iter()
-				.map(|(polyhedron, colors)| -> (Polyhedron, Vec<T>) {
-					(
-						*polyhedron,
-						colors
-							.iter()
-							.map(|color: &U| -> T {
-								T::from_alt(color)
-							})
-							.collect()
-					)
-				})
-				.collect(),
-			base_color: T::from_alt(&data.base_color)
+impl Inspectable for ColorDataWithMat {
+	type Attributes = ();
+
+	fn ui(&mut self, ui: &mut Ui, _: Self::Attributes, context: &Context) -> bool {
+		let mut changed: bool = false;
+
+		ui.vertical_centered(|ui: &mut Ui| -> () {
+			egui::Grid::new(context.id()).show(ui, |ui: &mut Ui| -> () {
+				ui.label("polyhedron_to_colors");
+
+				let mut inspectable_bin_map: InspectableBinMapMut<(Polyhedron, Vec<ColAndMat>)> =
+					self.polyhedron_to_colors.as_inspectable_bin_map_mut();
+
+				inspectable_bin_map.ui(ui, Default::default(), &context.with_id(0_u64));
+				ui.end_row();
+				ui.label("base_color");
+				changed |= <ColAndMat as Inspectable>::ui(
+					&mut self.base_color,
+					ui,
+					Default::default(),
+					&context.with_id(1_u64)
+				);
+				ui.end_row();
+			});
+		});
+
+		changed
+	}
+}
+
+impl Update for ColorDataWithMat {
+	fn update(&self, world: &mut World) -> () {
+		let mut mat_assets: Mut<Assets<StandardMaterial>> = log_option_none!(
+			world.get_resource_mut::<Assets<StandardMaterial>>()
+		);
+
+		for (_, col_and_mats) in &self.polyhedron_to_colors {
+			for col_and_mat in col_and_mats {
+				if let Some(mat) = mat_assets.get_mut(&col_and_mat.mat) {
+					mat.base_color = col_and_mat.col.0;
+				}
+			}
+		}
+
+		if let Some(base_mat) = mat_assets.get_mut(&self.base_color.mat) {
+			base_mat.base_color = self.base_color.col.0;
 		}
 	}
 }
 
-pub type MatHdl = Handle<StandardMaterial>;
-
-#[derive(Clone, Deserialize, Debug)]
-pub struct ColorData<T> {
-	colors_without_mat: ColorDataWithoutMat<T>,
-	pub colors_with_mat: ColorDataWithMat<T>,
-
-	#[serde(skip)]
-	pub mats: Option<ColorDataWithMat<MatHdl>>
+#[derive(Clone, Debug, Default, Deserialize, Inspectable, PartialEq)]
+pub struct ColorData {
+	#[inspectable(collapse)]
+	colors_without_mat: ColorDataWithoutMat,
+	#[inspectable(collapse)]
+	pub colors_with_mat: ColorDataWithMat
 }
 
-impl<T, U> FromAlt<ColorData<U>> for ColorData<T>
-	where
-		T : for<'a> FromAlt<&'a U>
-{
-	fn from_alt(data: ColorData<U>) -> Self {
-		ColorData::<T> {
-			colors_without_mat: ColorDataWithoutMat::<T>::from_alt(data.colors_without_mat),
-			colors_with_mat: ColorDataWithMat::<T>::from_alt(data.colors_with_mat),
-			mats: None
-		}
-	}
-}
-
-#[derive(Clone, Deserialize, Debug)]
-pub enum ColorDataTyped {
-	Strings(ColorData<String>),
-	Colors(ColorData<Color>)
-}
-
-impl ColorDataTyped {
-	pub fn convert(self) -> Self {
-		match self {
-			ColorDataTyped::Strings(data) => ColorDataTyped::Colors(ColorData::<Color>::from_alt(data)),
-			ColorDataTyped::Colors(data) => ColorDataTyped::Strings(ColorData::<String>::from_alt(data))
-		}
-	}
-
+impl ColorData {
 	fn startup_app(
 		mut preferences: ResMut<Preferences>,
 		mut materials: ResMut<Assets<StandardMaterial>>
 	) -> () {
-		preferences.color.set::<Color>();
+		let colors_with_mat: &mut ColorDataWithMat = &mut preferences.color.colors_with_mat;
 
-		let color_data: &mut ColorData<Color> = preferences.color.try_get_mut::<Color>().unwrap();
-
-		color_data.mats = Some(
-			ColorDataWithMat::<Handle<StandardMaterial>> {
-				polyhedron_to_colors: color_data.colors_with_mat.polyhedron_to_colors
-					.iter()
-					.map(|(polyhedron, colors)| -> (Polyhedron, Vec<MatHdl>) {
-						(
-							*polyhedron,
-							colors
-								.iter()
-								.map(|color| -> MatHdl { materials.add((*color).into()) })
-								.collect()
-						)
-					})
-					.collect(),
-				base_color: materials.add(color_data.colors_with_mat.base_color.into())
+		for (_, col_and_hdls) in &mut colors_with_mat.polyhedron_to_colors {
+			for col_and_hdl in col_and_hdls {
+				col_and_hdl.set_hdl(&mut *materials);
 			}
-		);
+		}
+
+		colors_with_mat.base_color.set_hdl(&mut *materials);
 	}
 }
 
-impl Default for ColorDataTyped {
-	fn default() -> Self {
-		Self::Colors(ColorData::<Color>::from_alt(
-			ColorData::<String> {
-				colors_without_mat: Default::default(),
-				colors_with_mat: Default::default(),
-				mats: None
-			}
-		))
+impl Update for ColorData {
+	fn update(&self, world: &mut World) -> () {
+		self.colors_with_mat.update(world);
 	}
-}
-
-impl AsTypeInternal<Color> for ColorDataTyped {
-	fn as_internal(self) -> Self {
-		match self {
-			ColorDataTyped::Strings(_) => self.convert(),
-			ColorDataTyped::Colors(_) => self
-		}
-	}
-}
-
-impl AsTypeInternal<String> for ColorDataTyped {
-	fn as_internal(self) -> Self {
-		match self {
-			ColorDataTyped::Strings(_) => self,
-			ColorDataTyped::Colors(_) => self.convert()
-		}
-	}
-}
-
-impl TryGetTypeInternal<Color> for ColorDataTyped {
-	fn try_get_internal(&self) -> Option<&ColorData<Color>> {
-		match self {
-			ColorDataTyped::Strings(_) => None,
-			ColorDataTyped::Colors(colors) => Some(colors)
-		}
-	}
-
-	fn try_get_mut_internal(&mut self) -> Option<&mut ColorData<Color>> {
-		match self {
-			ColorDataTyped::Strings(_) => None,
-			ColorDataTyped::Colors(colors) => Some(colors)
-		}
-	}
-}
-
-impl TryGetTypeInternal<String> for ColorDataTyped {
-	fn try_get_internal(&self) -> Option<&ColorData<String>> {
-		match self {
-			ColorDataTyped::Strings(strings) => Some(strings),
-			ColorDataTyped::Colors(_) => None
-		}
-	}
-
-	fn try_get_mut_internal(&mut self) -> Option<&mut ColorData<String>> {
-		match self {
-			ColorDataTyped::Strings(strings) => Some(strings),
-			ColorDataTyped::Colors(_) => None
-		}
-	}
-}
-
-impl IsTypeInternal<Color>		for ColorDataTyped {}
-impl IsTypeInternal<String>		for ColorDataTyped {}
-impl SetTypeInternal<Color>		for ColorDataTyped {}
-impl SetTypeInternal<String>	for ColorDataTyped {}
-
-impl AsType						for ColorDataTyped {}
-impl IsType						for ColorDataTyped {}
-impl SetType					for ColorDataTyped {}
-impl TryGetType					for ColorDataTyped {}
-
-impl<T> From<ColorDataTyped> for ColorData<T>
-	where
-		ColorDataTyped: AsType + AsTypeInternal<T> + TryGetType + TryGetTypeInternal<T>,
-		T: Clone
-{
-	fn from(color_data_typed: ColorDataTyped) -> Self { color_data_typed.as_type::<T>().try_get::<T>().unwrap().clone() }
 }
 
 pub struct ColorsPlugin;
@@ -308,6 +282,6 @@ pub struct ColorsPlugin;
 impl Plugin for ColorsPlugin {
 	fn build(&self, app: &mut AppBuilder) -> () {
 		app
-			.add_startup_system(ColorDataTyped::startup_app.system().label(STRING_DATA.labels.color_data_typed_startup.as_ref()));
+			.add_startup_system(ColorData::startup_app.system().label(STRING_DATA.labels.color_data_startup.as_ref()));
 	}
 }
