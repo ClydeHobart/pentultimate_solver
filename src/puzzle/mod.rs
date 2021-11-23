@@ -21,22 +21,14 @@ use {
 			},
 			Preferences
 		},
-		ui::{
-			camera::Animation as CameraAnimation,
-			input::PendingAction,
-			View
-		},
 		util::inspectable_bin_map::*,
 		get_data
 	},
 	self::{
 		consts::*,
-		inflated::{
-			Animation,
-			PuzzleStateComponent
-		},
 		transformation::{
 			packs::*,
+			Action,
 			FullAddr,
 			HalfAddr,
 			Page,
@@ -578,8 +570,7 @@ pub mod inflated {
 	#[repr(align(32))]
 	pub struct ExtendedPuzzleState {
 		pub puzzle_state:	PuzzleState,
-		pub pos_to_piece:	PuzzleStateComponent,
-		pub animation:		Option<Animation>
+		pub pos_to_piece:	PuzzleStateComponent
 	}
 
 	impl ExtendedPuzzleState {
@@ -600,8 +591,7 @@ pub mod inflated {
 		fn default() -> Self {
 			Self {
 				puzzle_state:	PuzzleState::SOLVED_STATE,
-				pos_to_piece:	PuzzleStateComponent::SOLVED_STATE,
-				animation:		None
+				pos_to_piece:	PuzzleStateComponent::SOLVED_STATE
 			}
 		}
 	}
@@ -665,149 +655,112 @@ impl PuzzlePlugin {
 	}
 
 	fn run(
-		view: Res<View>,
-		input_state: Res<InputState>,
-		preferences: Res<Preferences>,
 		transformation_library: Res<TransformationLibraryRef>,
-		polyhedra_data_library: Res<PolyhedraDataLibrary>,
 		mut extended_puzzle_state: ResMut<ExtendedPuzzleState>,
+		mut input_state: ResMut<InputState>,
 		mut queries: QuerySet<(
 			Query<(&mut CameraComponent, &mut Transform)>,
 			Query<(&PieceComponent, &mut Transform)>
 		)>
 	) -> () {
-		if let Some(animation) = &extended_puzzle_state.animation {
-			let now: Instant = Instant::now();
-			let word_pack: WordPack = transformation_library.book_pack_data.get_word_pack(animation.addr);
-
-			if animation.is_done_at_time(&now) {
-				*extended_puzzle_state += word_pack.trfm;
-
-				let standardization_word_pack: WordPack = transformation_library.book_pack_data.get_word_pack(extended_puzzle_state.puzzle_state.standardization_full_addr());
-
-				*extended_puzzle_state += standardization_word_pack.trfm;
-
-				warn_expect!(extended_puzzle_state.puzzle_state.is_standardized());
-
-				let puzzle_state: &InflatedPuzzleState = &extended_puzzle_state.puzzle_state;
-
-				for (piece_component, mut transform) in queries.q1_mut().iter_mut() {
-					transform.rotation = transformation_library.orientation_data.get_word(puzzle_state.half_addr(piece_component.index)).quat;
-				}
-
-				extended_puzzle_state.animation = None;
-
-				if let Some((mut camera_component, mut transform)) = queries.q0_mut().iter_mut().next() {
-					if camera_component.animation.is_some() {
-						transform.rotation = *standardization_word_pack.quat * transformation_library.orientation_data.get_word(camera_component.prev_addr).quat;
-						camera_component.animation = None;
-					} else {
-						transform.rotation = *standardization_word_pack.quat * transform.rotation;
-					}
-				}
+		if let Some(active_transformation_action) = &input_state.active_transformation_action {
+			let action: Action = active_transformation_action.action;
+			let end_quat: Quat = if warn_expect!(action.camera_start.is_valid()) {
+				transformation_library
+					.orientation_data
+					.get_word(action.camera_start)
+					.quat
 			} else {
-				let rotation: Quat = Quat::IDENTITY.short_slerp(*word_pack.quat, animation.s_at_time(&now));
-				let puzzle_state: &InflatedPuzzleState = &extended_puzzle_state.puzzle_state;
-
-				for (piece_component, mut transform) in queries.q1_mut().iter_mut() {
-					let piece_index: usize = piece_component.index;
-
-					if word_pack.mask.affects_piece(extended_puzzle_state.puzzle_state.pos[piece_index] as usize) {
-						transform.rotation = rotation * transformation_library.orientation_data.get_word(puzzle_state.half_addr(piece_index)).quat;
-					}
-				}
-
-				// A rotation is in progress, so don't process further input
-				return;
-			}
-		}
-
-		if !matches!(*view, View::Main) {
-			return;
-		}
-
-		match input_state.pending_action {
-			PendingAction::Transformation{ default_position } => {
-				let camera_addr: FullAddr = queries
-					.q0_mut()
-					.iter_mut()
-					.next()
-					.map_or(
-						FullAddr::default(),
-						|(_camera_component, transform): (Mut<CameraComponent>, Mut<Transform>)| -> FullAddr {
-							(TransformationType::Reorientation, CameraPlugin::compute_camera_addr(&polyhedra_data_library.icosidodecahedron, &transform.rotation)).into()
-						}
-					);
-
-				if !warn_expect!(camera_addr.is_valid()) {
-					return;
-				}
-
-				let reoriented_positions: &PuzzleStateComponent =
-					&transformation_library
+				Quat::IDENTITY
+			};
+			let word_pack: Option<WordPack> = if action.transformation.is_valid() {
+				Some(
+					transformation_library
 						.book_pack_data
-						.trfm
-						.get_word(
-							*transformation_library
-								.book_pack_data
-								.addr
-								.get_word(camera_addr)
-						)
-						.as_ref()
-						.pos;
-				let mut cycles: u32 = 1_u32;
-				let addr: FullAddr = {
-					let mut rotations: i32 = 1_i32;
+						.get_word_pack(action.transformation)
+				)
+			} else {
+				None
+			};
 
-					if input_state.rotate_twice {
-						rotations += 1_i32;
-						cycles += 1_u32;
-					}
+			match active_transformation_action.s_now() {
+				Some(s) => {
+					if action.transformation.is_valid() && warn_expect!(word_pack.is_some()) {
+						let word_pack: WordPack = word_pack.unwrap();
+						let rotation: Quat = Quat::IDENTITY.short_slerp(*word_pack.quat, s);
+						let puzzle_state: &InflatedPuzzleState = &extended_puzzle_state.puzzle_state;
 
-					if input_state.counter_clockwise {
-						rotations *= -1_i32;
-					}
+						for (piece_component, mut transform) in queries
+							.q1_mut()
+							.iter_mut()
+						{
+							let piece_index: usize = piece_component.index;
 
-					FullAddr::from((
-						TransformationType::StandardRotation as usize,
-						reoriented_positions[
-							if input_state.alt_hemi {
-								InflatedPuzzleState::invert_position(default_position)
-							} else {
-								default_position
+							if word_pack.mask.affects_piece(puzzle_state.pos[piece_index] as usize) {
+								transform.rotation = rotation
+									* transformation_library
+										.orientation_data
+										.get_word(puzzle_state.half_addr(piece_index))
+										.quat;
 							}
-						] as usize,
-						(rotations + PENTAGON_SIDE_COUNT as i32) as usize % PENTAGON_SIDE_COUNT
-					))
-				};
-
-				let mut animation: Animation = Animation {
-					addr,
-					start: Instant::now(),
-					duration: Duration::from_millis((
-						if preferences.speed.uniform_transformation_duration {
-							preferences.speed.rotation_millis
-						} else { 
-							cycles * preferences.speed.rotation_millis
 						}
-					) as u64)
-				};
+					}
 
-				extended_puzzle_state.animation = Some(animation.clone());
+					if let Some(camera_orientation) = active_transformation_action.camera_orientation {
+						if let Some((_, mut transform)) = queries.q0_mut().iter_mut().next() {
+							if action.camera_start.is_valid() {
+								transform.rotation = camera_orientation.short_slerp(end_quat, s);
+							}
+						}
+					}
+				},
+				None => {
+					let mut standardization_word_pack: Option<WordPack> = None;
 
-				let (mut camera_component, transform): (Mut<CameraComponent>, Mut<Transform>) = log_option_none!(queries.q0_mut().iter_mut().next());
+					if action.transformation.is_valid() && warn_expect!(word_pack.is_some()) {
+						*extended_puzzle_state += word_pack.unwrap().trfm;
 
-				camera_component.prev_addr = camera_addr.get_half_addr();
+						let local_standardization_word_pack: WordPack = transformation_library
+							.book_pack_data
+							.get_word_pack(FullAddr::from((
+								TransformationType::Reorientation,
+								action.reorientation
+							)));
 
-				if !input_state.disable_recentering {
-					animation.addr = camera_addr;
-					camera_component.animation = Some(CameraAnimation {
-						puzzle_animation: animation,
-						start_quat: transform.rotation
-					});
+						*extended_puzzle_state += local_standardization_word_pack.trfm;
+						warn_expect!(extended_puzzle_state.puzzle_state.is_standardized());
+						standardization_word_pack = Some(local_standardization_word_pack);
+
+						let puzzle_state: &InflatedPuzzleState = &extended_puzzle_state.puzzle_state;
+
+						for (piece_component, mut transform) in queries
+							.q1_mut()
+							.iter_mut()
+						{
+							transform.rotation = transformation_library
+								.orientation_data
+								.get_word(puzzle_state.half_addr(piece_component.index))
+								.quat;
+						}
+					}
+
+					if action.camera_start.is_valid() {
+						if let Some((_, mut transform)) = queries.q0_mut().iter_mut().next() {
+							transform.rotation = standardization_word_pack.map_or(
+								Quat::IDENTITY,
+								|standardization_word_pack: WordPack| -> Quat {*standardization_word_pack.quat }
+							)
+								* if active_transformation_action.camera_orientation.is_some() {
+									end_quat
+								} else {
+									transform.rotation
+								};
+						}
+					}
+
+					input_state.active_transformation_action = None;
 				}
-			},
-			_ => {}
+			}
 		}
 	}
 }

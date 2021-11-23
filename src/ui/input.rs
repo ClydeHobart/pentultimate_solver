@@ -1,6 +1,7 @@
 use {
 	crate::{
 		prelude::*,
+		app::prelude::*,
 		math::polyhedra::{
 			data::{
 				Data,
@@ -8,13 +9,37 @@ use {
 			},
 			Polyhedron
 		},
-		puzzle::consts::*
+		puzzle::{
+			consts::*,
+			transformation::{
+				Action as TransformationAction,
+				FullAddr,
+				GetWord,
+				HalfAddr,
+				Type as TransformationType
+			},
+			ExtendedPuzzleState,
+			InflatedPuzzleState
+		}
 	},
-	super::Preferences,
+	super::{
+		Preferences,
+		View
+	},
+	std::time::{
+		Duration,
+		Instant
+	},
 	bevy::{
 		prelude::*,
 		app::CoreStage,
-		input::keyboard::KeyCode as BevyKeyCode
+		input::{
+			keyboard::KeyCode as BevyKeyCode,
+			mouse::{
+				MouseMotion,
+				MouseWheel
+			}
+		}
 	},
 	bevy_inspector_egui::{
 		egui,
@@ -185,36 +210,69 @@ define_struct_with_default!(
 	}
 );
 
-pub enum PendingAction {
-	None,
-	Transformation{ default_position: usize },
-	RecenterCamera
+pub struct ActiveTransformationAction {
+	pub action:				TransformationAction,
+	start:					Instant,
+	duration:				Duration,
+	pub camera_orientation:	Option<Quat>
 }
 
-impl Default for PendingAction { fn default() -> Self {	Self::None } }
+impl ActiveTransformationAction {
+	pub fn s_now(&self) -> Option<f32> {
+		let s: f32 = (Instant::now() - self.start).as_millis() as f32 / self.duration.as_millis() as f32;
+
+		if s < 1.0_f32 {
+			Some(s)
+		} else {
+			None
+		}
+	}
+}
+
+#[derive(Clone, Copy, Default)]
+pub struct InputToggles {
+	pub rotate_twice:					bool,
+	pub counter_clockwise:				bool,
+	pub alt_hemi:						bool,
+	pub disable_recentering:			bool
+}
 
 #[derive(Default)]
 pub struct InputState {
-	pub rotate_twice:			bool,
-	pub counter_clockwise:		bool,
-	pub alt_hemi:				bool,
-	pub disable_recentering:	bool,
-	pub pending_action:			PendingAction
+	pub toggles:						InputToggles,
+	pub active_transformation_action:	Option<ActiveTransformationAction>,
+	pub camera_rotation:				Quat,
 }
 
 pub struct InputPlugin;
 
 impl InputPlugin {
 	fn run(
-		keyboard_input: Res<Input<BevyKeyCode>>,
-		preferences: Res<Preferences>,
-		mut input_state: ResMut<InputState>
+		extended_puzzle_state:		Res<ExtendedPuzzleState>,
+		keyboard_input:				Res<Input<BevyKeyCode>>,
+		mouse_button_input:			Res<Input<MouseButton>>,
+		view:						Res<View>,
+		time:						Res<Time>,
+		preferences:				Res<Preferences>,
+		polyhedra_data_library:		Res<PolyhedraDataLibrary>,
+		transformation_library:		Res<TransformationLibraryRef>,
+		mut mouse_motion_events:	EventReader<MouseMotion>,
+		mut mouse_wheel_events:		EventReader<MouseWheel>,
+		mut input_state:			ResMut<InputState>,
+		mut camera_component_query:	Query<(&mut CameraComponent, &Transform)>
 	) -> () {
+		if !matches!(*view, View::Main) {
+			input_state.camera_rotation = Quat::IDENTITY;
+
+			return;
+		}
+
 		let input_data: &InputData = &preferences.input;
+		let mut toggles: InputToggles = input_state.toggles;
 
 		macro_rules! check_toggle {
 			($key_code:ident, $toggle:ident) => {
-				if keyboard_input.just_pressed(input_data.$key_code.into()) { input_state.$toggle = !input_state.$toggle; }
+				if keyboard_input.just_pressed(input_data.$key_code.into()) { toggles.$toggle = !toggles.$toggle; }
 			}
 		}
 
@@ -223,21 +281,159 @@ impl InputPlugin {
 		check_toggle!(alt_hemi,				alt_hemi);
 		check_toggle!(disable_recentering,	disable_recentering);
 
-		let mut pending_action: PendingAction = PendingAction::None;
+		let mut rolled_or_panned: bool = false;
 
-		for (default_position, key_code) in input_data.rotation_keys.iter().enumerate() {
-			if keyboard_input.just_pressed((*key_code).into()) {
-				pending_action = PendingAction::Transformation{ default_position: input_data.default_positions[default_position] };
+		let (mouse_motion_delta, mouse_wheel_delta): (Vec2, f32) = {
+			let time_delta: f32 = time.delta_seconds();
 
-				break;
+			(
+				if mouse_button_input.pressed(MouseButton::Middle) {
+					mouse_motion_events
+						.iter()
+						.map(|mouse_motion: &MouseMotion| -> &Vec2 {
+							&mouse_motion.delta
+						})
+						.sum::<Vec2>() / time_delta
+				} else {
+					Vec2::ZERO
+				},
+				mouse_wheel_events
+					.iter()
+					.map(|mouse_wheel: &MouseWheel| -> f32 {
+						mouse_wheel.y
+					})
+					.sum::<f32>() / time_delta
+			)
+		};
+
+		input_state.camera_rotation = {
+			if !mouse_motion_delta.abs_diff_eq(Vec2::ZERO, f32::EPSILON) {
+				const PAN_SCALING_FACTOR: f32 = 500_000.0_f32;
+
+				rolled_or_panned = true;
+
+				Quat::from_axis_angle(
+					Vec3::new(mouse_motion_delta.x, -mouse_motion_delta.y, 0.0_f32).cross(Vec3::Z).normalize(),
+					mouse_motion_delta.length() / PAN_SCALING_FACTOR * preferences.speed.pan_speed as f32
+				)
+			} else if mouse_wheel_delta.abs() > f32::EPSILON {
+				const ROLL_SCALING_FACTOR: f32 = 5_000.0_f32;
+
+				rolled_or_panned = true;
+
+				Quat::from_rotation_z(
+					mouse_wheel_delta / ROLL_SCALING_FACTOR * preferences.speed.roll_speed as f32
+				)
+			} else {
+				Quat::IDENTITY
+			}
+		};
+
+		match &mut input_state.active_transformation_action {
+			Some(active_transformation_action) => {
+				if rolled_or_panned {
+					// Cancel active camera movement
+					active_transformation_action.camera_orientation = None;
+				}
+			},
+			None => {
+				let mut default_position: Option<usize> = None;
+
+				for (index, key_code) in input_data.rotation_keys.iter().enumerate() {
+					if keyboard_input.just_pressed((*key_code).into()) {
+						default_position = Some(input_data.default_positions[index]);
+
+						break;
+					}
+				}
+
+				let camera_orientation: &Quat = &log_option_none!(camera_component_query.iter_mut().next()).1.rotation;
+				let camera_start: HalfAddr = CameraPlugin::compute_camera_addr(
+					&polyhedra_data_library.icosidodecahedron,
+					camera_orientation
+				);
+				let start: Instant = Instant::now();
+				let duration: Duration = Duration::from_millis(preferences.speed.rotation_millis as u64);
+
+				match default_position {
+					Some(default_position) => {
+						let transformation: FullAddr = (
+							TransformationType::StandardRotation as usize,
+							transformation_library
+								.book_pack_data
+								.trfm
+								.get_word(
+									*transformation_library
+										.book_pack_data
+										.addr
+										.get_word(FullAddr::from((
+											TransformationType::Reorientation,
+											camera_start
+										)))
+								)
+								.as_ref()
+								.pos
+								[
+									if input_state.toggles.alt_hemi {
+										InflatedPuzzleState::invert_position(default_position)
+									} else {
+										default_position
+									}
+								]
+								as usize,
+							(
+								1_i32
+									* if input_state.toggles.rotate_twice { 2_i32 } else { 1_i32 }
+									* if input_state.toggles.counter_clockwise { -1_i32 } else { 1_i32 }
+									+ PENTAGON_SIDE_COUNT as i32
+							)
+								as usize
+								% PENTAGON_SIDE_COUNT
+						).into();
+
+						input_state.active_transformation_action = Some(ActiveTransformationAction {
+							action: TransformationAction {
+								transformation,
+								camera_start,
+								reorientation: (
+									&extended_puzzle_state.puzzle_state
+										+ transformation_library
+											.book_pack_data
+											.trfm
+											.get_word(transformation)
+								).standardization_half_addr()
+							},
+							start,
+							duration: if preferences.speed.uniform_transformation_duration {
+								duration
+							} else {
+								duration * transformation.get_cycles()
+							},
+							camera_orientation: if input_state.toggles.disable_recentering {
+								None
+							} else {
+								Some(*camera_orientation)
+							}
+						});
+					},
+					None => {
+						if keyboard_input.just_pressed(input_data.recenter_camera.into()) {
+							input_state.active_transformation_action = Some(ActiveTransformationAction {
+								action: TransformationAction {
+									camera_start,
+									.. TransformationAction::default()
+								},
+								start,
+								duration,
+								camera_orientation: Some(*camera_orientation)
+							});
+						}
+					}
+				}
 			}
 		}
 
-		if matches!(pending_action, PendingAction::None) && keyboard_input.just_pressed(input_data.recenter_camera.into()) {
-			pending_action = PendingAction::RecenterCamera;
-		}
-
-		input_state.pending_action = pending_action;
+		input_state.toggles = toggles;
 	}
 }
 

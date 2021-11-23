@@ -229,17 +229,17 @@ impl Default for HalfAddr {
 }
 
 pub trait FullAddrConsts {
-	const INVALID_INDEX: i8;
+	const INVALID_INDEX: u8;
 }
 
 #[derive(Clone, Copy)]
 pub struct FullAddr {
-	page_index:	i8,
+	page_index:	u8,
 	half_addr:	HalfAddr
 }
 
 impl FullAddrConsts for FullAddr {
-	const INVALID_INDEX: i8 = -1_i8;
+	const INVALID_INDEX: u8 = u8::MAX;
 }
 
 impl FullAddr {
@@ -253,7 +253,12 @@ impl FullAddr {
 	pub fn is_valid_page_index(page_index: usize) -> bool { page_index < Library::PAGE_COUNT }
 
 	#[inline(always)]
-	pub fn half_addr_is_valid(&self) -> bool { self.line_index_is_valid() && self.word_index_is_valid() }
+	pub fn half_addr_is_valid(&self) -> bool { Self::is_valid_half_addr(self.half_addr) }
+
+	#[inline(always)]
+	pub fn is_valid_half_addr(half_addr: HalfAddr) -> bool {
+		half_addr.line_index_is_valid() && half_addr.word_index_is_valid()
+	}
 
 	#[inline(always)]
 	pub fn line_index_is_valid(&self) -> bool { self.half_addr.line_index_is_valid() }
@@ -269,10 +274,33 @@ impl FullAddr {
 		}
 	}
 
+	pub fn get_cycles(&self) -> u32 {
+		match self.get_page_index_type() {
+			Some(page_index_type) => {
+				match page_index_type {
+					Type::Reorientation => {
+						1_u32
+					},
+					Type::StandardRotation => {
+						if self.word_index_is_valid() {
+							(((self.get_word_index() as i32 + 2_i32) % PENTAGON_SIDE_COUNT as i32) - 2_i32).abs() as u32
+						} else {
+							0_u32
+						}
+					},
+					_ => { unreachable!() }
+				}
+			},
+			None => {
+				0_u32
+			}
+		}
+	}
+
 	pub fn get_half_addr(&self) -> HalfAddr { self.half_addr }
 
 	pub fn set_half_addr(&mut self, half_addr: HalfAddr) -> &mut FullAddr {
-		assert!(half_addr.is_valid() && half_addr.line_index_is_valid());
+		assert!(self.half_addr_is_valid());
 		self.half_addr = half_addr;
 
 		self
@@ -292,7 +320,7 @@ impl FullAddr {
 
 	#[inline(always)]
 	unsafe fn get_page_index_unchecked(&self) -> usize {
-		if self.page_index < 0 { usize::MAX } else { self.page_index as usize }
+		self.page_index as usize
 	}
 }
 
@@ -315,7 +343,7 @@ impl Addr for FullAddr {
 
 	fn set_page_index(&mut self, page_index: usize) -> &mut FullAddr {
 		assert!(Self::is_valid_page_index(page_index));
-		self.page_index = page_index as i8;
+		self.page_index = page_index as u8;
 
 		self
 	}
@@ -372,7 +400,7 @@ impl Default for FullAddr {
 impl From<(usize, usize, usize)> for FullAddr {
 	fn from((page_index, line_index, word_index): (usize, usize, usize)) -> Self {
 		Self {
-			page_index: if Self::is_valid_page_index(page_index) { page_index as i8 } else { Self::INVALID_INDEX },
+			page_index: if Self::is_valid_page_index(page_index) { page_index as u8 } else { Self::INVALID_INDEX },
 			half_addr: if HalfAddr::is_valid_line_index(line_index) && HalfAddr::is_valid_word_index(word_index) {
 				HalfAddr::new(line_index, word_index)
 			} else {
@@ -385,7 +413,7 @@ impl From<(usize, usize, usize)> for FullAddr {
 impl From<Type> for FullAddr {
 	fn from(page_index_type: Type) -> Self {
 		Self {
-			page_index: page_index_type as i8,
+			page_index: page_index_type as u8,
 			.. Self::default()
 		}
 	}
@@ -394,7 +422,7 @@ impl From<Type> for FullAddr {
 impl From<HalfAddr> for FullAddr {
 	fn from(half_addr: HalfAddr) -> Self {
 		Self {
-			half_addr: if half_addr.line_index_is_valid() { half_addr } else { HalfAddr::default() },
+			half_addr: if Self::is_valid_half_addr(half_addr) { half_addr } else { HalfAddr::default() },
 			.. Self::default()
 		}
 	}
@@ -403,10 +431,17 @@ impl From<HalfAddr> for FullAddr {
 impl From<(Type, HalfAddr)> for FullAddr {
 	fn from((page_index_type, half_addr): (Type, HalfAddr)) -> Self {
 		Self {
-			page_index: page_index_type as i8,
+			page_index: page_index_type as u8,
 			half_addr
 		}
 	}
+}
+
+#[derive(Clone, Copy, Default)]
+pub struct Action {
+	pub transformation:	FullAddr,
+	pub camera_start:	HalfAddr,
+	pub reorientation:	HalfAddr
 }
 
 pub struct OrientationData {

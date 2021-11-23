@@ -1,4 +1,5 @@
 use {
+	self::input::InputToggles,
 	crate::{
 		prelude::*,
 		app::prelude::*,
@@ -108,12 +109,13 @@ impl UIPlugin {
 						ui.end_row();
 					};
 
+					let toggles: &InputToggles = &input_state.toggles;
 					let input: &InputData = &preferences.input;
 
-					modifier_row(input_state.rotate_twice,			"Rotate Twice",			input.rotate_twice.into());
-					modifier_row(input_state.counter_clockwise,		"Counter Clockwise",	input.counter_clockwise.into());
-					modifier_row(input_state.alt_hemi,				"Alt. Hemi.",			input.alt_hemi.into());
-					modifier_row(input_state.disable_recentering,	"Disable Redentering",	input.disable_recentering.into());
+					modifier_row(toggles.rotate_twice,			"Rotate Twice",			input.rotate_twice.into());
+					modifier_row(toggles.counter_clockwise,		"Counter Clockwise",	input.counter_clockwise.into());
+					modifier_row(toggles.alt_hemi,				"Alt. Hemi.",			input.alt_hemi.into());
+					modifier_row(toggles.disable_recentering,	"Disable Redentering",	input.disable_recentering.into());
 				});
 			});
 	}

@@ -13,30 +13,12 @@ use {
 		},
 		puzzle::{
 			consts::PENTAGON_SIDE_COUNT,
-			inflated::Animation as PuzzleAnimation,
-			transformation::{
-				GetWord,
-				HalfAddr
-			}
+			transformation::HalfAddr
 		}
 	},
-	super::{
-		input::{
-			InputState,
-			PendingAction
-		},
-		View
-	},
-	std::time::{
-		Duration,
-		Instant
-	},
+	super::input::InputState,
 	bevy::{
 		prelude::*,
-		input::mouse::{
-			MouseMotion,
-			MouseWheel
-		},
 		render::camera::PerspectiveProjection as BevyPerspectiveProjection
 	},
 	bevy_inspector_egui::Inspectable,
@@ -109,16 +91,7 @@ impl Update for LightAndCameraData {
 	}
 }
 
-pub struct Animation {
-	pub puzzle_animation: PuzzleAnimation,
-	pub start_quat: Quat
-}
-
-#[derive(Default)]
-pub struct CameraComponent {
-	pub animation: Option<Animation>,
-	pub prev_addr: HalfAddr
-}
+pub struct CameraComponent;
 
 pub struct CameraPlugin;
 
@@ -130,7 +103,7 @@ impl CameraPlugin {
 	) -> () {
 		commands
 			.spawn_bundle((
-				CameraComponent::default(),
+				CameraComponent,
 				Transform::from_rotation(polyhedra_data_library.icosidodecahedron.faces[Type::Pentagon.index_offset()].quat),
 				GlobalTransform::default()
 			))
@@ -150,78 +123,10 @@ impl CameraPlugin {
 	}
 
 	fn run(
-		view: Res<View>,
-		time: Res<Time>,
-		mouse_button_input: Res<Input<MouseButton>>,
-		transformation_library: Res<TransformationLibraryRef>,
-		polyhedra_data_library: Res<PolyhedraDataLibrary>,
-		preferences: Res<Preferences>,
 		input_state: Res<InputState>,
-		mut mouse_motion_events: EventReader<MouseMotion>,
-		mut mouse_wheel_events: EventReader<MouseWheel>,
-		mut camera_component_query: Query<(&mut CameraComponent, &mut Transform)>
+		mut camera_component_query: Query<(&CameraComponent, &mut Transform)>
 	) -> () {
-		if let View::Main = *view {} else { return; }
-
-		let time_delta: f32 = time.delta_seconds();
-		let mouse_wheel_delta: f32 = mouse_wheel_events
-			.iter()
-			.map(|mouse_wheel: &MouseWheel| -> f32 {
-				mouse_wheel.y
-			})
-			.sum::<f32>() / time_delta;
-		let (mut camera_component, mut transform): (Mut<CameraComponent>, Mut<Transform>) = log_option_none!(camera_component_query.iter_mut().next());
-		let mut rotated_or_panned: bool = false;
-
-		if mouse_wheel_delta.abs() > f32::EPSILON {
-			const ROLL_SCALING_FACTOR: f32 = 5_000.0_f32;
-
-			transform.rotate(Quat::from_rotation_z(mouse_wheel_delta / ROLL_SCALING_FACTOR * preferences.speed.roll_speed as f32));
-			rotated_or_panned = true;
-		}
-
-		if mouse_button_input.pressed(MouseButton::Middle) {
-			let mouse_motion_delta: Vec2 = mouse_motion_events
-				.iter()
-				.map(|mouse_motion: &MouseMotion| -> &Vec2 {
-					&mouse_motion.delta
-				})
-				.sum::<Vec2>() / time_delta;
-
-			if !mouse_motion_delta.abs_diff_eq(Vec2::ZERO, f32::EPSILON) {
-				let pan_direction: Vec3 = Vec3::new(mouse_motion_delta.x, -mouse_motion_delta.y, 0.0_f32);
-				let axis: Vec3 = pan_direction.cross(Vec3::Z).normalize();
-
-				const PAN_SCALING_FACTOR: f32 = 500_000.0_f32;
-
-				transform.rotate(Quat::from_axis_angle(axis, mouse_motion_delta.length() / PAN_SCALING_FACTOR * preferences.speed.pan_speed as f32));
-				rotated_or_panned = true;
-			}
-		}
-
-		if let Some(animation) = &camera_component.animation {
-			if rotated_or_panned {
-				camera_component.animation = None;
-			} else if warn_expect!(animation.puzzle_animation.addr.half_addr_is_valid()) {
-				let now: Instant = Instant::now();
-				let end_quat: Quat = transformation_library.orientation_data.get_word(animation.puzzle_animation.addr.get_half_addr()).quat;
-	
-				transform.rotation = if animation.puzzle_animation.is_done_at_time(&now) {
-					end_quat
-				} else {
-					animation.start_quat.short_slerp(end_quat, animation.puzzle_animation.s_at_time(&now))
-				};
-			}
-		} else if matches!(input_state.pending_action, PendingAction::RecenterCamera) {
-			camera_component.animation = Some(Animation {
-				puzzle_animation: PuzzleAnimation {
-					addr: Self::compute_camera_addr(&polyhedra_data_library.icosidodecahedron, &transform.rotation).into(),
-					start: Instant::now(),
-					duration: Duration::from_millis(preferences.speed.rotation_millis as u64)
-				},
-				start_quat: transform.rotation
-			})
-		}
+		log_option_none!(camera_component_query.iter_mut().next()).1.rotate(input_state.camera_rotation);
 	}
 
 	pub fn compute_camera_addr(icosidodecahedron_data: &Data, quat: &Quat) -> HalfAddr {
