@@ -34,6 +34,8 @@ define_struct_with_default!(
 		pub roll_speed:							u32		= 50_u32,
 
 		pub uniform_transformation_duration:	bool	= false,
+
+		pub animate_undo_and_redo:				bool	= false,
 	}
 );
 

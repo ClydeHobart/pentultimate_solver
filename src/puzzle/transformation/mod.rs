@@ -439,9 +439,25 @@ impl From<(Type, HalfAddr)> for FullAddr {
 
 #[derive(Clone, Copy, Default)]
 pub struct Action {
-	pub transformation:	FullAddr,
-	pub camera_start:	HalfAddr,
-	pub reorientation:	HalfAddr
+	transformation:	FullAddr,
+	camera_start:	HalfAddr,
+	reorientation:	HalfAddr
+}
+
+impl Action {
+	pub fn new(transformation: FullAddr, camera_start: HalfAddr, reorientation: HalfAddr) -> Self {
+		Self {
+			transformation,
+			camera_start,
+			reorientation
+		}
+	}
+	#[inline(always)]
+	pub fn transformation(&self) -> &FullAddr { &self.transformation }
+	#[inline(always)]
+	pub fn camera_start(&self) -> &HalfAddr { &self.camera_start }
+	#[inline(always)]
+	pub fn reorientation(&self) -> FullAddr { (Type::Reorientation, self.reorientation).into() }
 }
 
 pub struct OrientationData {

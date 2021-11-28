@@ -24,10 +24,12 @@ Preferences(
 	input:				InputData(
 		default_positions:		(	0,			5,			10,			1,			8,			4		),
 		rotation_keys:			(	Numpad0,	Numpad1,	Numpad4,	Numpad5,	Numpad6,	Numpad3	),
+		recenter_camera:		Space,
+		undo:					Left,
+		redo:					Right,
 		rotate_twice:			D,
 		counter_clockwise:		S,
 		alt_hemi:				A,
-		recenter_camera:		Space,
 		disable_recentering:	X,
 	),
 	light_and_camera:	LightAndCameraData(
@@ -37,7 +39,7 @@ Preferences(
 			fov:			0.5,
 			aspect_ratio:	1.0,
 			near:			1.0,
-			far:			1000.0
+			far:			1000.0,
 		)
 	),
 	speed:				SpeedData(
@@ -45,5 +47,6 @@ Preferences(
 		pan_speed:							50,
 		roll_speed:							50,
 		uniform_transformation_duration:	false,
+		animate_undo_and_redo:				false,
 	),
 )

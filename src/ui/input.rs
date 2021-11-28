@@ -202,10 +202,12 @@ define_struct_with_default!(
 		pub default_positions:		[usize; HALF_PENTAGON_PIECE_COUNT]		= generate_default_positions(),
 		#[inspectable(collapse)]
 		pub rotation_keys:			[KeyCode; HALF_PENTAGON_PIECE_COUNT]	= [bkc!(Numpad0), bkc!(Numpad1), bkc!(Numpad4), bkc!(Numpad5), bkc!(Numpad6), bkc!(Numpad3)],
+		pub recenter_camera:		KeyCode									= bkc!(Space),
+		pub undo:					KeyCode									= bkc!(Left),
+		pub redo:					KeyCode									= bkc!(Right),
 		pub rotate_twice:			KeyCode									= bkc!(D),
 		pub counter_clockwise:		KeyCode									= bkc!(S),
 		pub alt_hemi:				KeyCode									= bkc!(A),
-		pub recenter_camera:		KeyCode									= bkc!(Space),
 		pub disable_recentering:	KeyCode									= bkc!(X),
 	}
 );
@@ -219,12 +221,16 @@ pub struct ActiveTransformationAction {
 
 impl ActiveTransformationAction {
 	pub fn s_now(&self) -> Option<f32> {
-		let s: f32 = (Instant::now() - self.start).as_millis() as f32 / self.duration.as_millis() as f32;
-
-		if s < 1.0_f32 {
-			Some(s)
-		} else {
+		if self.duration.is_zero() {
 			None
+		} else {
+			let s: f32 = (Instant::now() - self.start).as_millis() as f32 / self.duration.as_millis() as f32;
+	
+			if s < 1.0_f32 {
+				Some(s)
+			} else {
+				None
+			}
 		}
 	}
 }
@@ -237,10 +243,19 @@ pub struct InputToggles {
 	pub disable_recentering:			bool
 }
 
+pub enum Action {
+	None,
+	Transformation(ActiveTransformationAction),
+	Undo(TransformationAction),
+	Redo(TransformationAction)
+}
+
+impl Default for Action { fn default() -> Self { Self::None } }
+
 #[derive(Default)]
 pub struct InputState {
 	pub toggles:						InputToggles,
-	pub active_transformation_action:	Option<ActiveTransformationAction>,
+	pub action:							Action,
 	pub camera_rotation:				Quat,
 }
 
@@ -329,14 +344,8 @@ impl InputPlugin {
 			}
 		};
 
-		match &mut input_state.active_transformation_action {
-			Some(active_transformation_action) => {
-				if rolled_or_panned {
-					// Cancel active camera movement
-					active_transformation_action.camera_orientation = None;
-				}
-			},
-			None => {
+		match &mut input_state.action {
+			Action::None => {
 				let mut default_position: Option<usize> = None;
 
 				for (index, key_code) in input_data.rotation_keys.iter().enumerate() {
@@ -391,18 +400,18 @@ impl InputPlugin {
 								% PENTAGON_SIDE_COUNT
 						).into();
 
-						input_state.active_transformation_action = Some(ActiveTransformationAction {
-							action: TransformationAction {
+						input_state.action = Action::Transformation(ActiveTransformationAction {
+							action: TransformationAction::new(
 								transformation,
 								camera_start,
-								reorientation: (
+								(
 									&extended_puzzle_state.puzzle_state
 										+ transformation_library
 											.book_pack_data
 											.trfm
 											.get_word(transformation)
 								).standardization_half_addr()
-							},
+							),
 							start,
 							duration: if preferences.speed.uniform_transformation_duration {
 								duration
@@ -418,18 +427,41 @@ impl InputPlugin {
 					},
 					None => {
 						if keyboard_input.just_pressed(input_data.recenter_camera.into()) {
-							input_state.active_transformation_action = Some(ActiveTransformationAction {
-								action: TransformationAction {
+							input_state.action = Action::Transformation(ActiveTransformationAction {
+								action: TransformationAction::new(
+									FullAddr::default(),
 									camera_start,
-									.. TransformationAction::default()
-								},
+									HalfAddr::default()
+								),
 								start,
 								duration,
 								camera_orientation: Some(*camera_orientation)
 							});
+						} else if keyboard_input.just_pressed(input_data.undo.into())
+							&& extended_puzzle_state.curr_action >= 0_i32
+						{
+							input_state.action = Action::Undo(
+								extended_puzzle_state.actions[extended_puzzle_state.curr_action as usize]
+							);
+						} else if keyboard_input.just_pressed(input_data.redo.into())
+							&& ((extended_puzzle_state.curr_action + 1_i32) as usize)
+							< extended_puzzle_state.actions.len()
+						{
+							input_state.action = Action::Redo(
+								extended_puzzle_state.actions[(extended_puzzle_state.curr_action + 1_i32)as usize]
+							);
 						}
 					}
 				}
+			},
+			Action::Transformation(active_transformation_action) => {
+				if rolled_or_panned {
+					// Cancel active camera movement
+					active_transformation_action.camera_orientation = None;
+				}
+			},
+			_ => {
+				log::warn!("Unexpected input::Action type");
 			}
 		}
 

@@ -85,11 +85,12 @@ impl UIPlugin {
 	}
 
 	fn render_main(egui_context: &EguiContext, world: &mut World) -> () {
+		let extended_puzzle_state: &ExtendedPuzzleState = log_option_none!(world.get_resource::<ExtendedPuzzleState>());
 		let input_state: &InputState = log_option_none!(world.get_resource::<InputState>());
 		let preferences: &Preferences = log_option_none!(world.get_resource::<Preferences>());
 
 		egui::Area::new("InputState")
-			.anchor(egui::Align2::LEFT_BOTTOM, Vec2::ZERO)
+			.anchor(egui::Align2::LEFT_BOTTOM, Vec2::new(30.0_f32, -30.0_f32))
 			.show(egui_context.ctx(), |ui: &mut Ui| -> () {
 				ui.style_mut().visuals.widgets.noninteractive.bg_fill = Color32::TRANSPARENT;
 				egui::Grid::new("ModifierTable").show(ui, |ui: &mut Ui| -> () {
@@ -116,6 +117,22 @@ impl UIPlugin {
 					modifier_row(toggles.counter_clockwise,		"Counter Clockwise",	input.counter_clockwise.into());
 					modifier_row(toggles.alt_hemi,				"Alt. Hemi.",			input.alt_hemi.into());
 					modifier_row(toggles.disable_recentering,	"Disable Redentering",	input.disable_recentering.into());
+				});
+			});
+
+		egui::Area::new("ActionStack")
+			.anchor(egui::Align2::RIGHT_BOTTOM, Vec2::new(-30.0_f32, -30.0_f32))
+			.show(egui_context.ctx(), |ui: &mut Ui| -> () {
+				// ui.label("Action Stack");
+				egui::ScrollArea::auto_sized().show(ui, |ui: &mut Ui| -> () {
+					for (action_index, action) in extended_puzzle_state.actions.iter().enumerate() {
+						ui.visuals_mut().widgets.noninteractive.fg_stroke.color = if action_index as i32 == extended_puzzle_state.curr_action {
+							Color32::WHITE
+						} else {
+							Color32::GRAY
+						};
+						ui.label(format!("{:?}", action.transformation()));
+					}
 				});
 			});
 	}
