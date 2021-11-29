@@ -47,6 +47,7 @@ Preferences(
 		pan_speed:							50,
 		roll_speed:							50,
 		uniform_transformation_duration:	false,
-		animate_undo_and_redo:				false,
+		animate_undo_and_redo:				true,
+		// animate_undo_and_redo:				false,
 	),
 )
