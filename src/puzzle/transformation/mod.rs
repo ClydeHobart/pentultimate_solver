@@ -8,7 +8,8 @@ use {
 				FaceData
 			},
 			Polyhedron
-		}
+		},
+		ui::camera::CameraPlugin
 	},
 	super::{
 		consts::*,
@@ -92,6 +93,15 @@ pub enum Type {
 	Reorientation,		// This transformation standardizes the puzzle state (reorients piece 0 to be at position 0 with rotation 0)
 	StandardRotation,	// This transformation rotates one of the hemispherical halves about one of the 12 pentagonal pieces n fifth-rotations, where n is in [0, 5)
 	Count				// Not an actual transformation, this allows us to statically allocate memory for a type that has a variant for each "valid" Type variant
+}
+
+impl Type {
+	fn invert(self) -> Self {
+		match self {
+			// Eventually, compound transformations will be added that map to a different (also compound) type
+			_ => { self }
+		}
+	}
 }
 
 pub trait Addr {
@@ -318,6 +328,31 @@ impl FullAddr {
 		self.half_addr.invalidate();
 	}
 
+	pub fn invert(&self) -> Self {
+		Self {
+			page_index: self.get_page_index_type().map_or(
+				Self::INVALID_INDEX,
+				|page_index_type: Type| -> u8 { page_index_type.invert() as u8 }
+			),
+			half_addr: if self.half_addr_is_valid() {
+				HalfAddr::from((
+					self.get_line_index(),
+					{
+						(
+							(
+								self.get_word_index() as i32
+									* -1_i32
+									+ PENTAGON_SIDE_COUNT as i32
+							) % PENTAGON_SIDE_COUNT as i32
+						) as usize
+					}
+				))
+			} else {
+				HalfAddr::default()
+			}
+		}
+	}
+
 	#[inline(always)]
 	unsafe fn get_page_index_unchecked(&self) -> usize {
 		self.page_index as usize
@@ -458,6 +493,36 @@ impl Action {
 	pub fn camera_start(&self) -> &HalfAddr { &self.camera_start }
 	#[inline(always)]
 	pub fn reorientation(&self) -> FullAddr { (Type::Reorientation, self.reorientation).into() }
+
+	pub fn is_valid(&self) -> bool {
+		self.transformation.is_valid() && self.camera_start.is_valid() && self.reorientation.is_valid()
+	}
+
+	pub fn invert(&self, library: &Library, icosidodecahedron_data: &Data) -> Self {
+		if self.is_valid() {
+			let reorientation_word_pack: WordPack = library
+				.book_pack_data
+				.get_word_pack(self.reorientation());
+			let mut inflated_puzzle_state: PuzzleState = PuzzleState::SOLVED_STATE;
+			let mut transformation: FullAddr = self.transformation.invert();
+			let line_index: usize = transformation.get_line_index();
+
+			transformation.set_line_index(reorientation_word_pack.trfm.as_ref().pos[line_index] as usize);
+			inflated_puzzle_state += library.book_pack_data.trfm.get_word(transformation);
+
+			Self::new(
+				transformation,
+				CameraPlugin::compute_camera_addr(
+					icosidodecahedron_data,
+					&(*reorientation_word_pack.quat
+						* library.orientation_data.get_word(self.camera_start).quat)
+				),
+				inflated_puzzle_state.standardization_half_addr()
+			)
+		} else {
+			Self::default()
+		}
+	}
 }
 
 pub struct OrientationData {

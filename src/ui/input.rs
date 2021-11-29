@@ -360,7 +360,7 @@ pub struct InputToggles {
 pub enum Action {
 	None,
 	Transformation(ActiveTransformationAction),
-	Undo(TransformationAction),
+	Undo(ActiveTransformationAction),
 	Redo(ActiveTransformationAction)
 }
 
@@ -554,9 +554,30 @@ impl InputPlugin {
 						} else if keyboard_input.just_pressed(input_data.undo.into())
 							&& extended_puzzle_state.curr_action >= 0_i32
 						{
-							input_state.action = Action::Undo(
-								extended_puzzle_state.actions[extended_puzzle_state.curr_action as usize]
-							);
+							let action: TransformationAction = extended_puzzle_state
+								.actions
+								[extended_puzzle_state.curr_action as usize]
+								.invert(
+									&*transformation_library,
+									polyhedra_data_library.icosidodecahedron
+								);
+
+							input_state.action = Action::Undo(ActiveTransformationAction {
+								action,
+								start,
+								duration: if !preferences.speed.animate_undo_and_redo {
+									Duration::ZERO
+								} else if preferences.speed.uniform_transformation_duration {
+									duration
+								} else {
+									duration * action.transformation().get_cycles()
+								},
+								camera_orientation: if input_state.toggles.disable_recentering {
+									None
+								} else {
+									Some(*camera_orientation)
+								}
+							});
 						} else if keyboard_input.just_pressed(input_data.redo.into())
 							&& ((extended_puzzle_state.curr_action + 1_i32) as usize)
 							< extended_puzzle_state.actions.len()
@@ -589,15 +610,21 @@ impl InputPlugin {
 					active_transformation_action.camera_orientation = None;
 				}
 			},
+			Action::Undo(active_transformation_action) => {
+				if rolled_or_panned {
+					// Cancel active camera movement
+					active_transformation_action.camera_orientation = None;
+				}
+			}
 			Action::Redo(active_transformation_action) => {
 				if rolled_or_panned {
 					// Cancel active camera movement
 					active_transformation_action.camera_orientation = None;
 				}
 			}
-			_ => {
-				log::warn!("Unexpected input::Action type");
-			}
+			// _ => {
+			// 	log::warn!("Unexpected input::Action type");
+			// }
 		}
 
 		input_state.toggles = toggles;

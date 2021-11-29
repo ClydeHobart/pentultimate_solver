@@ -688,45 +688,15 @@ impl PuzzlePlugin {
 					input_state.action = InputAction::None;
 				}
 			},
-			InputAction::Undo(action) => {
-				*extended_puzzle_state += transformation_library
-					.book_pack_data
-					.trfm
-					.get_word(
-						*transformation_library
-							.book_pack_data
-							.addr
-							.get_word(action.reorientation())
-					);
-				*extended_puzzle_state += transformation_library
-					.book_pack_data
-					.trfm
-					.get_word(
-						*transformation_library
-							.book_pack_data
-							.addr
-							.get_word(*action.transformation())
-					);
-
-				for (piece_component, mut transform) in queries
-					.q1_mut()
-					.iter_mut()
-				{
-					transform.rotation = transformation_library
-						.orientation_data
-						.get_word(extended_puzzle_state.puzzle_state.half_addr(piece_component.index))
-						.quat;
+			InputAction::Undo(active_transformation_action) => {
+				if active_transformation_action.update(
+					&*transformation_library,
+					&mut*extended_puzzle_state,
+					&mut queries
+				) {
+					extended_puzzle_state.curr_action -= 1_i32;
+					input_state.action = InputAction::None;
 				}
-
-				if let Some((_, mut transform)) = queries.q0_mut().iter_mut().next() {
-					transform.rotation = transformation_library
-						.orientation_data
-						.get_word(*action.camera_start())
-						.quat;
-				}
-
-				extended_puzzle_state.curr_action -= 1_i32;
-				input_state.action = InputAction::None;
 			},
 			InputAction::Redo(active_transformation_action) => {
 				if active_transformation_action.update(

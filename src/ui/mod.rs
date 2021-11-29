@@ -116,7 +116,7 @@ impl UIPlugin {
 					modifier_row(toggles.rotate_twice,			"Rotate Twice",			input.rotate_twice.into());
 					modifier_row(toggles.counter_clockwise,		"Counter Clockwise",	input.counter_clockwise.into());
 					modifier_row(toggles.alt_hemi,				"Alt. Hemi.",			input.alt_hemi.into());
-					modifier_row(toggles.disable_recentering,	"Disable Redentering",	input.disable_recentering.into());
+					modifier_row(toggles.disable_recentering,	"Disable Recentering",	input.disable_recentering.into());
 				});
 			});
 
