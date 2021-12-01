@@ -1,7 +1,6 @@
 use {
 	crate::{
 		prelude::*,
-		get_data,
 		math::{
 			*,
 			polyhedra::{
@@ -302,10 +301,10 @@ impl Piece {
 		const PLANAR_OFFSET:				f32					= PLANAR_OFFSET_RATIO * ICOSIDODECAHEDRON.edge_length;
 		const NORMAL_OFFSET:				f32					= NORMAL_OFFSET_RATIO * ICOSIDODECAHEDRON.edge_length;
 
-		let icosahedron_data:				&Data				= get_data!(Icosahedron);
-		let dodecahedron_data:				&Data				= get_data!(Dodecahedron);
-		let icosidodecahedron_data:			&Data				= get_data!(Icosidodecahedron);
-		let _rhombic_triacontahedron_data:	&Data				= get_data!(RhombicTriacontahedron);
+		let icosahedron_data:				&Data				= Data::get(Polyhedron::Icosahedron);
+		let dodecahedron_data:				&Data				= Data::get(Polyhedron::Dodecahedron);
+		let icosidodecahedron_data:			&Data				= Data::get(Polyhedron::Icosidodecahedron);
+		let _rhombic_triacontahedron_data:	&Data				= Data::get(Polyhedron::RhombicTriacontahedron);
 		let icosidodecahedron_verts:		&Vec<VertexData>	= &icosidodecahedron_data.verts;
 		let icosidodecahedron_vert_indices:	&Vec<usize>			= &icosidodecahedron_data.vert_indices;
 		let side_count:						usize				= piece_type.side_count();

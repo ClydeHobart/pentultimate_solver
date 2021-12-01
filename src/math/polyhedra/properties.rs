@@ -28,13 +28,12 @@ pub struct Properties {
 }
 
 impl Properties {
-	pub fn get(polyhedron: Polyhedron) -> Option<&'static Self> {
+	pub fn get(polyhedron: Polyhedron) -> &'static Self {
 		match polyhedron {
-			Polyhedron::Icosahedron				=> Some(&ICOSAHEDRON),
-			Polyhedron::Dodecahedron			=> Some(&DODECAHEDRON),
-			Polyhedron::Icosidodecahedron		=> Some(&ICOSIDODECAHEDRON),
-			Polyhedron::RhombicTriacontahedron	=> Some(&RHOMBIC_TRIACONTAHEDRON),
-			_									=> None
+			Polyhedron::Icosahedron				=> &ICOSAHEDRON,
+			Polyhedron::Dodecahedron			=> &DODECAHEDRON,
+			Polyhedron::Icosidodecahedron		=> &ICOSIDODECAHEDRON,
+			Polyhedron::RhombicTriacontahedron	=> &RHOMBIC_TRIACONTAHEDRON
 		}
 	}
 }

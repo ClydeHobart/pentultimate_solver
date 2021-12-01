@@ -1,10 +1,12 @@
 use {
 	crate::{
 		prelude::*,
-		app::prelude::*,
-		math::polyhedra::data::{
-			Data,
-			FaceData
+		math::polyhedra::{
+			data::{
+				Data,
+				FaceData
+			},
+			Polyhedron
 		},
 		piece::Type,
 		preferences::{
@@ -98,13 +100,12 @@ pub struct CameraPlugin;
 impl CameraPlugin {
 	fn startup(
 		mut commands: Commands,
-		polyhedra_data_library: Res<PolyhedraDataLibrary>,
 		preferences: Res<Preferences>
 	) -> () {
 		commands
 			.spawn_bundle((
 				CameraComponent,
-				Transform::from_rotation(polyhedra_data_library.icosidodecahedron.faces[Type::Pentagon.index_offset()].quat),
+				Transform::from_rotation(Data::get(Polyhedron::Icosidodecahedron).faces[Type::Pentagon.index_offset()].quat),
 				GlobalTransform::default()
 			))
 			.with_children(|child_builder: &mut ChildBuilder| -> () {
@@ -129,8 +130,8 @@ impl CameraPlugin {
 		log_option_none!(camera_component_query.iter_mut().next()).1.rotate(input_state.camera_rotation);
 	}
 
-	pub fn compute_camera_addr(icosidodecahedron_data: &Data, quat: &Quat) -> HalfAddr {
-		icosidodecahedron_data.get_pos_and_rot(
+	pub fn compute_camera_addr(quat: &Quat) -> HalfAddr {
+		Data::get(Polyhedron::Icosidodecahedron).get_pos_and_rot(
 			&quat,
 			Some(Box::new(|face_data: &FaceData| -> bool {
 				face_data.get_size() == PENTAGON_SIDE_COUNT

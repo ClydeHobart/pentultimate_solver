@@ -56,7 +56,8 @@ impl Mask {
 				log::warn!("HemisphereMask::new({}) was called, but {} is an invalid pentagon index", pentagon_index, pentagon_index);
 
 				0_u32
-			} else if let Some(data) = Data::get(Polyhedron::Icosidodecahedron) {
+			} else {
+				let data: &Data = Data::get(Polyhedron::Icosidodecahedron);
 				let faces: &Vec<FaceData> = &data.faces;
 				let face_normal: Vec3 = faces[pentagon_index].norm;
 
@@ -67,10 +68,6 @@ impl Mask {
 				}
 
 				mask
-			} else {
-				log::warn!("Couldn't get Icosidodecahedron Data");
-
-				0_u32
 			}
 		})
 	}
@@ -498,7 +495,7 @@ impl Action {
 		self.transformation.is_valid() && self.camera_start.is_valid() && self.reorientation.is_valid()
 	}
 
-	pub fn invert(&self, library: &Library, icosidodecahedron_data: &Data) -> Self {
+	pub fn invert(&self, library: &Library) -> Self {
 		if self.is_valid() {
 			let reorientation_word_pack: WordPack = library
 				.book_pack_data
@@ -513,7 +510,6 @@ impl Action {
 			Self::new(
 				transformation,
 				CameraPlugin::compute_camera_addr(
-					icosidodecahedron_data,
 					&(*reorientation_word_pack.quat
 						* library.orientation_data.get_word(self.camera_start).quat)
 				),
@@ -718,7 +714,7 @@ impl LibraryConsts for Library {
 
 impl Library {
 	fn new() -> Self {
-		let icosidodecahedron_data: &Data = Data::get(Polyhedron::Icosidodecahedron).unwrap();
+		let icosidodecahedron_data: &Data = Data::get(Polyhedron::Icosidodecahedron);
 
 		let mut transformation_library: Library = unsafe { std::mem::MaybeUninit::<Library>::zeroed().assume_init() };
 

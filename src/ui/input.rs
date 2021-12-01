@@ -53,12 +53,7 @@ use {
 
 pub fn generate_default_positions() -> [usize; HALF_PENTAGON_PIECE_COUNT] {
 	let mut positions: [usize; HALF_PENTAGON_PIECE_COUNT] = [0_usize; HALF_PENTAGON_PIECE_COUNT];
-	let icosidodecahedron_data: &Data = match Data::get(Polyhedron::Icosidodecahedron) {
-		Some(icosidodecahedron_data) => icosidodecahedron_data,
-		None => {
-			return positions;
-		}
-	};
+	let icosidodecahedron_data: &Data = Data::get(Polyhedron::Icosidodecahedron);
 	let face_0_data: &FaceData = &icosidodecahedron_data.faces[0_usize];
 	let face_1_norm: Vec3 = icosidodecahedron_data.faces[1_usize].norm;
 
@@ -383,7 +378,6 @@ impl InputPlugin {
 		view:						Res<View>,
 		time:						Res<Time>,
 		preferences:				Res<Preferences>,
-		polyhedra_data_library:		Res<PolyhedraDataLibrary>,
 		transformation_library:		Res<TransformationLibraryRef>,
 		mut mouse_motion_events:	EventReader<MouseMotion>,
 		mut mouse_wheel_events:		EventReader<MouseWheel>,
@@ -471,10 +465,7 @@ impl InputPlugin {
 				}
 
 				let camera_orientation: &Quat = &log_option_none!(camera_component_query.iter_mut().next()).1.rotation;
-				let camera_start: HalfAddr = CameraPlugin::compute_camera_addr(
-					&polyhedra_data_library.icosidodecahedron,
-					camera_orientation
-				);
+				let camera_start: HalfAddr = CameraPlugin::compute_camera_addr(camera_orientation);
 				let start: Instant = Instant::now();
 				let duration: Duration = Duration::from_millis(preferences.speed.rotation_millis as u64);
 
@@ -557,10 +548,7 @@ impl InputPlugin {
 							let action: TransformationAction = extended_puzzle_state
 								.actions
 								[extended_puzzle_state.curr_action as usize]
-								.invert(
-									&*transformation_library,
-									polyhedra_data_library.icosidodecahedron
-								);
+								.invert(&*transformation_library);
 
 							input_state.action = Action::Undo(ActiveTransformationAction {
 								action,

@@ -19,7 +19,6 @@ use {
 pub mod prelude {
 	pub use crate::{
 		math::polyhedra::data::{
-			DataLibrary as PolyhedraDataLibrary,
 			DataPlugin as PolyhedraDataPlugin,
 		},
 		piece::{

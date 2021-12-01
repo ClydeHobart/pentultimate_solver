@@ -22,8 +22,7 @@ use {
 			Preferences
 		},
 		ui::input::Action as InputAction,
-		util::inspectable_bin_map::*,
-		get_data
+		util::inspectable_bin_map::*
 	},
 	self::{
 		consts::*,
@@ -652,7 +651,7 @@ impl PuzzlePlugin {
 				}
 			)
 		};
-		let faces: &Vec<FaceData> = &get_data!(Icosidodecahedron).faces;
+		let faces: &Vec<FaceData> = &Data::get(Polyhedron::Icosidodecahedron).faces;
 		let param_bundle: (&ColAndMat, &Vec<ColAndMat>, &Vec<FaceData>) = (base_col_and_mat, col_and_mats, faces);
 
 		piece_pair.add_entities(commands, &param_bundle);

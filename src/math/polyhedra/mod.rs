@@ -7,9 +7,7 @@ pub mod data;
 pub mod properties;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Inspectable, Ord, PartialEq, PartialOrd)]
-#[repr(u8)]
 pub enum Polyhedron {
-	Invalid,
 	Icosahedron,
 	Dodecahedron,
 	Icosidodecahedron,
@@ -23,27 +21,10 @@ impl Polyhedron {
 			Polyhedron::Dodecahedron			=> Polyhedron::Icosahedron,
 			Polyhedron::Icosidodecahedron		=> Polyhedron::RhombicTriacontahedron,
 			Polyhedron::RhombicTriacontahedron	=> Polyhedron::Icosidodecahedron,
-			Polyhedron::Invalid					=> Polyhedron::Invalid
 		}
-	}
-
-	pub fn is_valid(self) -> bool {
-		self != Polyhedron::Invalid
-	}
-
-	pub fn is_invalid(self) -> bool {
-		self == Polyhedron::Invalid
 	}
 }
 
 impl Default for Polyhedron {
-	fn default() -> Self {
-		Self::Invalid
-	}
-}
-
-impl From<u8> for Polyhedron {
-	fn from(val: u8) -> Self {
-		unsafe { std::mem::transmute(crate::clamp!(val, 0, Polyhedron::RhombicTriacontahedron as u8)) }
-	}
+	fn default() -> Self { Self::Icosidodecahedron }
 }
