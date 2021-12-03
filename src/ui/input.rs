@@ -17,7 +17,6 @@ use {
 				FullAddr,
 				GetWord,
 				HalfAddr,
-				Library as TransformationLibrary,
 				Type as TransformationType
 			},
 			ExtendedPuzzleState,
@@ -238,7 +237,6 @@ impl ActiveTransformationAction {
 	/// `bool` representing whether or not the action has bee completed
 	pub fn update(
 		&self,
-		transformation_library:	&TransformationLibrary,
 		extended_puzzle_state:	&mut ExtendedPuzzleState,
 		queries:				&mut QuerySet<(
 			Query<(&mut CameraComponent, &mut Transform)>,
@@ -246,7 +244,7 @@ impl ActiveTransformationAction {
 		)>
 	) -> bool {
 		let end_quat: Quat = if warn_expect!(self.action.camera_start().is_valid()) {
-			transformation_library
+			TransformationLibrary::get()
 				.orientation_data
 				.get_word(*self.action.camera_start())
 				.quat
@@ -255,7 +253,7 @@ impl ActiveTransformationAction {
 		};
 		let word_pack: Option<WordPack> = if self.action.transformation().is_valid() {
 			Some(
-				transformation_library
+				TransformationLibrary::get()
 					.book_pack_data
 					.get_word_pack(*self.action.transformation())
 			)
@@ -278,7 +276,7 @@ impl ActiveTransformationAction {
 
 						if word_pack.mask.affects_piece(puzzle_state.pos[piece_index] as usize) {
 							transform.rotation = rotation
-								* transformation_library
+								* TransformationLibrary::get()
 									.orientation_data
 									.get_word(puzzle_state.half_addr(piece_index))
 									.quat;
@@ -302,7 +300,7 @@ impl ActiveTransformationAction {
 				if self.action.transformation().is_valid() && warn_expect!(word_pack.is_some()) {
 					*extended_puzzle_state += word_pack.unwrap().trfm;
 
-					standardization_word_pack = Some(transformation_library
+					standardization_word_pack = Some(TransformationLibrary::get()
 						.book_pack_data
 						.get_word_pack(self.action.reorientation())
 					);
@@ -318,7 +316,7 @@ impl ActiveTransformationAction {
 						.q1_mut()
 						.iter_mut()
 					{
-						transform.rotation = transformation_library
+						transform.rotation = TransformationLibrary::get()
 							.orientation_data
 							.get_word(puzzle_state.half_addr(piece_component.index))
 							.quat;
@@ -378,7 +376,6 @@ impl InputPlugin {
 		view:						Res<View>,
 		time:						Res<Time>,
 		preferences:				Res<Preferences>,
-		transformation_library:		Res<TransformationLibraryRef>,
 		mut mouse_motion_events:	EventReader<MouseMotion>,
 		mut mouse_wheel_events:		EventReader<MouseWheel>,
 		mut input_state:			ResMut<InputState>,
@@ -473,11 +470,11 @@ impl InputPlugin {
 					Some(default_position) => {
 						let transformation: FullAddr = (
 							TransformationType::StandardRotation as usize,
-							transformation_library
+							TransformationLibrary::get()
 								.book_pack_data
 								.trfm
 								.get_word(
-									*transformation_library
+									*TransformationLibrary::get()
 										.book_pack_data
 										.addr
 										.get_word(FullAddr::from((
@@ -511,7 +508,7 @@ impl InputPlugin {
 								camera_start,
 								(
 									&extended_puzzle_state.puzzle_state
-										+ transformation_library
+										+ TransformationLibrary::get()
 											.book_pack_data
 											.trfm
 											.get_word(transformation)
@@ -548,7 +545,7 @@ impl InputPlugin {
 							let action: TransformationAction = extended_puzzle_state
 								.actions
 								[extended_puzzle_state.curr_action as usize]
-								.invert(&*transformation_library);
+								.invert();
 
 							input_state.action = Action::Undo(ActiveTransformationAction {
 								action,
@@ -570,7 +567,9 @@ impl InputPlugin {
 							&& ((extended_puzzle_state.curr_action + 1_i32) as usize)
 							< extended_puzzle_state.actions.len()
 						{
-							let action: TransformationAction = extended_puzzle_state.actions[(extended_puzzle_state.curr_action + 1_i32)as usize];
+							let action: TransformationAction = extended_puzzle_state
+								.actions
+								[(extended_puzzle_state.curr_action + 1_i32) as usize];
 
 							input_state.action = Action::Redo(ActiveTransformationAction {
 								action,

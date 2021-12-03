@@ -28,12 +28,15 @@ use {
 			Error,
 			Formatter
 		},
+		intrinsics::unlikely,
 		ops::{
-			Deref,
 			Neg,
 			Range
 		},
-		mem::transmute
+		mem::{
+			MaybeUninit,
+			transmute
+		}
 	}
 };
 
@@ -495,9 +498,9 @@ impl Action {
 		self.transformation.is_valid() && self.camera_start.is_valid() && self.reorientation.is_valid()
 	}
 
-	pub fn invert(&self, library: &Library) -> Self {
+	pub fn invert(&self) -> Self {
 		if self.is_valid() {
-			let reorientation_word_pack: WordPack = library
+			let reorientation_word_pack: WordPack = Library::get()
 				.book_pack_data
 				.get_word_pack(self.reorientation());
 			let mut inflated_puzzle_state: PuzzleState = PuzzleState::SOLVED_STATE;
@@ -505,13 +508,13 @@ impl Action {
 			let line_index: usize = transformation.get_line_index();
 
 			transformation.set_line_index(reorientation_word_pack.trfm.as_ref().pos[line_index] as usize);
-			inflated_puzzle_state += library.book_pack_data.trfm.get_word(transformation);
+			inflated_puzzle_state += Library::get().book_pack_data.trfm.get_word(transformation);
 
 			Self::new(
 				transformation,
 				CameraPlugin::compute_camera_addr(
 					&(*reorientation_word_pack.quat
-						* library.orientation_data.get_word(self.camera_start).quat)
+						* Library::get().orientation_data.get_word(self.camera_start).quat)
 				),
 				inflated_puzzle_state.standardization_half_addr()
 			)
@@ -813,31 +816,28 @@ impl Library {
 		transformation_library
 	}
 
-	pub fn get() -> &'static Self { &TRANSFOMATION_LIBRARY }
-}
+	pub fn get() -> &'static Self {
+		// Self::new() is completely deterministic, so this is safe. Re-running the function whilst another thread is
+		// already trying to generate it is not optimal, but it can only happen at the beginning of execution
+		unsafe {
+			if unlikely(LIBRARY.1) {
+				LIBRARY.0 = MaybeUninit::<Self>::new(Self::new());
+				LIBRARY.1 = false;
+			}
 
-pub struct LibraryRef(&'static Library);
-
-impl Default for LibraryRef {
-	fn default() -> Self {
-		LibraryRef(Library::get())
+			LIBRARY.0.assume_init_ref()
+		}
 	}
 }
 
-impl Deref for LibraryRef {
-	type Target = Library;
-
-	#[must_use]
-	fn deref(&self) -> &Self::Target {
-		self.0
-	}
-}
+static mut LIBRARY: (MaybeUninit<Library>, bool) = (MaybeUninit::<Library>::uninit(), true);
 
 pub struct TransformationPlugin;
 
 impl Plugin for TransformationPlugin {
-	fn build(&self, app: &mut AppBuilder) -> () {
-		app.insert_resource::<LibraryRef>(LibraryRef::default());
+	fn build(&self, _app: &mut AppBuilder) -> () {
+		// Initialize the Library
+		Library::get();
 	}
 }
 
@@ -1072,8 +1072,4 @@ mod tests {
 		test_standard_rotations(transformation_library);
 		test_reorientations(transformation_library);
 	}
-}
-
-lazy_static!{
-	static ref TRANSFOMATION_LIBRARY: Library = Library::new();
 }

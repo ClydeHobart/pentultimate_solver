@@ -19,6 +19,7 @@ use {
 pub mod prelude {
 	pub use crate::{
 		math::polyhedra::data::{
+			Data as PolyhedraData,
 			DataPlugin as PolyhedraDataPlugin,
 		},
 		piece::{
@@ -34,9 +35,9 @@ pub mod prelude {
 			Preferences
 		},
 		puzzle::{
+			transformation::Library as TransformationLibrary,
 			ExtendedPuzzleState,
 			PuzzlePlugin,
-			TransformationLibraryRef
 		},
 		ui::{
 			camera::{

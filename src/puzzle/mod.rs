@@ -30,9 +30,7 @@ use {
 			Action,
 			FullAddr,
 			HalfAddr,
-			Page,
 			Transformation,
-			Library as TransformationLibrary,
 			Type as TransformationType,
 			GetWord
 		}
@@ -72,10 +70,7 @@ pub use {
 		ExtendedPuzzleState,
 		PuzzleState as InflatedPuzzleState
 	},
-	transformation::{
-		TransformationPlugin,
-		LibraryRef as TransformationLibraryRef
-	}
+	transformation::TransformationPlugin,
 };
 
 pub mod transformation;
@@ -402,11 +397,11 @@ pub mod inflated {
 		}
 
 		pub fn standardize(&mut self) -> () {
-			self.standardize_with_reorientation_page(&TransformationLibrary::get().book_pack_data.trfm[TransformationType::Reorientation as usize])
-		}
-
-		pub fn standardize_with_reorientation_page(&mut self, reorientation_page: &Page<Transformation>) -> () {
-			*self += reorientation_page.get_word(self.standardization_half_addr());
+			*self += TransformationLibrary::get()
+				.book_pack_data
+				.trfm
+				[TransformationType::Reorientation as usize]
+				.get_word(self.standardization_half_addr());
 		}
 	}
 
@@ -660,7 +655,6 @@ impl PuzzlePlugin {
 	}
 
 	fn run(
-		transformation_library: Res<TransformationLibraryRef>,
 		mut extended_puzzle_state: ResMut<ExtendedPuzzleState>,
 		mut input_state: ResMut<InputState>,
 		mut queries: QuerySet<(
@@ -671,7 +665,6 @@ impl PuzzlePlugin {
 		match &input_state.action {
 			InputAction::Transformation(active_transformation_action) => {
 				if active_transformation_action.update(
-					&*transformation_library,
 					&mut*extended_puzzle_state,
 					&mut queries
 				) {
@@ -689,7 +682,6 @@ impl PuzzlePlugin {
 			},
 			InputAction::Undo(active_transformation_action) => {
 				if active_transformation_action.update(
-					&*transformation_library,
 					&mut*extended_puzzle_state,
 					&mut queries
 				) {
@@ -699,7 +691,6 @@ impl PuzzlePlugin {
 			},
 			InputAction::Redo(active_transformation_action) => {
 				if active_transformation_action.update(
-					&*transformation_library,
 					&mut*extended_puzzle_state,
 					&mut queries
 				) {
@@ -742,7 +733,8 @@ mod tests {
 				PieceStateComponent as IPSC,
 				PuzzleState as InflatedPuzzleState,
 				PuzzleStateConsts
-			}
+			},
+			transformation::Page
 		},
 		std::{
 			any::type_name,
