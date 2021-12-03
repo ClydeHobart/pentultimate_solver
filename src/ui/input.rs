@@ -302,7 +302,7 @@ impl ActiveTransformationAction {
 
 					standardization_word_pack = Some(TransformationLibrary::get()
 						.book_pack_data
-						.get_word_pack(self.action.reorientation())
+						.get_word_pack(self.action.standardization())
 					);
 
 					let standardization_word_pack: &WordPack = standardization_word_pack.as_ref().unwrap();

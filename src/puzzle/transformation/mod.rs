@@ -474,17 +474,17 @@ impl From<(Type, HalfAddr)> for FullAddr {
 
 #[derive(Clone, Copy, Default)]
 pub struct Action {
-	transformation:	FullAddr,
-	camera_start:	HalfAddr,
-	reorientation:	HalfAddr
+	transformation:		FullAddr,
+	camera_start:		HalfAddr,
+	standardization:	HalfAddr
 }
 
 impl Action {
-	pub fn new(transformation: FullAddr, camera_start: HalfAddr, reorientation: HalfAddr) -> Self {
+	pub fn new(transformation: FullAddr, camera_start: HalfAddr, standardization: HalfAddr) -> Self {
 		Self {
 			transformation,
 			camera_start,
-			reorientation
+			standardization
 		}
 	}
 	#[inline(always)]
@@ -492,28 +492,28 @@ impl Action {
 	#[inline(always)]
 	pub fn camera_start(&self) -> &HalfAddr { &self.camera_start }
 	#[inline(always)]
-	pub fn reorientation(&self) -> FullAddr { (Type::Reorientation, self.reorientation).into() }
+	pub fn standardization(&self) -> FullAddr { (Type::Reorientation, self.standardization).into() }
 
 	pub fn is_valid(&self) -> bool {
-		self.transformation.is_valid() && self.camera_start.is_valid() && self.reorientation.is_valid()
+		self.transformation.is_valid() && self.camera_start.is_valid() && self.standardization.is_valid()
 	}
 
 	pub fn invert(&self) -> Self {
 		if self.is_valid() {
-			let reorientation_word_pack: WordPack = Library::get()
+			let standardization_word_pack: WordPack = Library::get()
 				.book_pack_data
-				.get_word_pack(self.reorientation());
+				.get_word_pack(self.standardization());
 			let mut inflated_puzzle_state: PuzzleState = PuzzleState::SOLVED_STATE;
 			let mut transformation: FullAddr = self.transformation.invert();
 			let line_index: usize = transformation.get_line_index();
 
-			transformation.set_line_index(reorientation_word_pack.trfm.as_ref().pos[line_index] as usize);
+			transformation.set_line_index(standardization_word_pack.trfm.as_ref().pos[line_index] as usize);
 			inflated_puzzle_state += Library::get().book_pack_data.trfm.get_word(transformation);
 
 			Self::new(
 				transformation,
 				CameraPlugin::compute_camera_addr(
-					&(*reorientation_word_pack.quat
+					&(*standardization_word_pack.quat
 						* Library::get().orientation_data.get_word(self.camera_start).quat)
 				),
 				inflated_puzzle_state.standardization_half_addr()
