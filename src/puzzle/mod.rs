@@ -641,43 +641,34 @@ impl PuzzlePlugin {
 			Query<(&PieceComponent, &mut Transform)>
 		)>
 	) -> () {
-		match &input_state.action {
-			InputAction::Transformation(active_transformation_action) => {
-				if active_transformation_action.update(
-					&mut*extended_puzzle_state,
-					&mut queries
-				) {
-					if active_transformation_action.action.transformation().is_valid() {
+		if let Some((action, active_transformation_action)) =
+			&input_state.action
+		{
+			if active_transformation_action.update(
+				&mut*extended_puzzle_state,
+				&mut queries
+			) {
+				match *action {
+					InputAction::Transformation => {
+						if active_transformation_action.action.transformation().is_valid() {
+							extended_puzzle_state.curr_action += 1_i32;
+	
+							let len: usize = extended_puzzle_state.curr_action as usize;
+	
+							extended_puzzle_state.actions.truncate(len);
+							extended_puzzle_state.actions.push(active_transformation_action.action);
+						}
+					},
+					InputAction::Undo => {
+						extended_puzzle_state.curr_action -= 1_i32;
+					},
+					InputAction::Redo => {
 						extended_puzzle_state.curr_action += 1_i32;
-
-						let len: usize = extended_puzzle_state.curr_action as usize;
-
-						extended_puzzle_state.actions.truncate(len);
-						extended_puzzle_state.actions.push(active_transformation_action.action);
 					}
+				}
 
-					input_state.action = InputAction::None;
-				}
-			},
-			InputAction::Undo(active_transformation_action) => {
-				if active_transformation_action.update(
-					&mut*extended_puzzle_state,
-					&mut queries
-				) {
-					extended_puzzle_state.curr_action -= 1_i32;
-					input_state.action = InputAction::None;
-				}
-			},
-			InputAction::Redo(active_transformation_action) => {
-				if active_transformation_action.update(
-					&mut*extended_puzzle_state,
-					&mut queries
-				) {
-					extended_puzzle_state.curr_action += 1_i32;
-					input_state.action = InputAction::None;
-				}
-			},
-			_ => {}
+				input_state.action = None;
+			}
 		}
 	}
 }

@@ -351,18 +351,15 @@ pub struct InputToggles {
 }
 
 pub enum Action {
-	None,
-	Transformation(ActiveTransformationAction),
-	Undo(ActiveTransformationAction),
-	Redo(ActiveTransformationAction)
+	Transformation,
+	Undo,
+	Redo
 }
-
-impl Default for Action { fn default() -> Self { Self::None } }
 
 #[derive(Default)]
 pub struct InputState {
 	pub toggles:						InputToggles,
-	pub action:							Action,
+	pub action:							Option<(Action, ActiveTransformationAction)>,
 	pub camera_rotation:				Quat,
 }
 
@@ -450,7 +447,7 @@ impl InputPlugin {
 		};
 
 		match &mut input_state.action {
-			Action::None => {
+			None => {
 				let mut default_position: Option<usize> = None;
 
 				for (index, key_code) in input_data.rotation_keys.iter().enumerate() {
@@ -502,43 +499,49 @@ impl InputPlugin {
 								% PENTAGON_SIDE_COUNT
 						).into();
 
-						input_state.action = Action::Transformation(ActiveTransformationAction {
-							action: TransformationAction::new(
-								transformation,
-								camera_start,
-								(
-									&extended_puzzle_state.puzzle_state
-										+ TransformationLibrary::get()
-											.book_pack_data
-											.trfm
-											.get_word(transformation)
-								).standardization_half_addr()
-							),
-							start,
-							duration: if preferences.speed.uniform_transformation_duration {
-								duration
-							} else {
-								duration * transformation.get_cycles()
-							},
-							camera_orientation: if input_state.toggles.disable_recentering {
-								None
-							} else {
-								Some(*camera_orientation)
+						input_state.action = Some((
+							Action::Transformation,
+							ActiveTransformationAction {
+								action: TransformationAction::new(
+									transformation,
+									camera_start,
+									(
+										&extended_puzzle_state.puzzle_state
+											+ TransformationLibrary::get()
+												.book_pack_data
+												.trfm
+												.get_word(transformation)
+									).standardization_half_addr()
+								),
+								start,
+								duration: if preferences.speed.uniform_transformation_duration {
+									duration
+								} else {
+									duration * transformation.get_cycles()
+								},
+								camera_orientation: if input_state.toggles.disable_recentering {
+									None
+								} else {
+									Some(*camera_orientation)
+								}
 							}
-						});
+						));
 					},
 					None => {
 						if keyboard_input.just_pressed(input_data.recenter_camera.into()) {
-							input_state.action = Action::Transformation(ActiveTransformationAction {
-								action: TransformationAction::new(
-									FullAddr::default(),
-									camera_start,
-									HalfAddr::default()
-								),
-								start,
-								duration,
-								camera_orientation: Some(*camera_orientation)
-							});
+							input_state.action = Some((
+								Action::Transformation,
+								ActiveTransformationAction {
+									action: TransformationAction::new(
+										FullAddr::default(),
+										camera_start,
+										HalfAddr::default()
+									),
+									start,
+									duration,
+									camera_orientation: Some(*camera_orientation)
+								}
+							));
 						} else if keyboard_input.just_pressed(input_data.undo.into())
 							&& extended_puzzle_state.curr_action >= 0_i32
 						{
@@ -547,22 +550,25 @@ impl InputPlugin {
 								[extended_puzzle_state.curr_action as usize]
 								.invert();
 
-							input_state.action = Action::Undo(ActiveTransformationAction {
-								action,
-								start,
-								duration: if !preferences.speed.animate_undo_and_redo {
-									Duration::ZERO
-								} else if preferences.speed.uniform_transformation_duration {
-									duration
-								} else {
-									duration * action.transformation().get_cycles()
-								},
-								camera_orientation: if input_state.toggles.disable_recentering {
-									None
-								} else {
-									Some(*camera_orientation)
+							input_state.action = Some((
+								Action::Undo,
+								ActiveTransformationAction {
+									action,
+									start,
+									duration: if !preferences.speed.animate_undo_and_redo {
+										Duration::ZERO
+									} else if preferences.speed.uniform_transformation_duration {
+										duration
+									} else {
+										duration * action.transformation().get_cycles()
+									},
+									camera_orientation: if input_state.toggles.disable_recentering {
+										None
+									} else {
+										Some(*camera_orientation)
+									}
 								}
-							});
+							));
 						} else if keyboard_input.just_pressed(input_data.redo.into())
 							&& ((extended_puzzle_state.curr_action + 1_i32) as usize)
 							< extended_puzzle_state.actions.len()
@@ -571,47 +577,35 @@ impl InputPlugin {
 								.actions
 								[(extended_puzzle_state.curr_action + 1_i32) as usize];
 
-							input_state.action = Action::Redo(ActiveTransformationAction {
-								action,
-								start,
-								duration: if !preferences.speed.animate_undo_and_redo {
-									Duration::ZERO
-								} else if preferences.speed.uniform_transformation_duration {
-									duration
-								} else {
-									duration * action.transformation().get_cycles()
-								},
-								camera_orientation: if input_state.toggles.disable_recentering {
-									None
-								} else {
-									Some(*camera_orientation)
+							input_state.action = Some((
+								Action::Redo,
+								ActiveTransformationAction {
+									action,
+									start,
+									duration: if !preferences.speed.animate_undo_and_redo {
+										Duration::ZERO
+									} else if preferences.speed.uniform_transformation_duration {
+										duration
+									} else {
+										duration * action.transformation().get_cycles()
+									},
+									camera_orientation: if input_state.toggles.disable_recentering {
+										None
+									} else {
+										Some(*camera_orientation)
+									}
 								}
-							});
+							));
 						}
 					}
 				}
 			},
-			Action::Transformation(active_transformation_action) => {
-				if rolled_or_panned {
-					// Cancel active camera movement
-					active_transformation_action.camera_orientation = None;
-				}
-			},
-			Action::Undo(active_transformation_action) => {
+			Some((_, active_transformation_action)) => {
 				if rolled_or_panned {
 					// Cancel active camera movement
 					active_transformation_action.camera_orientation = None;
 				}
 			}
-			Action::Redo(active_transformation_action) => {
-				if rolled_or_panned {
-					// Cancel active camera movement
-					active_transformation_action.camera_orientation = None;
-				}
-			}
-			// _ => {
-			// 	log::warn!("Unexpected input::Action type");
-			// }
 		}
 
 		input_state.toggles = toggles;
