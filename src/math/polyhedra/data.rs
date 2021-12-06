@@ -3,17 +3,25 @@ use {
 		math::{
 			*,
 			polyhedra::{
+				properties::{
+					self,
+					Properties
+				},
 				Polyhedron,
-				properties::Properties
+				PolyhedronOption
 			}
 		},
 		prelude::*
 	},
 	std::{
 		f32::consts::TAU,
-		sync::Mutex
+		mem::MaybeUninit,
+		sync::{
+			Mutex,
+			MutexGuard,
+			PoisonError
+		}
 	},
-	bit_field::BitField,
 	bevy::{
 		prelude::*,
 		render::{
@@ -86,7 +94,9 @@ impl FaceData {
 
 	pub fn get_slice<'a>(&self, vert_indices: &'a Vec<usize>) -> &'a [usize] { &vert_indices[self.get_range()] }
 
-	pub fn get_slice_mut<'a>(&self, vert_indices: &'a mut Vec<usize>) -> &'a mut [usize] { &mut vert_indices[self.get_range()] }
+	pub fn get_slice_mut<'a>(&self, vert_indices: &'a mut Vec<usize>) -> &'a mut [usize] {
+		&mut vert_indices[self.get_range()]
+	}
 
 	pub fn contains_vert(&self, vert_indices: &Vec<usize>, vert_index: usize) -> bool {
 		self.get_slice(vert_indices).iter().any(|index: &usize| *index == vert_index)
@@ -96,7 +106,11 @@ impl FaceData {
 
 	pub fn get_rotation(&self, quat: &Quat) -> usize {
 		let size: usize = self.get_size();
-		let collapsed_result_up: Vec3 = Mat4::look_at_rh(Vec3::ZERO, -self.norm, self.norm.cross(self.quat * Vec3::Y)).transform_vector3(*quat * Vec3::Y);
+		let collapsed_result_up: Vec3 = Mat4::look_at_rh(
+			Vec3::ZERO,
+			-self.norm,
+			self.norm.cross(self.quat * Vec3::Y)
+		).transform_vector3(*quat * Vec3::Y);
 
 		((TAU - collapsed_result_up.y.atan2(collapsed_result_up.x)) * size as f32 / TAU).round() as usize % size
 	}
@@ -121,72 +135,23 @@ pub struct Data {
 pub type OptionalPredicate<T> = Option<Box<dyn Fn(&T) -> bool>>;
 
 impl Data {
-	pub fn get(polyhedron: Polyhedron) -> &'static Self {
-		let polyhedron_usize: usize = polyhedron as usize;
+	/// get()
+	/// 
+	/// It is the caller's responsibility to ensure Data::initialize() was called first. Calling it a second time
+	/// has no side effects
+	pub fn get(polyhedron: Polyhedron) -> &'static Self { &DataLibrary::get()[polyhedron as usize] }
 
-		match Self::check_result(polyhedron_usize) {
-			Some(result) => {
-				assert!(result.is_ok());
-
-				unsafe { &DATA_LIBRARY.data[polyhedron_usize] }
-			},
-			None => {
-				assert!(Self::generate(polyhedron).is_ok());
-
-				unsafe { &DATA_LIBRARY.data[polyhedron_usize] }
-			}
-		}
-	}
-
-	fn generate(polyhedron: Polyhedron) -> LogErrorResult {
-		unsafe {
-			if DATA_LIBRARY.mutex.is_none() {
-				DATA_LIBRARY.mutex = Some(Mutex::<()>::new(()));
-			}
-
-			let _lock = DATA_LIBRARY.mutex.as_mut().unwrap().lock();
-			let polyhedron_usize: usize = polyhedron as usize;
-
-			Self::check_result(polyhedron_usize).unwrap_or_else(|| -> LogErrorResult {
-				let mut data_builder: DataBuilder = DataBuilder {
-					data: &mut DATA_LIBRARY.data[polyhedron_usize],
-					polyhedron
-				};
-
-				let result: LogErrorResult = data_builder.generate();
-
-				if result.is_ok() {
-					DATA_LIBRARY.succeeded.set_bit(polyhedron_usize, true);
-				} else {
-					DATA_LIBRARY.failed.set_bit(polyhedron_usize, false);
-					data_builder.data.reset();
-				}
-
-				result
-			})
-		}
-	}
-
-	fn check_result(polyhedron: usize) -> Option<LogErrorResult> {
-		unsafe {
-			if DATA_LIBRARY.succeeded.get_bit(polyhedron) {
-				Some(Ok(()))
-			} else if DATA_LIBRARY.failed.get_bit(polyhedron) {
-				Some(Err(log_error!(target: log_path!("generate"), Level::Warn, format!(
-					"Polyhedron {:?} already failed generation",
-					polyhedron
-				))))
-			} else {
-				None
-			}
-		}
-	}
+	pub fn initialize() -> () { DataLibrary::initialize(); }
 
 	pub fn get_closest_vert_index(&self, vec: &Vec3, filter: OptionalPredicate<VertexData>) -> usize {
 		Data::get_closest_vert_index_for_verts(&self.verts, vec, filter)
 	}
 
-	pub fn get_closest_vert_index_for_verts(verts: &Vec<VertexData>, vec: &Vec3, filter: OptionalPredicate<VertexData>) -> usize {
+	pub fn get_closest_vert_index_for_verts(
+		verts:	&Vec<VertexData>,
+		vec:	&Vec3,
+		filter:	OptionalPredicate<VertexData>
+	) -> usize {
 		use std::cmp::Ordering;
 
 		verts
@@ -201,7 +166,10 @@ impl Data {
 				vert.norm.dot(*vec)
 			})
 			.enumerate()
-			.max_by(|(_vert_index_a, norm_dot_vec_a): &(usize, f32), (_vert_index_b, norm_dot_vec_b): &(usize, f32)| -> Ordering {
+			.max_by(|
+				(_vert_index_a, norm_dot_vec_a): &(usize, f32),
+				(_vert_index_b, norm_dot_vec_b): &(usize, f32)
+			| -> Ordering {
 				norm_dot_vec_a.partial_cmp(&norm_dot_vec_b).unwrap_or(Ordering::Equal)
 			})
 			.map(|(vert_index, _norm_dot_vec): (usize, f32)| -> usize {
@@ -214,7 +182,11 @@ impl Data {
 		Data::get_closest_face_index_for_faces(&self.faces, vec, filter)
 	}
 
-	pub fn get_closest_face_index_for_faces(faces: &Vec<FaceData>, vec: &Vec3, filter: OptionalPredicate<FaceData>) -> usize {
+	pub fn get_closest_face_index_for_faces(
+		faces:	&Vec<FaceData>,
+		vec:	&Vec3,
+		filter:	OptionalPredicate<FaceData>
+	) -> usize {
 		use std::cmp::Ordering;
 
 		faces
@@ -229,7 +201,10 @@ impl Data {
 				face.norm.dot(*vec)
 			})
 			.enumerate()
-			.max_by(|(_face_index_a, norm_dot_vec_a): &(usize, f32), (_face_index_b, norm_dot_vec_b): &(usize, f32)| -> Ordering {
+			.max_by(|
+				(_face_index_a, norm_dot_vec_a): &(usize, f32),
+				(_face_index_b, norm_dot_vec_b): &(usize, f32)
+			| -> Ordering {
 				norm_dot_vec_a.partial_cmp(&norm_dot_vec_b).unwrap_or(Ordering::Equal)
 			})
 			.map(|(face_index, _norm_dot_vec): (usize, f32)| -> usize {
@@ -244,60 +219,16 @@ impl Data {
 		(pos, self.faces[pos].get_rotation(quat))
 	}
 
-	pub fn validate_polyhedra() -> LogErrorResult {
-		let log_target: String = log_path!("validate_polyhedra").to_string();
-
-		Self::generate(Polyhedron::Icosahedron)?;
-		Self::generate(Polyhedron::Dodecahedron)?;
-		Self::generate(Polyhedron::Icosidodecahedron)?;
-		Self::generate(Polyhedron::RhombicTriacontahedron)?;
-
-		let validate_dual_polyhedra = |polyhedron_a: Polyhedron| -> LogErrorResult {
-			let polyhedron_b: Polyhedron = polyhedron_a.dual();
-			let properties_a: &Properties = Properties::get(polyhedron_a);
-			let properties_b: &Properties = Properties::get(polyhedron_b);
-			let data_a: &Data = Data::get(polyhedron_a);
-			let data_b: &Data = Data::get(polyhedron_b);
-
-			if properties_a.vert_count != properties_b.face_count {
-				return Err(log_error!(
-					target: log_target,
-					Level::Warn, format!("Polyhedron {:?}'s vertex count doesn't equal polyhedron {:?}'s face count", polyhedron_a, polyhedron_b)
-				));
-			}
-
-			for index in 0 .. properties_a.vert_count {
-				if !data_a.verts[index].norm.abs_diff_eq(data_b.faces[index].norm, f32::EPSILON) {
-					return Err(log_error!(
-						target: log_target,
-						Level::Warn, format!("Vert {}'s normal vector ({:?}) of polyhedron {:?} isn't close enough to face {}'s normal vector ({:?}) of polyhedron {:?}",
-							index, data_a.verts[index].norm, polyhedron_a,
-							index, data_b.faces[index].norm, polyhedron_b
-						)
-					))
-				}
-			}
-
-			Ok(())
-		};
-
-		validate_dual_polyhedra(Polyhedron::Icosahedron)?;
-		validate_dual_polyhedra(Polyhedron::Dodecahedron)?;
-		validate_dual_polyhedra(Polyhedron::Icosidodecahedron)?;
-		validate_dual_polyhedra(Polyhedron::RhombicTriacontahedron)?;
-
-		Ok(())
-	}
-
 	pub fn as_mesh(&self, primitive_topology: PrimitiveTopology) -> Option<Mesh> {
-		if primitive_topology == PrimitiveTopology::LineStrip || primitive_topology == PrimitiveTopology::TriangleStrip {
+		if primitive_topology == PrimitiveTopology::LineStrip
+			|| primitive_topology == PrimitiveTopology::TriangleStrip {
 			return None;
 		}
 
-		let mut mesh = Mesh::new(primitive_topology);
-		let mut positions: Vec<[f32; 3]> = Vec::<[f32; 3]>::new();
-		let mut normals: Vec<[f32; 3]> = Vec::<[f32; 3]>::new();
-		let mut uvs: Vec<[f32; 2]> = Vec::<[f32; 2]>::new();
+		let mut mesh:		Mesh = Mesh::new(primitive_topology);
+		let mut positions:	Vec<[f32; 3]> = Vec::<[f32; 3]>::new();
+		let mut normals:	Vec<[f32; 3]> = Vec::<[f32; 3]>::new();
+		let mut uvs:		Vec<[f32; 2]> = Vec::<[f32; 2]>::new();
 		let mut append_vert = |vert_index: usize| -> () {
 			let vert_data: &VertexData = &self.verts[vert_index];
 			positions.push(vert_data.vec.as_ref().clone());
@@ -353,21 +284,76 @@ impl Data {
 
 		Some(mesh)
 	}
+}
 
-	const fn new() -> Self {
-		Self {
-			verts:			Vec::<VertexData>::new(),
-			edges:			Vec::<EdgeData>::new(),
-			vert_indices:	Vec::<usize>::new(),
-			faces:			Vec::<FaceData>::new(),
+#[cfg(test)]
+impl Data {
+	fn validate_polyhedra() -> LogErrorResult {
+		let log_target: String = log_path!("validate_polyhedra").to_string();
+		let mut mutex_guard: MutexGuard<bool> = DATA_LIBRARY_MUTEX
+			.lock()
+			.unwrap_or_else(PoisonError::<MutexGuard<bool>>::into_inner);
+
+		unsafe {
+			let data: &mut [Data; 4] = DATA_LIBRARY.0.assume_init_mut();
+
+			for polyhedron_usize in 0_usize .. 4_usize {
+				let mut data_builder: DataBuilder = DataBuilder {
+					data: &mut data[polyhedron_usize],
+					polyhedron: PolyhedronOption::from(polyhedron_usize as u8).0.unwrap()
+				};
+
+				data_builder.generate_checked()?;
+			}
+
+			*mutex_guard = true;
 		}
-	}
 
-	fn reset(&mut self) -> () {
-		// To make sure a failed Data doesn't hold on to allocated memory,
-		// and save the lines of doing clear() then shrink_to_fit() on all vec members,
-		// just make a new one
-		*self = Self::new();
+		drop(mutex_guard);
+
+		let validate_dual_polyhedra = |polyhedron_a: Polyhedron| -> LogErrorResult {
+			let polyhedron_b:	Polyhedron	= polyhedron_a.dual();
+			let properties_a:	&Properties	= Properties::get(polyhedron_a);
+			let properties_b:	&Properties	= Properties::get(polyhedron_b);
+			let data_a:			&Data		= Data::get(polyhedron_a);
+			let data_b:			&Data		= Data::get(polyhedron_b);
+
+			if properties_a.vert_count != properties_b.face_count {
+				return Err(log_error!(
+					target: log_target,
+					Level::Warn,
+					format!(
+						"Polyhedron {:?}'s vertex count doesn't equal polyhedron {:?}'s face count",
+						polyhedron_a,
+						polyhedron_b
+					)
+				));
+			}
+
+			for index in 0 .. properties_a.vert_count {
+				if !data_a.verts[index].norm.abs_diff_eq(data_b.faces[index].norm, f32::EPSILON) {
+					return Err(log_error!(
+						target: log_target,
+						Level::Warn,
+						format!(
+							"Vert {}'s normal vector ({:?}) of polyhedron {:?} isn't close enough to \
+								face {}'s normal vector ({:?}) of polyhedron {:?}",
+							index, data_a.verts[index].norm, polyhedron_a,
+							index, data_b.faces[index].norm, polyhedron_b
+						)
+					))
+				}
+			}
+
+			Ok(())
+		};
+
+		validate_dual_polyhedra(Polyhedron::Icosahedron)?;
+		validate_dual_polyhedra(Polyhedron::Dodecahedron)?;
+		validate_dual_polyhedra(Polyhedron::Icosidodecahedron)?;
+		validate_dual_polyhedra(Polyhedron::RhombicTriacontahedron)?;
+
+		Ok(())
 	}
 }
 
@@ -377,72 +363,19 @@ struct DataBuilder<'a> {
 }
 
 impl<'a> DataBuilder<'a> {
-	fn generate(&mut self) -> LogErrorResult {
-		self.try_generate_elements(
-			Self::generate_verts,
-			"vertices",
-			|data: &Data| -> (&Vec<VertexData>, ) {
-				(&data.verts, )
-			}
-		)?;
-		self.try_generate_elements(
-			Self::generate_edges,
-			"edges",
-			|data: &Data| -> (&Vec<VertexData>, &Vec<EdgeData>) {
-				(&data.verts, &data.edges)
-			}
-		)?;
-		self.try_generate_elements(
-			Self::generate_faces,
-			"faces",
-			|data: &Data| -> (&Vec<EdgeData>, &Vec<usize>, &Vec<FaceData>) {
-				(&data.edges, &data.vert_indices, &data.faces)
-			}
-		)?;
-
-		Ok(())
+	fn generate(&mut self) -> () {
+		self.generate_verts();
+		self.generate_edges();
+		log_result_err!(self.generate_faces());
 	}
 
-	fn try_generate_elements<'b, T: std::fmt::Debug>(
-		&'b mut self,
-		func:				fn(&mut Self) -> LogErrorResult,
-		elements:			&str,
-		get_relevant_data:	fn(&'b Data) -> T
-	) -> LogErrorResult {
-		if let Err(log_error) = func(self) {
-			log_error.log();
-
-			Err(log_error!(
-				target: log_path!("generate"),
-				Level::Warn, format!("Failed to generate {} for polyhedron {:?}", elements, self.polyhedron),
-				Level::Info, format!("Relevant data: {:#?}", get_relevant_data(self.data))
-			))
-		} else {
-			Ok(())
-		}
-	}
-
-	fn generate_verts(&mut self) -> LogErrorResult {
-		let properties: &Properties = Properties::get(self.polyhedron);
-		let verts: &mut Vec<VertexData> = &mut self.data.verts;
+	fn generate_verts(&mut self) -> () {
+		let properties:	&Properties				= self.polyhedron.properties();
+		let verts:		&mut Vec<VertexData>	= &mut self.data.verts;
 
 		verts.clear();
 		verts.reserve_exact(properties.vert_count);
 		Self::generate_verts_for_properties(properties, verts);
-		log::trace!(target: log_path!("generate_verts"), "{:#?}", verts);
-
-		if verts.len() != properties.vert_count {
-			return Err(log_error!(
-				target: log_path!("generate_verts"),
-				Level::Warn, format!(
-					"Found vertex count ({}) did not match expected vertex count ({})",
-					verts.len(),
-					properties.vert_count
-				)
-			));
-		}
-
-		Ok(())
 	}
 
 	fn generate_verts_for_properties(properties: &Properties, verts: &mut Vec<VertexData>) -> () {
@@ -558,14 +491,12 @@ impl<'a> DataBuilder<'a> {
 				Self::generate_verts_for_properties(&polyhedra::properties::DODECAHEDRON, verts);
 			}
 		}
-
-		log::trace!(target: log_path!("generate_verts"), "{:?} verts: {:#?}", properties.polyhedron, verts);
 	}
 
-	fn generate_edges(&mut self) -> LogErrorResult {
-		let properties: &Properties =  Properties::get(self.polyhedron);
-		let verts: &Vec<VertexData> = &self.data.verts;
-		let edges: &mut Vec<EdgeData> = &mut self.data.edges;
+	fn generate_edges(&mut self) -> () {
+		let properties:	&Properties			= self.polyhedron.properties();
+		let verts:		&Vec<VertexData>	= &self.data.verts;
+		let edges:		&mut Vec<EdgeData>	= &mut self.data.edges;
 
 		edges.clear();
 		edges.reserve_exact(properties.edge_count);
@@ -581,36 +512,22 @@ impl<'a> DataBuilder<'a> {
 				}
 			}
 		}
-
-		log::trace!(target: log_path!("generate_edges"), "{:?} edges: {:#?}", properties.polyhedron, edges);
-
-		if edges.len() != properties.edge_count {
-			return Err(log_error!(
-				target: log_path!("generate_edges"),
-				Level::Warn, format!(
-					"Found edge count ({}) did not match expected edge count ({})",
-					edges.len(),
-					properties.edge_count
-				)
-			));
-		}
-
-		Ok(())
 	}
 
 	fn generate_faces(&mut self) -> LogErrorResult {
-		let properties:			&Properties							= Properties::get(self.polyhedron);
-		let verts:				&Vec<VertexData>					= &self.data.verts;
-		let edges:				&Vec<EdgeData>						= &self.data.edges;
-		let vert_indices:		&mut Vec<usize>						= &mut self.data.vert_indices;
-		let faces:				&mut Vec<FaceData>					= &mut self.data.faces;
-		let all_edges_used:		u64									= (1_u64 << properties.edge_count) - 1_u64;
-		let log_target:			String								= log_path!("generate_faces").into();
+		let properties:				&Properties							= self.polyhedron.properties();
+		let should_be_initial_vert:	fn(usize, usize) -> bool			= self.get_should_be_initial_vert();
+		let verts:					&Vec<VertexData>					= &self.data.verts;
+		let edges:					&Vec<EdgeData>						= &self.data.edges;
+		let vert_indices:			&mut Vec<usize>						= &mut self.data.vert_indices;
+		let faces:					&mut Vec<FaceData>					= &mut self.data.faces;
+		let all_edges_used:			u64									= (1_u64 << properties.edge_count) - 1_u64;
+		let log_target:				String								= log_path!("generate_faces").into();
 
-		let mut edge_to_index:	fnv::FnvHashMap<EdgeData, usize>	= fnv::FnvHashMap::default();
-		let mut edge_matrix:	Vec<u64>							= vec![0_u64; properties.vert_count];
-		let mut forward_edges:	u64									= 0_u64;
-		let mut backward_edges:	u64									= 0_u64;
+		let mut edge_to_index:		fnv::FnvHashMap<EdgeData, usize>	= fnv::FnvHashMap::default();
+		let mut edge_matrix:		Vec<u64>							= vec![0_u64; properties.vert_count];
+		let mut forward_edges:		u64									= 0_u64;
+		let mut backward_edges:		u64									= 0_u64;
 
 		vert_indices.clear();
 		faces.clear();
@@ -674,7 +591,13 @@ impl<'a> DataBuilder<'a> {
 
 			macro_rules! cycle_values {
 				() => {
-					log::trace!(target: log_concat!(log_target, "cycle_values"), "Cycling {} <- {} <- {}", prev_vert_index, curr_vert_index, next_vert_index);
+					log::trace!(
+						target: log_concat!(log_target, "cycle_values"),
+						"Cycling {} <- {} <- {}",
+						prev_vert_index,
+						curr_vert_index,
+						next_vert_index
+					);
 					prev_vert_index = curr_vert_index;
 					curr_vert_index = next_vert_index;
 				};
@@ -684,7 +607,12 @@ impl<'a> DataBuilder<'a> {
 				() => {
 					vert_indices.push(curr_vert_index);
 					end += 1;
-					log::trace!(target: log_concat!(log_target, "record_vert"), "Recording vertex index {} (end is now {})", curr_vert_index, end);
+					log::trace!(
+						target: log_concat!(log_target, "record_vert"),
+						"Recording vertex index {} (end is now {})",
+						curr_vert_index,
+						end
+					);
 				};
 			}
 
@@ -706,7 +634,10 @@ impl<'a> DataBuilder<'a> {
 					} else {
 						return Err(log_error!(
 							target: log_concat!(log_target, "record_edge"),
-							Level::Warn, format!("No valid next vertex for previous vertex {} ({}) and current vertex {} ({}) in polyhedron {:?}",
+							Level::Warn,
+							format!(
+								"No valid next vertex for previous vertex {} ({}) and current vertex {} ({}) in \
+									polyhedron {:?}",
 								prev_vert_index,
 								verts[prev_vert_index].vec,
 								curr_vert_index,
@@ -724,7 +655,12 @@ impl<'a> DataBuilder<'a> {
 						let mut candidate_vert_indices: u64 = edge_matrix[curr_vert_index];
 
 						if candidate_vert_indices == 0 {
-							log::warn!(target: log_concat!(log_target, "find_next_vert"), "No candidate next vertices for vertex {} in polyhedron {:?}", curr_vert_index, properties.polyhedron);
+							log::warn!(
+								target: log_concat!(log_target, "find_next_vert"),
+								"No candidate next vertices for vertex {} in polyhedron {:?}",
+								curr_vert_index,
+								properties.polyhedron
+							);
 
 							INVALID_VERT_INDEX
 						} else {
@@ -736,34 +672,53 @@ impl<'a> DataBuilder<'a> {
 							while candidate_vert_indices != 0 {
 								let candidate_vert_index: usize = candidate_vert_indices.trailing_zeros() as usize;
 
-								log::trace!(target: log_concat!(log_target, "find_next_vert"), "Considering candidate vertex {}", candidate_vert_index);
+								log::trace!(
+									target: log_concat!(log_target, "find_next_vert"),
+									"Considering candidate vertex {}",
+									candidate_vert_index
+								);
 
 								candidate_vert_indices &= !(1 << candidate_vert_index);
 
 								// Don't double back
 								if candidate_vert_index == prev_vert_index {
-									log::trace!(target: log_concat!(log_target, "find_next_vert"), "Double-back, rejecting");
+									log::trace!(
+										target: log_concat!(log_target, "find_next_vert"),
+										"Double-back, rejecting"
+									);
 
 									continue;
 								}
 
 								let candidate_vert_vector: Vec3 = verts[candidate_vert_index].vec;
 
-								// TODO: Might need to revisit this because glam is FOOLISH and implements left-hand rule instead of right-hand rule. Ruined my night learning this.
-								// Only proceed if this is a counter-clockwise candidate
-								if prev_vert_to_curr_vert_vector.cross(candidate_vert_vector).dot(curr_vert_vector) <= 0.0 {
-									log::trace!(target: log_concat!(log_target, "find_next_vert"), "Clockwise, rejecting");
+								/* TODO: Might need to revisit this because glam is FOOLISH and implements left-hand
+								rule instead of right-hand rule. Ruined my night learning this. Only proceed if this is
+								a counter-clockwise candidate */
+								if prev_vert_to_curr_vert_vector
+									.cross(candidate_vert_vector)
+									.dot(curr_vert_vector)
+									<= 0.0 {
+									log::trace!(
+										target: log_concat!(log_target, "find_next_vert"),
+										"Clockwise, rejecting"
+									);
 
 									continue;
 								}
 
-								let candidate_vert_angle: f32 = prev_vert_to_curr_vert_vector.angle_between(candidate_vert_vector);
+								let candidate_vert_angle: f32 = prev_vert_to_curr_vert_vector
+									.angle_between(candidate_vert_vector);
 
 								if best_vert_index == INVALID_VERT_INDEX || best_vert_angle <= candidate_vert_angle {
 									best_vert_index = candidate_vert_index;
 									best_vert_angle = candidate_vert_angle;
 								} else {
-									log::trace!(target: log_concat!(log_target, "find_next_vert"), "Worse angle ({} (best) > {} (candidate))", best_vert_angle, candidate_vert_angle);
+									log::trace!(
+										target: log_concat!(log_target, "find_next_vert"),
+										"Worse angle ({} (best) > {} (candidate))",
+										best_vert_angle, candidate_vert_angle
+									);
 								}
 							}
 
@@ -786,7 +741,10 @@ impl<'a> DataBuilder<'a> {
 				} else if next_vert_index == INVALID_VERT_INDEX {
 					return Err(log_error!(
 						target: log_target,
-						Level::Warn, format!("No valid next vertex for previous vertex {} ({}) and current vertex {} ({}) in polyhedron {:?}",
+						Level::Warn, 
+						format!(
+							"No valid next vertex for previous vertex {} ({}) and current vertex {} ({}) in polyhedron \
+								{:?}",
 							prev_vert_index,
 							verts[prev_vert_index].vec,
 							curr_vert_index,
@@ -817,35 +775,6 @@ impl<'a> DataBuilder<'a> {
 			Data::get_closest_vert_index_for_verts(&dual_verts, &face_data.norm, None)
 		});
 
-		let should_be_initial_vert: Box<dyn Fn(usize, usize) -> bool> = match self.polyhedron {
-			Polyhedron::Icosahedron => Box::new(|face_index: usize, vert_index: usize| -> bool {
-				if face_index < properties.vert_count {
-					((vert_index as isize) - (face_index as isize)).abs() > 1
-				} else {
-					vert_index >> 2 == 1
-				}
-			}) as Box<dyn Fn(usize, usize) -> bool>,
-			Polyhedron::Dodecahedron => Box::new(|face_index: usize, vert_index: usize| -> bool {
-				vert_index < properties.face_count && ((vert_index as isize) - (face_index as isize)).abs() > 1
-			}) as Box<dyn Fn(usize, usize) -> bool>,
-			Polyhedron::Icosidodecahedron => Box::new(|face_index: usize, vert_index: usize| -> bool {
-				if face_index < 2 * polyhedra::properties::ICOSAHEDRON.vert_count {
-					vert_index % 5 == 0
-				} else {
-					const X_MAJOR_VERT_INDEX_END: usize = polyhedra::properties::ICOSIDODECAHEDRON.vert_count / 3;
-
-					vert_index < X_MAJOR_VERT_INDEX_END
-				}
-			}) as Box<dyn Fn(usize, usize) -> bool>,
-			Polyhedron::RhombicTriacontahedron => Box::new(|face_index: usize, vert_index: usize| -> bool {
-				if face_index % 5 == 0 {
-					vert_index & 0b1 == 0
-				} else {
-					vert_index < polyhedra::properties::ICOSAHEDRON.vert_count
-				}
-			}) as Box<dyn Fn(usize, usize) -> bool>,
-		};
-
 		for (face_index, face_data) in faces.iter_mut().enumerate() {
 			let face_slice: &mut [usize] = face_data.get_slice_mut(vert_indices);
 
@@ -856,7 +785,10 @@ impl<'a> DataBuilder<'a> {
 			} else {
 				return Err(log_error!(
 					target: log_target,
-					Level::Warn, format!("Couldn't find vertex in face {}'s slice, {:?}, that satisfies the condition necessary for it to be the initial vertex",
+					Level::Warn,
+					format!(
+						"Couldn't find vertex in face {}'s slice, {:?}, that satisfies the condition necessary for it \
+							to be the initial vertex",
 						face_index,
 						face_slice
 					)
@@ -880,12 +812,151 @@ impl<'a> DataBuilder<'a> {
 			};
 		}
 
-		let log_target: String = log_concat!(log_target, "validation").into();
+		Ok(())
+	}
+
+	fn get_should_be_initial_vert(&self) -> fn(usize, usize) -> bool {
+		match self.polyhedron {
+			Polyhedron::Icosahedron				=> |face_index: usize, vert_index: usize| -> bool {
+				if face_index < properties::ICOSAHEDRON.vert_count {
+					((vert_index as isize) - (face_index as isize)).abs() > 1
+				} else {
+					vert_index >> 2 == 1
+				}
+			},
+			Polyhedron::Dodecahedron				=> |face_index: usize, vert_index: usize| -> bool {
+				vert_index < properties::DODECAHEDRON.face_count
+					&& ((vert_index as isize) - (face_index as isize)).abs() > 1
+			},
+			Polyhedron::Icosidodecahedron		=> |face_index: usize, vert_index: usize| -> bool {
+				if face_index < 2 * properties::ICOSAHEDRON.vert_count {
+					vert_index % 5 == 0
+				} else {
+					const X_MAJOR_VERT_INDEX_END: usize = properties::ICOSIDODECAHEDRON.vert_count / 3;
+		
+					vert_index < X_MAJOR_VERT_INDEX_END
+				}
+			},
+			Polyhedron::RhombicTriacontahedron	=> |face_index: usize, vert_index: usize| -> bool {
+				if face_index % 5 == 0 {
+					vert_index & 0b1 == 0
+				} else {
+					vert_index < properties::ICOSAHEDRON.vert_count
+				}
+			},
+		}
+	}
+}
+
+#[cfg(test)]
+impl<'a> DataBuilder<'a> {
+	fn generate_checked(&mut self) -> LogErrorResult {
+		self.generate_elements_checked(
+			Self::generate_verts_checked,
+			"vertices",
+			|data: &Data| -> (&Vec<VertexData>, ) {
+				(&data.verts, )
+			}
+		)?;
+		self.generate_elements_checked(
+			Self::generate_edges_checked,
+			"edges",
+			|data: &Data| -> (&Vec<VertexData>, &Vec<EdgeData>) {
+				(&data.verts, &data.edges)
+			}
+		)?;
+		self.generate_elements_checked(
+			Self::generate_faces_checked,
+			"faces",
+			|data: &Data| -> (&Vec<EdgeData>, &Vec<usize>, &Vec<FaceData>) {
+				(&data.edges, &data.vert_indices, &data.faces)
+			}
+		)?;
+
+		Ok(())
+	}
+
+	fn generate_elements_checked<'b, T: std::fmt::Debug>(
+		&'b mut self,
+		func:				fn(&mut Self) -> LogErrorResult,
+		elements:			&str,
+		get_relevant_data:	fn(&'b Data) -> T
+	) -> LogErrorResult {
+		if let Err(log_error) = func(self) {
+			log_error.log();
+
+			Err(log_error!(
+				target: log_path!("generate"),
+				Level::Warn, format!("Failed to generate {} for polyhedron {:?}", elements, self.polyhedron),
+				Level::Info, format!("Relevant data: {:#?}", get_relevant_data(self.data))
+			))
+		} else {
+			Ok(())
+		}
+	}
+
+	fn generate_verts_checked(&mut self) -> LogErrorResult {
+		self.generate_verts();
+
+		let properties:	&Properties				= self.polyhedron.properties();
+		let verts:		&Vec<VertexData>		= &self.data.verts;
+
+		log::trace!(target: log_path!("generate_verts"), "{:?} verts: {:#?}", properties.polyhedron, verts);
+
+		if verts.len() == properties.vert_count {
+			Ok(())
+		} else {
+			Err(log_error!(
+				target: log_path!("generate_verts"),
+				Level::Warn, format!(
+					"Found vertex count ({}) did not match expected vertex count ({})",
+					verts.len(),
+					properties.vert_count
+				)
+			))
+		}
+	}
+
+	fn generate_edges_checked(&mut self) -> LogErrorResult {
+		self.generate_edges();
+
+		let properties:	&Properties			= self.polyhedron.properties();
+		let edges:		&Vec<EdgeData>		= &self.data.edges;
+
+		log::trace!(target: log_path!("generate_edges"), "{:?} edges: {:#?}", properties.polyhedron, edges);
+
+		if edges.len() == properties.edge_count {
+			Ok(())
+		} else {
+			Err(log_error!(
+				target: log_path!("generate_edges"),
+				Level::Warn, format!(
+					"Found edge count ({}) did not match expected edge count ({})",
+					edges.len(),
+					properties.edge_count
+				)
+			))
+		}
+	}
+
+	fn generate_faces_checked(&mut self) -> LogErrorResult {
+		self.generate_faces()?;
+
+		let properties:				&Properties					= self.polyhedron.properties();
+		let vert_indices:			&Vec<usize>					= &self.data.vert_indices;
+		let faces:					&Vec<FaceData>				= &self.data.faces;
+		let log_target:				String						= log_path!("generate_faces_checked").into();
+		let should_be_initial_vert:	fn(usize, usize) -> bool	= self.get_should_be_initial_vert();
 
 		if faces.len() != properties.face_count {
 			return Err(log_error!(
 				target: log_target,
-				Level::Warn, format!("Found face count ({}) did not match expected face count ({})", faces.len(), properties.face_count)
+				Level::Warn,
+				format!(
+					"Found face count ({}) did not match expected face count ({})",
+					faces.len(),
+					properties.face_count
+				)
 			));
 		}
 
@@ -911,7 +982,13 @@ impl<'a> DataBuilder<'a> {
 				if face_data.get_size() != face_size {
 					return Err(log_error!(
 						target: log_target,
-						Level::Warn, format!("Face {}'s size ({}) did not match expected face size ({})", face_index, face_data.get_size(), face_size)
+						Level::Warn,
+						format!(
+							"Face {}'s size ({}) did not match expected face size ({})",
+							face_index,
+							face_data.get_size(),
+							face_size
+						)
 					));
 				}
 
@@ -920,7 +997,13 @@ impl<'a> DataBuilder<'a> {
 				if !should_be_initial_vert(face_index, initial_vert_index) {
 					return Err(log_error!(
 						target: log_target,
-						Level::Warn, format!("Face {}'s initial vertex index ({}) did not satisfy the requisite condition for it to be the initial vertex index", face_index, initial_vert_index)
+						Level::Warn,
+						format!(
+							"Face {}'s initial vertex index ({}) did not satisfy the requisite condition for it to be \
+							the initial vertex index",
+							face_index,
+							initial_vert_index
+						)
 					));
 				}
 			}
@@ -930,25 +1013,61 @@ impl<'a> DataBuilder<'a> {
 	}
 }
 
-struct DataLibrary {
-	data:		[Data; 4],
-	succeeded:	u8,
-	failed:		u8,
-	mutex:		Option<Mutex<()>>
+struct DataLibrary(MaybeUninit<[Data; 4]>);
+
+static mut DATA_LIBRARY: DataLibrary = DataLibrary(MaybeUninit::<[Data; 4]>::uninit());
+
+lazy_static! {
+	static ref DATA_LIBRARY_MUTEX: Mutex<bool> = Mutex::new(false);
 }
 
-static mut DATA_LIBRARY: DataLibrary = DataLibrary {
-	data:		[Data::new(), Data::new(), Data::new(), Data::new()],
-	succeeded:	0_u8,
-	failed:		0_u8,
-	mutex:		None
-};
+impl DataLibrary {
+	fn get() -> &'static [Data; 4] { unsafe { <DataLibrary as StaticDataLibrary>::get().0.assume_init_ref() } }
+}
+
+impl StaticDataLibrary for DataLibrary {
+	fn initialize() -> () {
+		let mut mutex_guard: MutexGuard<bool> = DATA_LIBRARY_MUTEX
+			.lock()
+			.unwrap_or_else(PoisonError::<MutexGuard<bool>>::into_inner);
+
+		if !*mutex_guard {
+			unsafe {
+				let data_array: &mut [Data; 4] = DATA_LIBRARY.0.assume_init_mut();
+
+				for polyhedron_usize in 0_usize .. 4_usize {
+					let data: &mut Data = &mut data_array[polyhedron_usize];
+
+					*data = Data {
+						verts:			Vec::<VertexData>::new(),
+						edges:			Vec::<EdgeData>::new(),
+						vert_indices:	Vec::<usize>::new(),
+						faces:			Vec::<FaceData>::new()
+					};
+
+					let mut data_builder: DataBuilder = DataBuilder {
+						data,
+						polyhedron: PolyhedronOption::from(polyhedron_usize as u8).0.unwrap()
+					};
+
+					data_builder.generate();
+				}
+
+				*mutex_guard = true;
+			}
+		}
+	}
+
+	fn get() -> &'static Self {
+		unsafe { &DATA_LIBRARY }
+	}
+}
 
 pub struct DataPlugin;
 
 impl Plugin for DataPlugin {
 	fn build(&self, _app: &mut AppBuilder) -> () {
-		log_result_err!(Data::validate_polyhedra(), panic!());
+		DataLibrary::initialize();
 	}
 }
 
@@ -958,6 +1077,7 @@ mod tests {
 
 	#[test]
 	fn test_data() -> () {
+		init_env_logger();
 		log_result_err!(Data::validate_polyhedra(), panic!());
 	}
 }

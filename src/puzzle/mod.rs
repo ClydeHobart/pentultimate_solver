@@ -50,10 +50,6 @@ use {
 			Add,
 			AddAssign,
 			Sub
-		},
-		time::{
-			Duration,
-			Instant
 		}
 	},
 	bevy::prelude::*,
@@ -546,23 +542,6 @@ pub mod inflated {
 		}
 	}
 
-	#[derive(Clone)]
-	pub struct Animation {
-		pub addr:		FullAddr,
-		pub start:		Instant,
-		pub duration:	Duration
-	}
-
-	impl Animation {
-		pub fn is_done(&self) -> bool { self.is_done_at_time(&Instant::now()) }
-
-		pub fn is_done_at_time(&self, time: &Instant) -> bool { self.start + self.duration <= *time }
-
-		pub fn s(&self) -> f32 { self.s_at_time(&Instant::now()) }
-
-		pub fn s_at_time(&self, time: &Instant) -> f32 { (*time - self.start).as_millis() as f32 / self.duration.as_millis() as f32 }
-	}
-
 	#[repr(align(32))]
 	pub struct ExtendedPuzzleState {
 		pub puzzle_state:	PuzzleState,
@@ -731,10 +710,8 @@ mod tests {
 			},
 			inflated::{
 				PieceStateComponent as IPSC,
-				PuzzleState as InflatedPuzzleState,
-				PuzzleStateConsts
-			},
-			transformation::Page
+				PuzzleState as InflatedPuzzleState
+			}
 		},
 		std::{
 			any::type_name,
@@ -863,11 +840,17 @@ mod tests {
 		}
 	}
 
+	#[cfg(feature = "non_unit_tests")]
 	#[test]
 	fn test_puzzle_state_properties() -> () {
+		use super::{
+			inflated::PuzzleStateConsts,
+			transformation::Page
+		};
+
 		const ITERATION_COUNT: usize = 10000000_usize;
 
-		let standard_rotations:									&Page<Transformation>		= &TransformationLibrary::get().book_pack_data.trfm[TransformationType::StandardRotation as usize];
+		let standard_rotations:									&Page<Transformation>		= &TransformationLibrary::initialize_and_get().book_pack_data.trfm[TransformationType::StandardRotation as usize];
 		let mut correct_pos_pent_piece_count_counts:			[u32; PENTAGON_PIECE_COUNT]	= [0_u32; PENTAGON_PIECE_COUNT];
 		let mut correct_pos_tri_piece_count_counts:				[u32; TRIANGLE_PIECE_COUNT]	= [0_u32; TRIANGLE_PIECE_COUNT];
 		let mut correct_rot_pent_piece_count_counts:			[u32; PENTAGON_PIECE_COUNT]	= [0_u32; PENTAGON_PIECE_COUNT];

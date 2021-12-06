@@ -8,6 +8,7 @@ pub mod prelude {
 		log::prelude::*,
 		FromAlt,
 		ShortSlerp,
+		StaticDataLibrary,
 		ToOption,
 		ToResult,
 		from_ron,
@@ -99,6 +100,20 @@ impl<T, E> ToOption<T> for Result<T, E> where E: Debug {
 			None
 		}
 	}
+}
+
+pub trait StaticDataLibrary {
+	/// Initializes the data if it needs to, otherwise does nothing
+	fn initialize() -> ();
+	/// Calls `initialize()`, then returns `get()`
+	fn initialize_and_get() -> &'static Self {
+		Self::initialize();
+
+		Self::get()
+	}
+  
+	/// Fetches the data, assuming it has already been initialized
+	fn get() -> &'static Self;
 }
 
 pub fn from_ron<T>(file_name: &str) -> Result<T, Box<dyn std::error::Error>>

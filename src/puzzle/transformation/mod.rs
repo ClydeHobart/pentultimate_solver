@@ -9,7 +9,8 @@ use {
 			},
 			Polyhedron
 		},
-		ui::camera::CameraPlugin
+		ui::camera::CameraPlugin,
+		util::StaticDataLibrary
 	},
 	super::{
 		consts::*,
@@ -28,7 +29,6 @@ use {
 			Error,
 			Formatter
 		},
-		intrinsics::unlikely,
 		ops::{
 			Neg,
 			Range
@@ -36,6 +36,11 @@ use {
 		mem::{
 			MaybeUninit,
 			transmute
+		},
+		sync::{
+			Mutex,
+			MutexGuard,
+			PoisonError
 		}
 	}
 };
@@ -56,7 +61,11 @@ impl Mask {
 	fn from_pentagon_index(pentagon_index: usize) -> Self {
 		Self({
 			if pentagon_index >= PENTAGON_PIECE_COUNT {
-				log::warn!("HemisphereMask::new({}) was called, but {} is an invalid pentagon index", pentagon_index, pentagon_index);
+				log::warn!(
+					"HemisphereMask::new({}) was called, but {} is an invalid pentagon index",
+					pentagon_index,
+					pentagon_index
+				);
 
 				0_u32
 			} else {
@@ -80,7 +89,11 @@ impl Mask {
 			let mut mask: u32 = 0_u32;
 
 			for piece_index in PIECE_RANGE {
-				mask |= ((curr_puzzle_state.pos[piece_index] != prev_puzzle_state.pos[piece_index] || curr_puzzle_state.rot[piece_index] != prev_puzzle_state.rot[piece_index]) as u32) << piece_index;
+				mask |= (
+					(curr_puzzle_state.pos[piece_index] != prev_puzzle_state.pos[piece_index]
+						|| curr_puzzle_state.rot[piece_index] != prev_puzzle_state.rot[piece_index]
+					) as u32
+				) << piece_index;
 			}
 
 			mask
@@ -180,7 +193,8 @@ impl Addr for HalfAddr {
 	}
 
 	fn get_long_line_index(&self) -> usize {
-		const_assert!(Library::LONG_LINE_COUNT <= 1_usize << (HalfAddr::LINE_INDEX_BITS.end - HalfAddr::LINE_INDEX_BITS.start));
+		const_assert!(Library::LONG_LINE_COUNT
+			<= 1_usize << (HalfAddr::LINE_INDEX_BITS.end - HalfAddr::LINE_INDEX_BITS.start));
 		assert!(self.is_valid());
 
 		// Safe: checked above (const_assert! shows the long line index is always valid)
@@ -717,36 +731,47 @@ impl LibraryConsts for Library {
 
 impl Library {
 	fn new() -> Self {
+		Data::initialize();
+
 		let icosidodecahedron_data: &Data = Data::get(Polyhedron::Icosidodecahedron);
 
 		let mut transformation_library: Library = unsafe { std::mem::MaybeUninit::<Library>::zeroed().assume_init() };
 
-		for (long_line_index, orientation_data_long_line) in transformation_library.orientation_data.iter_mut().enumerate() {
+		for (long_line_index, orientation_data_long_line)
+			in transformation_library.orientation_data.iter_mut().enumerate()
+		{
 			let face_data: &FaceData = &icosidodecahedron_data.faces[long_line_index];
 
-			for (word_index, orientation_data_word) in orientation_data_long_line.iter_mut().enumerate() {
+			for (word_index, orientation_data_word)
+				in orientation_data_long_line.iter_mut().enumerate()
+			{
 				orientation_data_word.quat = face_data.get_rotated_quat(word_index as u32);
 			}
 		}
 
 		{
-			let (book_pack_data, orientation_data): (&mut BookPackData, &LongPage<OrientationData>) = (&mut transformation_library.book_pack_data, &transformation_library.orientation_data);
+			let (book_pack_data, orientation_data): (&mut BookPackData, &LongPage<OrientationData>) =
+				(&mut transformation_library.book_pack_data, &transformation_library.orientation_data);
 
 			{
 				let initial_pent_quat: Quat = icosidodecahedron_data.faces[PENTAGON_INDEX_OFFSET].quat;
 				let reorientation_page_index: usize = Type::Reorientation as usize;
 
-				let mut page_pack_mut: PagePackMut = book_pack_data.get_page_pack_mut(Type::Reorientation as usize);
+				let mut page_pack_mut: PagePackMut = book_pack_data
+					.get_page_pack_mut(Type::Reorientation as usize);
 
 				page_pack_mut.iter_mut(|line_index: usize, mut line_pack_mut: LinePackMut| -> () {
 					line_pack_mut.iter_mut(|word_index: usize, word_pack_mut: WordPackMut| -> () {
-						let reorientation_quat: Quat = initial_pent_quat * orientation_data[line_index][word_index].quat.conjugate();
-						let (pos_array, rot_array): (&mut PuzzleStateComponent, &mut PuzzleStateComponent) = word_pack_mut.trfm.arrays_mut();
+						let reorientation_quat: Quat = initial_pent_quat
+							* orientation_data[line_index][word_index].quat.conjugate();
+						let (pos_array, rot_array): (&mut PuzzleStateComponent, &mut PuzzleStateComponent) =
+							word_pack_mut.trfm.arrays_mut();
 
 						for piece_index in PIECE_RANGE {
 							let (pos, rot): (usize, usize) = icosidodecahedron_data.get_pos_and_rot(
 								&(reorientation_quat * icosidodecahedron_data.faces[piece_index].quat),
-								None // We could put a filter in here, but it'd be slower, and the quat math is precise enough that it's unnecessary here
+								None /* We could put a filter in here, but it'd be slower, and the quat math is
+									precise enough that it's unnecessary here */
 							);
 
 							pos_array[piece_index] = pos as PieceStateComponent;
@@ -754,12 +779,15 @@ impl Library {
 						}
 
 						*word_pack_mut.quat = reorientation_quat;
-						*word_pack_mut.mask = Mask::from_puzzle_states(&PuzzleState::SOLVED_STATE, word_pack_mut.trfm.as_ref());
+						*word_pack_mut.mask = Mask::from_puzzle_states(
+							&PuzzleState::SOLVED_STATE,
+							word_pack_mut.trfm.as_ref()
+						);
 						*word_pack_mut.addr = FullAddr::default();
 					});
 				});
 
-				let trfm_page:		&Page<Trfm>		= page_pack_mut.trfm;
+				let trfm_page:		&Page<Trfm>			= page_pack_mut.trfm;
 				let addr_page_mut:	&mut Page<FullAddr>	= page_pack_mut.addr;
 
 				for (line_index, addr_line_mut) in addr_page_mut.iter_mut().enumerate() {
@@ -775,7 +803,8 @@ impl Library {
 			}
 
 			{
-				let mut page_pack_mut: PagePackMut = book_pack_data.get_page_pack_mut(Type::StandardRotation as usize);
+				let mut page_pack_mut: PagePackMut =
+					book_pack_data.get_page_pack_mut(Type::StandardRotation as usize);
 
 				page_pack_mut.iter_mut(|line_index: usize, mut line_pack_mut: LinePackMut| -> () {
 					let face_data: &FaceData = &icosidodecahedron_data.faces[line_index];
@@ -785,13 +814,15 @@ impl Library {
 						let rotation_quat: Quat = face_data.get_rotation_quat(word_index as u32);
 						let mask: Mask = if word_index != 0 { mask } else { Mask(0_u32) };
 
-						let (pos_array, rot_array): (&mut PuzzleStateComponent, &mut PuzzleStateComponent) = word_pack_mut.trfm.arrays_mut();
+						let (pos_array, rot_array): (&mut PuzzleStateComponent, &mut PuzzleStateComponent) =
+							word_pack_mut.trfm.arrays_mut();
 
 						for piece_index in PIECE_RANGE {
 							let (pos, rot): (usize, usize) = if mask.affects_piece(piece_index) {
 								icosidodecahedron_data.get_pos_and_rot(
 									&(rotation_quat * icosidodecahedron_data.faces[piece_index].quat),
-									None // We could put a filter in here, but it'd be slower, and the quat math should be precise enough that it's unnecessary here
+									None /* We could put a filter in here, but it'd be slower, and the quat math
+										is precise enough that it's unnecessary here */
 								)
 							} else {
 								(piece_index, 0)
@@ -815,30 +846,36 @@ impl Library {
 
 		transformation_library
 	}
-
-	pub fn get() -> &'static Self {
-		// Self::new() is completely deterministic, so this is safe. Re-running the function whilst another thread is
-		// already trying to generate it is not optimal, but it can only happen at the beginning of execution
-		unsafe {
-			if unlikely(LIBRARY.1) {
-				LIBRARY.0 = MaybeUninit::<Self>::new(Self::new());
-				LIBRARY.1 = false;
-			}
-
-			LIBRARY.0.assume_init_ref()
-		}
-	}
 }
 
-static mut LIBRARY: (MaybeUninit<Library>, bool) = (MaybeUninit::<Library>::uninit(), true);
+static mut LIBRARY: MaybeUninit<Library> = MaybeUninit::<Library>::uninit();
+
+lazy_static! {
+	static ref LIBRARY_MUTEX: Mutex<bool> = Mutex::<bool>::new(false);
+}
+
+impl StaticDataLibrary for Library {
+	fn initialize() -> () {
+		let mut mutex_guard: MutexGuard<bool> = LIBRARY_MUTEX
+			.lock()
+			.unwrap_or_else(PoisonError::<MutexGuard<bool>>::into_inner);
+
+		if !*mutex_guard {
+			unsafe {
+				LIBRARY = MaybeUninit::<Self>::new(Self::new());
+			}
+
+			*mutex_guard = true;
+		}
+	}
+
+	fn get() -> &'static Self { unsafe { LIBRARY.assume_init_ref() } }
+}
 
 pub struct TransformationPlugin;
 
 impl Plugin for TransformationPlugin {
-	fn build(&self, _app: &mut AppBuilder) -> () {
-		// Initialize the Library
-		Library::get();
-	}
+	fn build(&self, _: &mut AppBuilder) -> () { Library::initialize(); }
 }
 
 #[cfg(test)]
@@ -848,8 +885,9 @@ mod tests {
 		super::*
 	};
 
-	fn test_validity(transformation_library: &Library) -> () {
-		let book_pack: BookPack = transformation_library.book_pack_data.get_book_pack(());
+	fn test_validity() -> () {
+		let library: &Library = Library::get();
+		let book_pack: BookPack = library.book_pack_data.get_book_pack(());
 
 		book_pack.iter(|page_index: usize, page_pack: PagePack| -> () {
 			page_pack.iter(|line_index: usize, line_pack: LinePack| -> () {
@@ -864,7 +902,10 @@ mod tests {
 					}
 
 					if !word_pack.addr.is_valid() {
-						log::error!("Inverse address for transformation ({}, {}, {}) is invalid", page_index, line_index, word_index);
+						log::error!(
+							"Inverse address for transformation ({}, {}, {}) is invalid",
+							page_index, line_index, word_index
+						);
 						error_expr!(word_pack.addr);
 
 						panic!();
@@ -874,7 +915,9 @@ mod tests {
 					let inv_trfm: &Trfm = book_pack.get_word_pack(inv_addr).trfm;
 
 					if *trfm != -inv_trfm || -trfm != *inv_trfm {
-						log::error!("Transformation addressed by ({}, {}, {}), the associated address of transformation ({}, {}, {}) is not the true inverse transformation",
+						log::error!(
+							"Transformation addressed by ({}, {}, {}), the associated address of transformation \
+								({}, {}, {}) is not the true inverse transformation",
 							inv_addr.get_page_index(), inv_addr.get_line_index(), inv_addr.get_word_index(),
 							page_index, line_index, word_index
 						);
@@ -888,7 +931,8 @@ mod tests {
 					let end_state: PuzzleState = &middle_state + inv_trfm;
 
 					if end_state != solved_state {
-						log::error!("solved_state + trfm + inv_trfm != solved_state for transformation ({}, {}, {})",
+						log::error!(
+							"solved_state + trfm + inv_trfm != solved_state for transformation ({}, {}, {})",
 							page_index, line_index, word_index
 						);
 						error_expr!(solved_state, trfm, middle_state, inv_trfm, end_state);
@@ -900,17 +944,27 @@ mod tests {
 		});
 	}
 
-	fn test_reorientations(transformation_library: &Library) -> () {
-		let page_pack: PagePack = transformation_library.book_pack_data.get_page_pack(Type::Reorientation as usize);
-		let standard_rotation_page: &Page<Trfm> = &transformation_library.book_pack_data.trfm[Type::StandardRotation as usize];
-		let reorientation_tests: [Vec<(usize, usize)>; PENTAGON_PIECE_COUNT] = from_ron::<[Vec<(usize, usize)>; PENTAGON_PIECE_COUNT]>(STRING_DATA.tests.reorientation_tests.as_ref()).to_option().unwrap();
+	fn test_reorientations() -> () {
+		let library: &Library = Library::get();
+		let page_pack: PagePack =
+			library.book_pack_data.get_page_pack(Type::Reorientation as usize);
+		let standard_rotation_page: &Page<Trfm> =
+			&library.book_pack_data.trfm[Type::StandardRotation as usize];
+		let reorientation_tests: [Vec<(usize, usize)>; PENTAGON_PIECE_COUNT] =
+			from_ron::<[Vec<(usize, usize)>; PENTAGON_PIECE_COUNT]>(
+				STRING_DATA.tests.reorientation_tests.as_ref()
+			).to_option().unwrap();
 
 		page_pack.iter(|line_index: usize, line_pack: LinePack| -> () {
 			let pent_puzzle_state: PuzzleState = {
 				let mut solved_state: PuzzleState = PuzzleState::SOLVED_STATE;
 
-				for (standard_rotation_pent_index, standard_rotation_rotation_index) in &reorientation_tests[line_index] {
-					solved_state += &standard_rotation_page[*standard_rotation_pent_index][*standard_rotation_rotation_index];
+				for (standard_rotation_pent_index, standard_rotation_rotation_index)
+					in &reorientation_tests[line_index]
+				{
+					solved_state += &standard_rotation_page
+						[*standard_rotation_pent_index]
+						[*standard_rotation_rotation_index];
 				}
 
 				solved_state
@@ -933,14 +987,21 @@ mod tests {
 				};
 
 				if !prev_puzzle_state.is_valid() {
-					log::error!("Puzzle state isn't valid before reorientation with pentagon {} and rotation {}", line_index, word_index);
+					log::error!(
+						"Puzzle state isn't valid before reorientation with pentagon {} and rotation {}",
+						line_index,
+						word_index
+					);
 					error_expr!(pent_puzzle_state, standard_rotation_page[line_index][word_index], prev_puzzle_state);
 
 					panic!();
 				}
 
-				if prev_puzzle_state.pos[PENTAGON_INDEX_OFFSET] != line_index as PieceStateComponent || prev_puzzle_state.rot[PENTAGON_INDEX_OFFSET] != word_index as PieceStateComponent {
-					log::error!("Reorientation with pentagon {} and rotation {} has position {} and rotation {} for piece {}",
+				if prev_puzzle_state.pos[PENTAGON_INDEX_OFFSET] != line_index as PieceStateComponent
+					|| prev_puzzle_state.rot[PENTAGON_INDEX_OFFSET] != word_index as PieceStateComponent
+				{
+					log::error!(
+						"Reorientation with pentagon {} and rotation {} has position {} and rotation {} for piece {}",
 						line_index,
 						word_index,
 						prev_puzzle_state.pos[PENTAGON_INDEX_OFFSET],
@@ -960,14 +1021,22 @@ mod tests {
 				curr_puzzle_state += trfm;
 
 				if !curr_puzzle_state.is_standardized() {
-					log::error!("Puzzle state isn't standardized after reorientation with pentagon {} and rotation {}", line_index, word_index);
+					log::error!(
+						"Puzzle state isn't standardized after reorientation with pentagon {} and rotation {}",
+						line_index,
+						word_index
+					);
 					error_expr!(prev_puzzle_state, trfm, curr_puzzle_state);
 
 					panic!();
 				}
 
 				if !curr_puzzle_state.is_valid() {
-					log::error!("Puzzle state isn't valid after reorientation with pentagon {} and rotation {}", line_index, word_index);
+					log::error!(
+						"Puzzle state isn't valid after reorientation with pentagon {} and rotation {}",
+						line_index,
+						word_index
+					);
 					error_expr!(prev_puzzle_state, trfm, curr_puzzle_state);
 
 					panic!();
@@ -976,7 +1045,12 @@ mod tests {
 				curr_puzzle_state_alt.naive_add_assign(trfm);
 
 				if curr_puzzle_state_alt != curr_puzzle_state {
-					log::error!("Reoriented puzzle state doesn't match the naively reoriented puzzle state with pentagon {} and rotation {}", line_index, word_index);
+					log::error!(
+						"Reoriented puzzle state doesn't match the naively reoriented puzzle state with pentagon {} \
+							and rotation {}",
+						line_index,
+						word_index
+					);
 					error_expr!(prev_puzzle_state, trfm, curr_puzzle_state, curr_puzzle_state_alt);
 
 					panic!();
@@ -985,7 +1059,12 @@ mod tests {
 				let transformation_from_states:	Trfm = &curr_puzzle_state - &prev_puzzle_state;
 
 				if transformation_from_states != *trfm {
-					log::error!("Trfm from previous to current state doesn't match applied transformation with pentagon {} and rotation {}", line_index, word_index);
+					log::error!(
+						"Trfm from previous to current state doesn't match applied transformation with pentagon {} and \
+							rotation {}",
+						line_index,
+						word_index
+					);
 					error_expr!(trfm, prev_puzzle_state, curr_puzzle_state, transformation_from_states);
 
 					panic!();
@@ -996,7 +1075,13 @@ mod tests {
 						curr_puzzle_state.pos[piece_index] != prev_puzzle_state.pos[piece_index] ||
 						curr_puzzle_state.rot[piece_index] != prev_puzzle_state.rot[piece_index]
 					) {
-						log::error!("The mask's affects_piece() result doesn't match reality for piece {} with pentagon {} and rotation {}", piece_index, line_index, word_index);
+						log::error!(
+							"The mask's affects_piece() result doesn't match reality for piece {} with pentagon {} and \
+								rotation {}",
+							piece_index,
+							line_index,
+							word_index
+						);
 						error_expr!(word_pack.mask.affects_piece(piece_index), prev_puzzle_state, curr_puzzle_state);
 
 						panic!();
@@ -1006,13 +1091,14 @@ mod tests {
 		});
 	}
 
-	fn test_standard_rotations(transformation_library: &Library) -> () {
-		let page_pack: PagePack = transformation_library.book_pack_data.get_page_pack(Type::StandardRotation as usize);
+	fn test_standard_rotations() -> () {
+		let library: &Library = Library::get();
+		let page_pack: PagePack = library.book_pack_data.get_page_pack(Type::StandardRotation as usize);
 
 		page_pack.iter(|line_index: usize, line_pack: LinePack| -> () {
 			line_pack.iter(|word_index: usize, word_pack: WordPack| -> () {
 				let trfm:						&Trfm				= &word_pack.trfm;
-				let inv_trfm:					&Trfm				= &transformation_library.book_pack_data.get_word_pack(*word_pack.addr).trfm;
+				let inv_trfm:					&Trfm				= &library.book_pack_data.get_word_pack(*word_pack.addr).trfm;
 
 				let mut curr_puzzle_state:		PuzzleState			= PuzzleState::SOLVED_STATE;
 				let mut curr_puzzle_state_alt:	PuzzleState			= PuzzleState::SOLVED_STATE;
@@ -1062,14 +1148,12 @@ mod tests {
 	#[test]
 	fn test_transformation_library() -> () {
 		init_env_logger();
-
-		let transformation_library: &Library = Library::get();
-
-		test_validity(transformation_library);
+		Library::initialize();
+		test_validity();
 
 		// Though Type::Reorientation is listed before StandardRotation (intentionally: it doesn't actually change the (standardized) state of the puzzle),
 		// Type::StandardRotation needs to be tested first, since the former is dependent on the latter
-		test_standard_rotations(transformation_library);
-		test_reorientations(transformation_library);
+		test_standard_rotations();
+		test_reorientations();
 	}
 }
