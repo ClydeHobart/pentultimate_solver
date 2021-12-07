@@ -27,9 +27,12 @@ use {
 		Preferences,
 		View
 	},
-	std::time::{
-		Duration,
-		Instant
+	std::{
+		mem::transmute,
+		time::{
+			Duration,
+			Instant
+		}
 	},
 	bevy::{
 		prelude::*,
@@ -195,16 +198,18 @@ define_struct_with_default!(
 	#[derive(Clone, Deserialize, Inspectable, PartialEq)]
 	pub InputData {
 		#[inspectable(collapse)]
-		pub default_positions:		[usize; HALF_PENTAGON_PIECE_COUNT]		= generate_default_positions(),
+		pub default_positions:				[usize; HALF_PENTAGON_PIECE_COUNT]		= generate_default_positions(),
 		#[inspectable(collapse)]
-		pub rotation_keys:			[KeyCode; HALF_PENTAGON_PIECE_COUNT]	= [bkc!(Numpad0), bkc!(Numpad1), bkc!(Numpad4), bkc!(Numpad5), bkc!(Numpad6), bkc!(Numpad3)],
-		pub recenter_camera:		KeyCode									= bkc!(Space),
-		pub undo:					KeyCode									= bkc!(Left),
-		pub redo:					KeyCode									= bkc!(Right),
-		pub rotate_twice:			KeyCode									= bkc!(D),
-		pub counter_clockwise:		KeyCode									= bkc!(S),
-		pub alt_hemi:				KeyCode									= bkc!(A),
-		pub disable_recentering:	KeyCode									= bkc!(X),
+		pub rotation_keys:					[KeyCode; HALF_PENTAGON_PIECE_COUNT]	= [bkc!(Numpad0), bkc!(Numpad1), bkc!(Numpad4), bkc!(Numpad5), bkc!(Numpad6), bkc!(Numpad3)],
+		pub recenter_camera:				KeyCode									= bkc!(Space),
+		pub undo:							KeyCode									= bkc!(Left),
+		pub redo:							KeyCode									= bkc!(Right),
+		pub cycle_transformation_type_up:	KeyCode									= bkc!(Up),
+		pub cycle_transformation_type_down:	KeyCode									= bkc!(Down),
+		pub rotate_twice:					KeyCode									= bkc!(D),
+		pub counter_clockwise:				KeyCode									= bkc!(S),
+		pub alt_hemi:						KeyCode									= bkc!(A),
+		pub disable_recentering:			KeyCode									= bkc!(X),
 	}
 );
 
@@ -342,12 +347,25 @@ impl ActiveTransformationAction {
 	}
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 pub struct InputToggles {
 	pub rotate_twice:					bool,
 	pub counter_clockwise:				bool,
 	pub alt_hemi:						bool,
-	pub disable_recentering:			bool
+	pub disable_recentering:			bool,
+	pub transformation_type:			TransformationType,
+}
+
+impl Default for InputToggles {
+	fn default() -> Self {
+		Self {
+			rotate_twice:			false,
+			counter_clockwise:		false,
+			alt_hemi:				false,
+			disable_recentering:	false,
+			transformation_type:	TransformationType::StandardRotation
+		}
+	}
 }
 
 pub enum Action {
@@ -358,9 +376,9 @@ pub enum Action {
 
 #[derive(Default)]
 pub struct InputState {
-	pub toggles:						InputToggles,
-	pub action:							Option<(Action, ActiveTransformationAction)>,
-	pub camera_rotation:				Quat,
+	pub toggles:			InputToggles,
+	pub action:				Option<(Action, ActiveTransformationAction)>,
+	pub camera_rotation:	Quat,
 }
 
 pub struct InputPlugin;
@@ -388,15 +406,37 @@ impl InputPlugin {
 		let mut toggles: InputToggles = input_state.toggles;
 
 		macro_rules! check_toggle {
-			($key_code:ident, $toggle:ident) => {
-				if keyboard_input.just_pressed(input_data.$key_code.into()) { toggles.$toggle = !toggles.$toggle; }
+			($toggle:ident) => {
+				if keyboard_input.just_pressed(input_data.$toggle.into()) { toggles.$toggle = !toggles.$toggle; }
 			}
 		}
 
-		check_toggle!(rotate_twice,			rotate_twice);
-		check_toggle!(counter_clockwise,	counter_clockwise);
-		check_toggle!(alt_hemi,				alt_hemi);
-		check_toggle!(disable_recentering,	disable_recentering);
+		check_toggle!(rotate_twice);
+		check_toggle!(counter_clockwise);
+		check_toggle!(alt_hemi);
+		check_toggle!(disable_recentering);
+
+		if keyboard_input.just_pressed(input_data.cycle_transformation_type_up.into()) {
+			let value_to_transmute: u8 = if toggles.transformation_type as u8 == 0_u8 {
+				TransformationType::Count
+			} else {
+				toggles.transformation_type
+			} as u8 - 1_u8;
+
+			toggles.transformation_type = unsafe { transmute::<u8, TransformationType>(value_to_transmute) };
+		}
+
+		if keyboard_input.just_pressed(input_data.cycle_transformation_type_down.into()) {
+			let value_to_transmute: u8 = if toggles.transformation_type as u8
+				== TransformationType::Count as u8 - 1_u8
+			{
+				0_u8
+			} else {
+				toggles.transformation_type as u8 + 1_u8
+			};
+
+			toggles.transformation_type = unsafe { transmute::<u8, TransformationType>(value_to_transmute) };
+		}
 
 		let mut rolled_or_panned: bool = false;
 

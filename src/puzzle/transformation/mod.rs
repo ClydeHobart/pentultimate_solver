@@ -501,6 +501,7 @@ impl Action {
 			standardization
 		}
 	}
+
 	#[inline(always)]
 	pub fn transformation(&self) -> &FullAddr { &self.transformation }
 	#[inline(always)]

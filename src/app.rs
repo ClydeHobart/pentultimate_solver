@@ -35,7 +35,10 @@ pub mod prelude {
 			Preferences
 		},
 		puzzle::{
-			transformation::Library as TransformationLibrary,
+			transformation::{
+				Library as TransformationLibrary,
+				Type as TransformationType
+			},
 			ExtendedPuzzleState,
 			PuzzlePlugin,
 		},

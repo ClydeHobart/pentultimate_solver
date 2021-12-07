@@ -5,9 +5,11 @@ use {
 		app::prelude::*,
 		preferences::Update
 	},
+	std::mem::transmute,
 	bevy::{
 		prelude::*,
-		app::CoreStage
+		app::CoreStage,
+		input::keyboard::KeyCode as BevyKeyCode
 	},
 	bevy_egui::EguiContext,
 	bevy_inspector_egui::{
@@ -92,32 +94,52 @@ impl UIPlugin {
 		egui::Area::new("InputState")
 			.anchor(egui::Align2::LEFT_BOTTOM, Vec2::new(30.0_f32, -30.0_f32))
 			.show(egui_context.ctx(), |ui: &mut Ui| -> () {
+				let toggles: &InputToggles = &input_state.toggles;
+
 				ui.style_mut().visuals.widgets.noninteractive.bg_fill = Color32::TRANSPARENT;
 				egui::Grid::new("ModifierTable").show(ui, |ui: &mut Ui| -> () {
-					let mut modifier_row = |modifier_state: bool, modifier_name: &str, modifier_key: KeyCode| -> () {
-						let text_stroke: &mut egui::Stroke = &mut ui.visuals_mut().widgets.noninteractive.fg_stroke;
-
-						if modifier_state {
-							text_stroke.color = Color32::WHITE;
-							text_stroke.width = 1.5_f32;
-						} else {
-							text_stroke.color = Color32::GRAY;
-							text_stroke.width = 1.0_f32;
-						}
-
-						ui.label(format!("[{:?}]", modifier_key));
-						ui.label(modifier_name);
-						ui.end_row();
-					};
-
-					let toggles: &InputToggles = &input_state.toggles;
 					let input: &InputData = &preferences.input;
 
-					modifier_row(toggles.rotate_twice,			"Rotate Twice",			input.rotate_twice.into());
-					modifier_row(toggles.counter_clockwise,		"Counter Clockwise",	input.counter_clockwise.into());
-					modifier_row(toggles.alt_hemi,				"Alt. Hemi.",			input.alt_hemi.into());
-					modifier_row(toggles.disable_recentering,	"Disable Recentering",	input.disable_recentering.into());
+					macro_rules! modifier_row {
+						($toggle:ident, $modifier_name:expr) => {
+							let text_stroke: &mut egui::Stroke = &mut ui.visuals_mut().widgets.noninteractive.fg_stroke;
+	
+							if toggles.$toggle {
+								text_stroke.color = Color32::WHITE;
+								text_stroke.width = 1.5_f32;
+							} else {
+								text_stroke.color = Color32::GRAY;
+								text_stroke.width = 1.0_f32;
+							}
+	
+							ui.label(format!("[{:?}]", BevyKeyCode::from(input.$toggle)));
+							ui.label($modifier_name);
+							ui.end_row();
+						}
+					}
+
+					modifier_row!(rotate_twice,			"Rotate Twice");
+					modifier_row!(counter_clockwise,	"Counter Clockwise");
+					modifier_row!(alt_hemi,				"Alt. Hemi.");
+					modifier_row!(disable_recentering,	"Disable Recentering");
+
+					ui.end_row();
 				});
+
+				for transformation_type_u8 in 0_u8 .. TransformationType::Count as u8 {
+					ui.visuals_mut().widgets.noninteractive.fg_stroke.color = if toggles.transformation_type as u8
+						== transformation_type_u8
+					{
+						Color32::WHITE
+					} else {
+						Color32::GRAY
+					};
+
+					ui.label(format!(
+						"{:?}",
+						unsafe { transmute::<u8, TransformationType>(transformation_type_u8) }
+					));
+				}
 			});
 
 		egui::Area::new("ActionStack")
