@@ -3,7 +3,8 @@ use {
 	crate::{
 		prelude::*,
 		app::prelude::*,
-		preferences::Update
+		preferences::Update,
+		puzzle::transformation::TYPE_COUNT
 	},
 	std::mem::transmute,
 	bevy::{
@@ -121,12 +122,19 @@ impl UIPlugin {
 					modifier_row!(rotate_twice,			"Rotate Twice");
 					modifier_row!(counter_clockwise,	"Counter Clockwise");
 					modifier_row!(alt_hemi,				"Alt. Hemi.");
-					modifier_row!(disable_recentering,	"Disable Recentering");
+					modifier_row!(
+						disable_recentering,
+						if matches!(toggles.transformation_type, TransformationType::Reorientation) {
+							"Enable Modifiers"
+						} else {
+							"Disable Recentering"
+						}
+					);
 
 					ui.end_row();
 				});
 
-				for transformation_type_u8 in 0_u8 .. TransformationType::Count as u8 {
+				for transformation_type_u8 in 0_u8 .. TYPE_COUNT as u8 {
 					ui.visuals_mut().widgets.noninteractive.fg_stroke.color = if toggles.transformation_type as u8
 						== transformation_type_u8
 					{

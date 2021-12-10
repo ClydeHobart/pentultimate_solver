@@ -9,7 +9,6 @@ use {
 			},
 			Polyhedron
 		},
-		ui::camera::CameraPlugin,
 		util::StaticDataLibrary
 	},
 	super::{
@@ -29,13 +28,15 @@ use {
 			Error,
 			Formatter
 		},
-		ops::{
-			Neg,
-			Range
-		},
 		mem::{
 			MaybeUninit,
 			transmute
+		},
+		ops::{
+			Add,
+			AddAssign,
+			Neg,
+			Range
 		},
 		sync::{
 			Mutex,
@@ -104,17 +105,24 @@ impl Mask {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Type {
 	Reorientation,		// This transformation standardizes the puzzle state (reorients piece 0 to be at position 0 with rotation 0)
-	StandardRotation,	// This transformation rotates one of the hemispherical halves about one of the 12 pentagonal pieces n fifth-rotations, where n is in [0, 5)
-	Count				// Not an actual transformation, this allows us to statically allocate memory for a type that has a variant for each "valid" Type variant
+	StandardRotation	// This transformation rotates one of the hemispherical halves about one of the 12 pentagonal pieces n fifth-rotations, where n is in [0, 5)
 }
 
+pub const TYPE_COUNT: usize = Type::StandardRotation as usize + 1_usize;
+
 impl Type {
-	fn invert(self) -> Self {
-		match self {
-			// Eventually, compound transformations will be added that map to a different (also compound) type
-			_ => { self }
-		}
-	}
+	// fn invert(self) -> Self {
+	// 	match self {
+	// 		// Eventually, compound transformations will be added that map to a different (also compound) type
+	// 		_ => { self }
+	// 	}
+	// }
+
+	#[inline(always)]
+	pub const fn is_reorientation(self) -> bool { self as u8 == Self::Reorientation as u8 }
+
+	#[inline(always)]
+	pub const fn is_standard_rotation(self) -> bool { self as u8 == Self::StandardRotation as u8 }
 }
 
 pub trait Addr {
@@ -130,9 +138,10 @@ pub trait Addr {
 }
 
 pub trait HalfAddrConsts {
-	const INVALID: u8;
-	const LINE_INDEX_BITS: Range<usize>;
-	const WORD_INDEX_BITS: Range<usize>;
+	const INVALID:			u8;
+	const LINE_INDEX_BITS:	Range<usize>;
+	const WORD_INDEX_BITS:	Range<usize>;
+	const ORIGIN:			HalfAddr;
 }
 
 #[derive(Clone, Copy)]
@@ -146,22 +155,28 @@ impl HalfAddr {
 	pub fn line_index_is_valid(&self) -> bool { Self::is_valid_line_index(unsafe { self.get_line_index_unchecked() }) }
 
 	#[inline(always)]
-	pub fn is_valid_line_index(line_index: usize) -> bool { line_index < Library::LINE_COUNT }
+	pub const fn is_valid_line_index(line_index: usize) -> bool { line_index < Library::LINE_COUNT }
 
 	#[inline(always)]
-	pub fn is_valid_long_line_index(long_line_index: usize) -> bool { long_line_index < Library::LONG_LINE_COUNT }
+	pub const fn is_valid_long_line_index(long_line_index: usize) -> bool { long_line_index < Library::LONG_LINE_COUNT }
 
 	#[inline(always)]
 	pub fn word_index_is_valid(&self) -> bool { Self::is_valid_word_index(unsafe { self.get_word_index_unchecked() }) }
 
 	#[inline(always)]
-	pub fn is_valid_word_index(word_index: usize) -> bool { word_index < Library::WORD_COUNT }
+	pub const fn is_valid_word_index(word_index: usize) -> bool { word_index < Library::WORD_COUNT }
 
-	pub fn new(line_index: usize, word_index: usize) -> Self {
-		*Self::default()
-			.set_long_line_index(line_index) // Accomodate long line indices
-			.set_word_index(word_index)
+	pub const fn default() -> Self { Self(Self::INVALID) }
+
+	pub const fn new(line_index: usize, word_index: usize) -> Self {
+		if Self::is_valid_long_line_index(line_index) && Self::is_valid_word_index(word_index) {
+			Self((line_index as u8) << Self::LINE_INDEX_BITS.start | word_index as u8)
+		} else {
+			Self::default()
+		}
 	}
+
+	pub const fn origin() -> Self { Self::new(0_usize, 0_usize) }
 
 	pub fn invalidate(&mut self) -> () {
 		self.0 = Self::INVALID;
@@ -179,10 +194,62 @@ impl HalfAddr {
 }
 
 impl HalfAddrConsts for HalfAddr {
-	const INVALID: u8 = u8::MAX;
-	const LINE_INDEX_BITS: Range<usize> = 3_usize .. u8::BIT_LENGTH;
-	const WORD_INDEX_BITS: Range<usize> = 0_usize .. 3_usize;
+	const INVALID:			u8				= u8::MAX;
+	const LINE_INDEX_BITS:	Range<usize>	= 3_usize .. u8::BIT_LENGTH;
+	const WORD_INDEX_BITS:	Range<usize>	= 0_usize .. 3_usize;
+	const ORIGIN:			HalfAddr		= HalfAddr::new(0_usize, 0_usize);
 }
+
+impl Add for HalfAddr {
+	type Output = Self;
+
+	/// add()
+	/// 
+	/// `rhs`:
+	/// * Pre-completion of #21: an inverse Reorientation to apply to self (it's inverted internally to the function,
+	///   though)
+	/// * Post-completion of #21: a Reorientation to apply to self
+	fn add(self, rhs: Self) -> Self::Output {
+		if self.is_valid() && rhs.is_valid() {
+			let mut sum: HalfAddr = Library::get()
+				.book_pack_data
+				.trfm
+				.get_word(
+					FullAddr::from((
+						Type::Reorientation,
+						self
+					)).invert()
+				)
+				.as_ref()
+				.half_addr(rhs.get_line_index());
+	
+			*sum.set_word_index((sum.get_word_index() + rhs.get_word_index()) % Library::WORD_COUNT)
+		} else {
+			Self::default()
+		}
+	}
+}
+
+impl Add<FullAddr> for HalfAddr {
+	type Output = Self;
+
+	fn add(self, rhs: FullAddr) -> Self::Output {
+		if self.is_valid() && rhs.is_valid() {
+			let mut sum: HalfAddr = Library::get()
+				.book_pack_data
+				.trfm
+				.get_word(rhs)
+				.as_ref()
+				.half_addr(self.get_line_index());
+
+			*sum.set_word_index((sum.get_word_index() + self.get_word_index()) % Library::WORD_COUNT)
+		} else {
+			Self::default()
+		}
+	}
+}
+
+impl AddAssign<FullAddr> for HalfAddr { fn add_assign(&mut self, rhs: FullAddr) -> () { *self = *self + rhs; } }
 
 impl Addr for HalfAddr {
 	fn get_line_index(&self) -> usize {
@@ -246,11 +313,7 @@ impl Debug for HalfAddr {
 	}
 }
 
-impl Default for HalfAddr {
-	fn default() -> Self {
-		Self(Self::INVALID)
-	}
-}
+impl Default for HalfAddr { fn default() -> Self { HalfAddr::default() } }
 
 pub trait FullAddrConsts {
 	const INVALID_INDEX: u8;
@@ -298,26 +361,41 @@ impl FullAddr {
 		}
 	}
 
+	#[inline(always)]
+	pub fn is_page_index_reorientation(&self) -> bool { self.page_index == Type::Reorientation as u8 }
+
+	#[inline(always)]
+	pub fn is_page_index_standard_rotation(&self) -> bool { self.page_index == Type::StandardRotation as u8 }
+
 	pub fn get_cycles(&self) -> u32 {
-		match self.get_page_index_type() {
-			Some(page_index_type) => {
-				match page_index_type {
-					Type::Reorientation => {
-						1_u32
-					},
-					Type::StandardRotation => {
-						if self.word_index_is_valid() {
-							(((self.get_word_index() as i32 + 2_i32) % PENTAGON_SIDE_COUNT as i32) - 2_i32).abs() as u32
-						} else {
-							0_u32
-						}
-					},
-					_ => { unreachable!() }
+		if matches!(self.get_page_index_type(), Some(Type::Reorientation)) {
+			1_u32
+		} else {
+			Self::get_cycles_for_comprising_standard_rotations(&self.get_comprising_standard_rotations())
+		}
+	}
+
+	pub fn get_cycles_for_comprising_standard_rotations(comprising_standard_rotations: &Vec<HalfAddr>) -> u32 {
+		comprising_standard_rotations
+			.iter()
+			.map(|half_addr: &HalfAddr| -> u32 {
+				(((half_addr.get_word_index() as i32 + 2_i32) % PENTAGON_SIDE_COUNT as i32) - 2_i32).abs() as u32
+			})
+			.sum()
+	}
+
+	pub fn get_comprising_standard_rotations(&self) -> Vec<HalfAddr> {
+		if let Some(page_index_type) = self.get_page_index_type() {
+			match page_index_type {
+				Type::Reorientation => {
+					vec![]
+				},
+				Type::StandardRotation => {
+					vec![self.get_half_addr()]
 				}
-			},
-			None => {
-				0_u32
 			}
+		} else {
+			Vec::<HalfAddr>::new()
 		}
 	}
 
@@ -343,27 +421,13 @@ impl FullAddr {
 	}
 
 	pub fn invert(&self) -> Self {
-		Self {
-			page_index: self.get_page_index_type().map_or(
-				Self::INVALID_INDEX,
-				|page_index_type: Type| -> u8 { page_index_type.invert() as u8 }
-			),
-			half_addr: if self.half_addr_is_valid() {
-				HalfAddr::from((
-					self.get_line_index(),
-					{
-						(
-							(
-								self.get_word_index() as i32
-									* -1_i32
-									+ PENTAGON_SIDE_COUNT as i32
-							) % PENTAGON_SIDE_COUNT as i32
-						) as usize
-					}
-				))
-			} else {
-				HalfAddr::default()
-			}
+		if self.is_valid() {
+			*Library::get()
+				.book_pack_data
+				.addr
+				.get_word(*self)
+		} else {
+			FullAddr::default()
 		}
 	}
 
@@ -415,13 +479,15 @@ impl Addr for FullAddr {
 impl Debug for FullAddr {
 	fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
 		let mut debug_struct: std::fmt::DebugStruct = formatter.debug_struct("FullAddr");
-		let mut page_index_type_local: Type = Type::Count;
+		let mut page_index_type_local: Option<Type> = None;
 
 		debug_struct.field("page_index", &self.get_page_index_type()
 			.map_or(
 				&"[invalid]" as &dyn std::fmt::Debug,
 				|page_index_type: Type| -> &dyn std::fmt::Debug {
-					page_index_type_local = page_index_type; &page_index_type_local
+					page_index_type_local = Some(page_index_type);
+
+					page_index_type_local.as_ref().unwrap()
 				}
 			)
 		);
@@ -486,19 +552,17 @@ impl From<(Type, HalfAddr)> for FullAddr {
 	}
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Action {
 	transformation:		FullAddr,
-	camera_start:		HalfAddr,
-	standardization:	HalfAddr
+	camera_start:		HalfAddr
 }
 
 impl Action {
-	pub fn new(transformation: FullAddr, camera_start: HalfAddr, standardization: HalfAddr) -> Self {
+	pub fn new(transformation: FullAddr, camera_start: HalfAddr) -> Self {
 		Self {
 			transformation,
-			camera_start,
-			standardization
+			camera_start
 		}
 	}
 
@@ -507,32 +571,43 @@ impl Action {
 	#[inline(always)]
 	pub fn camera_start(&self) -> &HalfAddr { &self.camera_start }
 	#[inline(always)]
-	pub fn standardization(&self) -> FullAddr { (Type::Reorientation, self.standardization).into() }
+	pub fn standardization(&self) -> FullAddr { (Type::Reorientation, HalfAddr::ORIGIN + self.transformation).into() }
 
-	pub fn is_valid(&self) -> bool {
-		self.transformation.is_valid() && self.camera_start.is_valid() && self.standardization.is_valid()
+	pub fn is_valid(&self) -> bool { self.transformation.is_valid() && self.camera_start.is_valid() }
+
+	pub fn camera_end(&self) -> HalfAddr {
+		if self.transformation.is_page_index_reorientation() {
+			self.transformation.get_half_addr()
+		} else {
+			self.camera_start
+		}
 	}
 
 	pub fn invert(&self) -> Self {
 		if self.is_valid() {
-			let standardization_word_pack: WordPack = Library::get()
-				.book_pack_data
-				.get_word_pack(self.standardization());
-			let mut inflated_puzzle_state: PuzzleState = PuzzleState::SOLVED_STATE;
-			let mut transformation: FullAddr = self.transformation.invert();
-			let line_index: usize = transformation.get_line_index();
+			if self.transformation.is_page_index_reorientation() {
+				let camera_start: HalfAddr = self.transformation.get_half_addr();
+				let transformation: FullAddr = FullAddr::from((Type::Reorientation, self.camera_start));
+				let inv_self: Self = Self::new(transformation, camera_start);
 
-			transformation.set_line_index(standardization_word_pack.trfm.as_ref().pos[line_index] as usize);
-			inflated_puzzle_state += Library::get().book_pack_data.trfm.get_word(transformation);
+				inv_self
 
-			Self::new(
-				transformation,
-				CameraPlugin::compute_camera_addr(
-					&(*standardization_word_pack.quat
-						* Library::get().orientation_data.get_word(self.camera_start).quat)
-				),
-				inflated_puzzle_state.standardization_half_addr()
-			)
+			} else {
+				let self_camera_end: HalfAddr = self.camera_end();
+				let self_standardization: FullAddr = self.standardization();
+				let camera_start: HalfAddr = self_camera_end + self_standardization;
+				let mut transformation: FullAddr = self.transformation.invert();
+				let transformation_word_index: usize = transformation.get_word_index();
+	
+				transformation.half_addr += self_standardization;
+	
+				if transformation.is_page_index_standard_rotation() {
+					transformation.set_word_index(transformation_word_index);
+				}
+	
+				let inv_self: Self = Self::new(transformation, camera_start);
+				inv_self
+			}
 		} else {
 			Self::default()
 		}
@@ -727,7 +802,7 @@ impl LibraryConsts for Library {
 	const WORD_COUNT:		usize = PENTAGON_SIDE_COUNT;
 	const LINE_COUNT:		usize = PENTAGON_PIECE_COUNT;
 	const LONG_LINE_COUNT:	usize = PIECE_COUNT;
-	const PAGE_COUNT:		usize = Type::Count as usize;
+	const PAGE_COUNT:		usize = TYPE_COUNT;
 }
 
 impl Library {

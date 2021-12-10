@@ -1,3 +1,5 @@
+use crate::puzzle::transformation::Addr;
+
 use {
 	crate::{
 		prelude::*,
@@ -12,6 +14,7 @@ use {
 		puzzle::{
 			consts::*,
 			transformation::{
+				self,
 				packs::*,
 				Action as TransformationAction,
 				FullAddr,
@@ -28,6 +31,7 @@ use {
 		View
 	},
 	std::{
+		cmp::max,
 		mem::transmute,
 		time::{
 			Duration,
@@ -251,40 +255,81 @@ impl ActiveTransformationAction {
 		let end_quat: Quat = if warn_expect!(self.action.camera_start().is_valid()) {
 			TransformationLibrary::get()
 				.orientation_data
-				.get_word(*self.action.camera_start())
+				.get_word(self.action.camera_end())
 				.quat
 		} else {
 			Quat::IDENTITY
 		};
-		let word_pack: Option<WordPack> = if self.action.transformation().is_valid() {
-			Some(
-				TransformationLibrary::get()
-					.book_pack_data
-					.get_word_pack(*self.action.transformation())
-			)
-		} else {
-			None
-		};
+		// let word_pack: Option<WordPack> = if self.action.transformation().is_valid() {
+		// 	Some(
+		// 		TransformationLibrary::get()
+		// 			.book_pack_data
+		// 			.get_word_pack(*self.action.transformation())
+		// 	)
+		// } else {
+		// 	None
+		// };
 
 		match self.s_now() {
 			Some(s) => {
-				if self.action.transformation().is_valid() && warn_expect!(word_pack.is_some()) {
-					let word_pack: WordPack = word_pack.unwrap();
-					let rotation: Quat = Quat::IDENTITY.short_slerp(*word_pack.quat, s);
-					let puzzle_state: &InflatedPuzzleState = &extended_puzzle_state.puzzle_state;
+				if self.action.transformation().is_valid() {
+					let comprising_standard_rotations: Vec<HalfAddr> = self
+						.action
+						.transformation()
+						.get_comprising_standard_rotations();
+					let total_cycles: f32 = FullAddr::get_cycles_for_comprising_standard_rotations(
+						&comprising_standard_rotations
+					) as f32;
+					let mut cycle_count: f32 = 0.0_f32;
 
-					for (piece_component, mut transform) in queries
-						.q1_mut()
-						.iter_mut()
-					{
-						let piece_index: usize = piece_component.index;
+					let mut puzzle_state: InflatedPuzzleState = extended_puzzle_state.puzzle_state.clone();
 
-						if word_pack.mask.affects_piece(puzzle_state.pos[piece_index] as usize) {
-							transform.rotation = rotation
-								* TransformationLibrary::get()
-									.orientation_data
-									.get_word(puzzle_state.half_addr(piece_index))
-									.quat;
+					for comprising_standard_rotation in &comprising_standard_rotations {
+						let comprising_standard_rotation: FullAddr = (
+							TransformationType::StandardRotation,
+							*comprising_standard_rotation
+						).into();
+						let cycles: f32 = comprising_standard_rotation.get_cycles() as f32;
+						let s: f32 = s * total_cycles;
+
+						if cycles == 0.0_f32 {
+							continue;
+						} else if s >= cycle_count + cycles {
+							puzzle_state += TransformationLibrary::get()
+								.book_pack_data
+								.trfm
+								.get_word(comprising_standard_rotation);
+							cycle_count += cycles;
+						} else {
+							let word_pack: WordPack = TransformationLibrary::get()
+								.book_pack_data
+								.get_word_pack(comprising_standard_rotation);
+							let rotation: Quat = Quat::IDENTITY.short_slerp(*word_pack.quat, 
+								(s - cycle_count) / cycles
+							);
+							let puzzle_state: &InflatedPuzzleState = &extended_puzzle_state.puzzle_state;
+		
+							for (piece_component, mut transform) in queries
+								.q1_mut()
+								.iter_mut()
+							{
+								let piece_index: usize = piece_component.index;
+
+								transform.rotation = if word_pack
+									.mask
+									.affects_piece(puzzle_state.pos[piece_index] as usize)
+								{
+									rotation
+								} else {
+									Quat::IDENTITY
+								}
+									* TransformationLibrary::get()
+										.orientation_data
+										.get_word(puzzle_state.half_addr(piece_index))
+										.quat;
+							}
+
+							break;
 						}
 					}
 				}
@@ -300,18 +345,17 @@ impl ActiveTransformationAction {
 				false
 			},
 			None => {
-				let mut standardization_word_pack: Option<WordPack> = None;
+				let mut standardization_word_pack_option: Option<WordPack> = None;
 
-				if self.action.transformation().is_valid() && warn_expect!(word_pack.is_some()) {
-					*extended_puzzle_state += word_pack.unwrap().trfm;
-
-					standardization_word_pack = Some(TransformationLibrary::get()
+				if self.action.transformation().is_valid() {
+					let transformation_word_pack: WordPack = TransformationLibrary::get()
+						.book_pack_data.
+						get_word_pack(*self.action.transformation());
+					let standardization_word_pack: WordPack = TransformationLibrary::get()
 						.book_pack_data
-						.get_word_pack(self.action.standardization())
-					);
+						.get_word_pack(self.action.standardization());
 
-					let standardization_word_pack: &WordPack = standardization_word_pack.as_ref().unwrap();
-
+					*extended_puzzle_state += transformation_word_pack.trfm;
 					*extended_puzzle_state += standardization_word_pack.trfm;
 					warn_expect!(extended_puzzle_state.puzzle_state.is_standardized());
 
@@ -326,11 +370,15 @@ impl ActiveTransformationAction {
 							.get_word(puzzle_state.half_addr(piece_component.index))
 							.quat;
 					}
+
+					if !self.action.transformation().is_page_index_reorientation() {
+						standardization_word_pack_option = Some(standardization_word_pack);
+					}
 				}
 
 				if self.action.camera_start().is_valid() {
 					if let Some((_, mut transform)) = queries.q0_mut().iter_mut().next() {
-						transform.rotation = standardization_word_pack.map_or(
+						transform.rotation = standardization_word_pack_option.map_or(
 							Quat::IDENTITY,
 							|word_pack: WordPack| -> Quat { *word_pack.quat }
 						) * if self.camera_orientation.is_some() {
@@ -354,6 +402,37 @@ pub struct InputToggles {
 	pub alt_hemi:						bool,
 	pub disable_recentering:			bool,
 	pub transformation_type:			TransformationType,
+}
+
+impl InputToggles {
+	fn half_addr(&self, default_position: usize) -> HalfAddr {
+		HalfAddr::new(self.line_index(default_position), self.word_index())
+	}
+
+	fn line_index(&self, default_position: usize) -> usize {
+		if self.alt_hemi {
+			InflatedPuzzleState::invert_position(default_position)
+		} else {
+			default_position
+		}
+	}
+
+	fn word_index(&self) -> usize {
+		if !self.transformation_type.is_reorientation() || self.disable_recentering {
+			(
+				1_i32
+					* if self.rotate_twice { 2_i32 } else { 1_i32 }
+					* if self.counter_clockwise { -1_i32 } else { 1_i32 }
+					+ PENTAGON_SIDE_COUNT as i32
+			)
+				as usize
+				% PENTAGON_SIDE_COUNT
+		} else {
+			0_usize
+		}
+	}
+
+	fn disable_recentering(&self) -> bool { self.disable_recentering && !self.transformation_type.is_reorientation() }
 }
 
 impl Default for InputToggles {
@@ -418,17 +497,17 @@ impl InputPlugin {
 
 		if keyboard_input.just_pressed(input_data.cycle_transformation_type_up.into()) {
 			let value_to_transmute: u8 = if toggles.transformation_type as u8 == 0_u8 {
-				TransformationType::Count
+				transformation::TYPE_COUNT as u8
 			} else {
-				toggles.transformation_type
-			} as u8 - 1_u8;
+				toggles.transformation_type as u8
+			} - 1_u8;
 
 			toggles.transformation_type = unsafe { transmute::<u8, TransformationType>(value_to_transmute) };
 		}
 
 		if keyboard_input.just_pressed(input_data.cycle_transformation_type_down.into()) {
 			let value_to_transmute: u8 = if toggles.transformation_type as u8
-				== TransformationType::Count as u8 - 1_u8
+				== transformation::TYPE_COUNT as u8 - 1_u8
 			{
 				0_u8
 			} else {
@@ -506,60 +585,30 @@ impl InputPlugin {
 				match default_position {
 					Some(default_position) => {
 						let transformation: FullAddr = (
-							TransformationType::StandardRotation as usize,
-							TransformationLibrary::get()
-								.book_pack_data
-								.trfm
-								.get_word(
-									*TransformationLibrary::get()
-										.book_pack_data
-										.addr
-										.get_word(FullAddr::from((
-											TransformationType::Reorientation,
-											camera_start
-										)))
-								)
-								.as_ref()
-								.pos
-								[
-									if input_state.toggles.alt_hemi {
-										InflatedPuzzleState::invert_position(default_position)
-									} else {
-										default_position
-									}
-								]
-								as usize,
-							(
-								1_i32
-									* if input_state.toggles.rotate_twice { 2_i32 } else { 1_i32 }
-									* if input_state.toggles.counter_clockwise { -1_i32 } else { 1_i32 }
-									+ PENTAGON_SIDE_COUNT as i32
-							)
-								as usize
-								% PENTAGON_SIDE_COUNT
+							input_state.toggles.transformation_type,
+							{
+								let toggles_half_addr: HalfAddr = input_state.toggles.half_addr(default_position);
+								let mut transformation_half_addr: HalfAddr = camera_start + toggles_half_addr;
+
+								if input_state.toggles.transformation_type.is_standard_rotation() {
+									transformation_half_addr.set_word_index(toggles_half_addr.get_word_index());
+								}
+
+								transformation_half_addr
+							}
 						).into();
 
 						input_state.action = Some((
 							Action::Transformation,
 							ActiveTransformationAction {
-								action: TransformationAction::new(
-									transformation,
-									camera_start,
-									(
-										&extended_puzzle_state.puzzle_state
-											+ TransformationLibrary::get()
-												.book_pack_data
-												.trfm
-												.get_word(transformation)
-									).standardization_half_addr()
-								),
+								action: TransformationAction::new(transformation, camera_start),
 								start,
 								duration: if preferences.speed.uniform_transformation_duration {
 									duration
 								} else {
-									duration * transformation.get_cycles()
+									duration * max(transformation.get_cycles(), 1_u32)
 								},
-								camera_orientation: if input_state.toggles.disable_recentering {
+								camera_orientation: if input_state.toggles.disable_recentering() {
 									None
 								} else {
 									Some(*camera_orientation)
@@ -574,8 +623,7 @@ impl InputPlugin {
 								ActiveTransformationAction {
 									action: TransformationAction::new(
 										FullAddr::default(),
-										camera_start,
-										HalfAddr::default()
+										camera_start
 									),
 									start,
 									duration,
@@ -602,7 +650,7 @@ impl InputPlugin {
 									} else {
 										duration * action.transformation().get_cycles()
 									},
-									camera_orientation: if input_state.toggles.disable_recentering {
+									camera_orientation: if input_state.toggles.disable_recentering() {
 										None
 									} else {
 										Some(*camera_orientation)
@@ -629,7 +677,7 @@ impl InputPlugin {
 									} else {
 										duration * action.transformation().get_cycles()
 									},
-									camera_orientation: if input_state.toggles.disable_recentering {
+									camera_orientation: if input_state.toggles.disable_recentering() {
 										None
 									} else {
 										Some(*camera_orientation)
