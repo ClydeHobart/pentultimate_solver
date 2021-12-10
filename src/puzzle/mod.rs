@@ -375,7 +375,10 @@ pub mod inflated {
 			let rot: &mut PuzzleStateComponent = &mut inflated_puzzle_state.rot;
 
 			for piece_index in PIECE_RANGE {
-				let deflated_piece_state: PieceStateComponent = deflated_puzzle_state.pieces[piece_index] as PieceStateComponent;
+				let deflated_piece_state: PieceStateComponent = deflated_puzzle_state
+					.pieces
+					[piece_index]
+					as PieceStateComponent;
 
 				pos[piece_index] = deflated_piece_state >> ROTATION_BIT_COUNT;
 				rot[piece_index] = deflated_piece_state & ROTATION_BIT_MASK;
@@ -384,20 +387,17 @@ pub mod inflated {
 			inflated_puzzle_state
 		}
 
-		pub fn standardization_half_addr(&self) -> HalfAddr {
-			self.half_addr(PENTAGON_INDEX_OFFSET)
-		}
+		pub fn standardization_half_addr(&self) -> HalfAddr { self.standardization_full_addr().get_half_addr() }
 
 		pub fn standardization_full_addr(&self) -> FullAddr {
-			self.full_addr(PENTAGON_INDEX_OFFSET)
+			self.full_addr(PENTAGON_INDEX_OFFSET).invert()
 		}
 
 		pub fn standardize(&mut self) -> () {
 			*self += TransformationLibrary::get()
 				.book_pack_data
 				.trfm
-				[TransformationType::Reorientation as usize]
-				.get_word(self.standardization_half_addr());
+				.get_word(self.standardization_full_addr());
 		}
 	}
 

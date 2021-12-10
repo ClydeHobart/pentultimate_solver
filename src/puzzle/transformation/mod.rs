@@ -104,7 +104,7 @@ impl Mask {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Type {
-	Reorientation,		// This transformation standardizes the puzzle state (reorients piece 0 to be at position 0 with rotation 0)
+	Reorientation,		// This transformation will spherically rotate the puzzle so that the origin orientation is at the indexed orientation
 	StandardRotation	// This transformation rotates one of the hemispherical halves about one of the 12 pentagonal pieces n fifth-rotations, where n is in [0, 5)
 }
 
@@ -144,7 +144,7 @@ pub trait HalfAddrConsts {
 	const ORIGIN:			HalfAddr;
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct HalfAddr(u8);
 
 impl HalfAddr {
@@ -183,6 +183,11 @@ impl HalfAddr {
 	}
 
 	#[inline(always)]
+	pub fn as_reorientation(self) -> FullAddr { FullAddr::from((Type::Reorientation, self)) }
+
+	pub fn invert(self) -> Self { self.as_reorientation().invert().get_half_addr() }
+
+	#[inline(always)]
 	unsafe fn get_line_index_unchecked(&self) -> usize {
 		self.0.get_bits(Self::LINE_INDEX_BITS) as usize
 	}
@@ -198,36 +203,6 @@ impl HalfAddrConsts for HalfAddr {
 	const LINE_INDEX_BITS:	Range<usize>	= 3_usize .. u8::BIT_LENGTH;
 	const WORD_INDEX_BITS:	Range<usize>	= 0_usize .. 3_usize;
 	const ORIGIN:			HalfAddr		= HalfAddr::new(0_usize, 0_usize);
-}
-
-impl Add for HalfAddr {
-	type Output = Self;
-
-	/// add()
-	/// 
-	/// `rhs`:
-	/// * Pre-completion of #21: an inverse Reorientation to apply to self (it's inverted internally to the function,
-	///   though)
-	/// * Post-completion of #21: a Reorientation to apply to self
-	fn add(self, rhs: Self) -> Self::Output {
-		if self.is_valid() && rhs.is_valid() {
-			let mut sum: HalfAddr = Library::get()
-				.book_pack_data
-				.trfm
-				.get_word(
-					FullAddr::from((
-						Type::Reorientation,
-						self
-					)).invert()
-				)
-				.as_ref()
-				.half_addr(rhs.get_line_index());
-	
-			*sum.set_word_index((sum.get_word_index() + rhs.get_word_index()) % Library::WORD_COUNT)
-		} else {
-			Self::default()
-		}
-	}
 }
 
 impl Add<FullAddr> for HalfAddr {
@@ -319,7 +294,7 @@ pub trait FullAddrConsts {
 	const INVALID_INDEX: u8;
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct FullAddr {
 	page_index:	u8,
 	half_addr:	HalfAddr
@@ -571,7 +546,7 @@ impl Action {
 	#[inline(always)]
 	pub fn camera_start(&self) -> &HalfAddr { &self.camera_start }
 	#[inline(always)]
-	pub fn standardization(&self) -> FullAddr { (Type::Reorientation, HalfAddr::ORIGIN + self.transformation).into() }
+	pub fn standardization(&self) -> FullAddr { (HalfAddr::ORIGIN + self.transformation).as_reorientation().invert() }
 
 	pub fn is_valid(&self) -> bool { self.transformation.is_valid() && self.camera_start.is_valid() }
 
@@ -586,27 +561,22 @@ impl Action {
 	pub fn invert(&self) -> Self {
 		if self.is_valid() {
 			if self.transformation.is_page_index_reorientation() {
-				let camera_start: HalfAddr = self.transformation.get_half_addr();
-				let transformation: FullAddr = FullAddr::from((Type::Reorientation, self.camera_start));
-				let inv_self: Self = Self::new(transformation, camera_start);
-
-				inv_self
-
+				Self::new(
+					self.camera_start.as_reorientation(),
+					self.transformation.get_half_addr()
+				)
 			} else {
-				let self_camera_end: HalfAddr = self.camera_end();
 				let self_standardization: FullAddr = self.standardization();
-				let camera_start: HalfAddr = self_camera_end + self_standardization;
 				let mut transformation: FullAddr = self.transformation.invert();
 				let transformation_word_index: usize = transformation.get_word_index();
-	
+
 				transformation.half_addr += self_standardization;
-	
+
 				if transformation.is_page_index_standard_rotation() {
 					transformation.set_word_index(transformation_word_index);
 				}
-	
-				let inv_self: Self = Self::new(transformation, camera_start);
-				inv_self
+
+				Self::new(transformation, self.camera_end() + self_standardization)
 			}
 		} else {
 			Self::default()
@@ -830,7 +800,7 @@ impl Library {
 				(&mut transformation_library.book_pack_data, &transformation_library.orientation_data);
 
 			{
-				let initial_pent_quat: Quat = icosidodecahedron_data.faces[PENTAGON_INDEX_OFFSET].quat;
+				let origin_conj_quat: Quat = icosidodecahedron_data.faces[PENTAGON_INDEX_OFFSET].quat.conjugate();
 				let reorientation_page_index: usize = Type::Reorientation as usize;
 
 				let mut page_pack_mut: PagePackMut = book_pack_data
@@ -838,8 +808,7 @@ impl Library {
 
 				page_pack_mut.iter_mut(|line_index: usize, mut line_pack_mut: LinePackMut| -> () {
 					line_pack_mut.iter_mut(|word_index: usize, word_pack_mut: WordPackMut| -> () {
-						let reorientation_quat: Quat = initial_pent_quat
-							* orientation_data[line_index][word_index].quat.conjugate();
+						let reorientation_quat: Quat = orientation_data[line_index][word_index].quat * origin_conj_quat;
 						let (pos_array, rot_array): (&mut PuzzleStateComponent, &mut PuzzleStateComponent) =
 							word_pack_mut.trfm.arrays_mut();
 
@@ -1089,10 +1058,73 @@ mod tests {
 					panic!();
 				}
 
-				let trfm:						&Trfm		= &word_pack.trfm;
+				let trfm:								&Trfm		= &word_pack.trfm;
 
-				let mut curr_puzzle_state:		PuzzleState	= prev_puzzle_state.clone();
-				let mut curr_puzzle_state_alt:	PuzzleState	= prev_puzzle_state.clone();
+				let standardization_full_addr:			FullAddr	= prev_puzzle_state.standardization_full_addr();
+
+				let mut curr_puzzle_state:				PuzzleState	= prev_puzzle_state.clone();
+				let mut curr_puzzle_state_alt:			PuzzleState	= prev_puzzle_state.clone();
+				let mut reoriented_solved_state:		PuzzleState = PuzzleState::SOLVED_STATE;
+				let mut reoriented_solved_state_alt:	PuzzleState = PuzzleState::SOLVED_STATE;
+
+				reoriented_solved_state += trfm;
+
+				if reoriented_solved_state.standardization_full_addr() != standardization_full_addr {
+					log::error!(
+						"Reoriented solved state's standardization address doesn't match what's expected after \
+							reorientation with pentagon {} and rotation {}",
+						line_index,
+						word_index
+					);
+					error_expr!(trfm, reoriented_solved_state, prev_puzzle_state);
+
+					panic!();
+				}
+
+				if !reoriented_solved_state.is_valid() {
+					log::error!(
+						"Puzzle state isn't valid after reorientation with pentagon {} and rotation {}",
+						line_index,
+						word_index
+					);
+					error_expr!(prev_puzzle_state, trfm, curr_puzzle_state);
+
+					panic!();
+				}
+
+				reoriented_solved_state_alt.naive_add_assign(trfm);
+
+				if reoriented_solved_state_alt != reoriented_solved_state {
+					log::error!(
+						"Reoriented puzzle state doesn't match the naively reoriented puzzle state with pentagon {} \
+							and rotation {}",
+						line_index,
+						word_index
+					);
+					error_expr!(trfm, reoriented_solved_state, reoriented_solved_state_alt);
+
+					panic!();
+				}
+
+				if standardization_full_addr != *word_pack.addr {
+					log::error!(
+						"Standardization address for current state doesn't match inverse address with pentagon {} \
+							and rotation {}",
+						line_index,
+						word_index
+					);
+					error_expr!(prev_puzzle_state, standardization_full_addr, word_pack.addr);
+
+					panic!();
+				}
+
+				// Reorientation was originally in the other direction, and the standardization check only works for the
+				// other direction, so just run the rest how the test was originally conducted
+
+				let word_pack: WordPack = Library::get()
+					.book_pack_data
+					.get_word_pack(standardization_full_addr);
+				let trfm: &Trfm = word_pack.trfm;
 
 				curr_puzzle_state += trfm;
 

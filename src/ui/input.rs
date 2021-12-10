@@ -281,7 +281,6 @@ impl ActiveTransformationAction {
 						&comprising_standard_rotations
 					) as f32;
 					let mut cycle_count: f32 = 0.0_f32;
-
 					let mut puzzle_state: InflatedPuzzleState = extended_puzzle_state.puzzle_state.clone();
 
 					for comprising_standard_rotation in &comprising_standard_rotations {
@@ -588,7 +587,7 @@ impl InputPlugin {
 							input_state.toggles.transformation_type,
 							{
 								let toggles_half_addr: HalfAddr = input_state.toggles.half_addr(default_position);
-								let mut transformation_half_addr: HalfAddr = camera_start + toggles_half_addr;
+								let mut transformation_half_addr: HalfAddr = toggles_half_addr + (TransformationType::Reorientation, camera_start).into();
 
 								if input_state.toggles.transformation_type.is_standard_rotation() {
 									transformation_half_addr.set_word_index(toggles_half_addr.get_word_index());
