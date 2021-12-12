@@ -6,7 +6,6 @@ use {
 		preferences::Update,
 		puzzle::transformation::TYPE_COUNT
 	},
-	std::mem::transmute,
 	bevy::{
 		prelude::*,
 		app::CoreStage,
@@ -143,10 +142,7 @@ impl UIPlugin {
 						Color32::GRAY
 					};
 
-					ui.label(format!(
-						"{:?}",
-						unsafe { transmute::<u8, TransformationType>(transformation_type_u8) }
-					));
+					ui.label(format!("{:?}", TransformationType::try_from(transformation_type_u8).unwrap()));
 				}
 			});
 

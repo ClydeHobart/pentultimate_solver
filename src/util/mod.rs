@@ -257,6 +257,8 @@ pub fn untracked_ref_mut<T>(reference: &mut T) -> &'static mut T {
 	unsafe { (reference as *mut T as usize as *mut T).as_mut() }.unwrap()
 }
 
+#[macro_export]
+macro_rules! max { ($a:expr, $b:expr) => { if $a > $b { $a } else { $b } } }
 
 #[cfg(test)]
 mod tests {

@@ -273,22 +273,22 @@ impl ActiveTransformationAction {
 		match self.s_now() {
 			Some(s) => {
 				if self.action.transformation().is_valid() {
-					let comprising_standard_rotations: Vec<HalfAddr> = self
+					let comprising_simples: Vec<HalfAddr> = self
 						.action
 						.transformation()
-						.get_comprising_standard_rotations();
-					let total_cycles: f32 = FullAddr::get_cycles_for_comprising_standard_rotations(
-						&comprising_standard_rotations
+						.get_comprising_simples();
+					let total_cycles: f32 = FullAddr::get_cycles_for_comprising_simples(
+						&comprising_simples
 					) as f32;
 					let mut cycle_count: f32 = 0.0_f32;
 					let mut puzzle_state: InflatedPuzzleState = extended_puzzle_state.puzzle_state.clone();
 
-					for comprising_standard_rotation in &comprising_standard_rotations {
-						let comprising_standard_rotation: FullAddr = (
-							TransformationType::StandardRotation,
-							*comprising_standard_rotation
+					for comprising_simple in &comprising_simples {
+						let comprising_simple: FullAddr = (
+							TransformationType::Simple,
+							*comprising_simple
 						).into();
-						let cycles: f32 = comprising_standard_rotation.get_cycles() as f32;
+						let cycles: f32 = comprising_simple.get_cycles() as f32;
 						let s: f32 = s * total_cycles;
 
 						if cycles == 0.0_f32 {
@@ -297,12 +297,12 @@ impl ActiveTransformationAction {
 							puzzle_state += TransformationLibrary::get()
 								.book_pack_data
 								.trfm
-								.get_word(comprising_standard_rotation);
+								.get_word(comprising_simple);
 							cycle_count += cycles;
 						} else {
 							let word_pack: WordPack = TransformationLibrary::get()
 								.book_pack_data
-								.get_word_pack(comprising_standard_rotation);
+								.get_word_pack(comprising_simple);
 							let rotation: Quat = Quat::IDENTITY.short_slerp(*word_pack.quat, 
 								(s - cycle_count) / cycles
 							);
@@ -441,7 +441,7 @@ impl Default for InputToggles {
 			counter_clockwise:		false,
 			alt_hemi:				false,
 			disable_recentering:	false,
-			transformation_type:	TransformationType::StandardRotation
+			transformation_type:	TransformationType::Simple
 		}
 	}
 }
@@ -587,9 +587,10 @@ impl InputPlugin {
 							input_state.toggles.transformation_type,
 							{
 								let toggles_half_addr: HalfAddr = input_state.toggles.half_addr(default_position);
-								let mut transformation_half_addr: HalfAddr = toggles_half_addr + (TransformationType::Reorientation, camera_start).into();
+								let mut transformation_half_addr: HalfAddr = toggles_half_addr
+									+ camera_start.as_reorientation();
 
-								if input_state.toggles.transformation_type.is_standard_rotation() {
+								if input_state.toggles.transformation_type.is_simple() {
 									transformation_half_addr.set_word_index(toggles_half_addr.get_word_index());
 								}
 
