@@ -342,6 +342,19 @@ impl HalfAddrConsts for HalfAddr {
 impl Add<FullAddr> for HalfAddr {
 	type Output = Self;
 
+	/// # `add()`
+	/// 
+	/// Transform an orientation to where a transformation maps it to
+	/// 
+	/// ## Params
+	/// 
+	/// * `self`: an orientation `HalfAddr`
+	/// * `rhs`: a transformation `FullAddr`
+	/// 
+	/// ## Returns
+	/// 
+	/// The resultant orientation `HalfAddr` representing where the `self` orientation is mapped to after performing
+	/// the `rhs` transformation.
 	fn add(self, rhs: FullAddr) -> Self::Output {
 		if self.is_valid() && rhs.is_valid() {
 			let mut sum: HalfAddr = Library::get()
@@ -502,7 +515,7 @@ impl FullAddr {
 					vec![]
 				},
 				Type::Simple => {
-					vec![self.get_half_addr()]
+					vec![*self.get_half_addr()]
 				},
 				_ => {
 					self.get_comprising_simples_for_comprising_simples_data(&Library::get().comprising_simples_data)
@@ -518,22 +531,22 @@ impl FullAddr {
 		comprising_simples_data: &ComprisingSimplesData
 	) -> Vec<HalfAddr> {
 		if self.is_valid() {
-			let page_index_type: Type = self.get_page_index_type().unwrap();
-			let reorientation: Self = self.get_half_addr().as_reorientation();
-			let mut comprising_simples: Vec<HalfAddr> = comprising_simples_data[page_index_type].to_vec();
+			let reorientation: HalfAddr = *self.get_half_addr();
 
-			for comprising_simple in &mut comprising_simples {
-				*comprising_simple = *comprising_simple + reorientation;
-			}
-
-			comprising_simples
+			comprising_simples_data
+				[self.get_page_index_type().unwrap()]
+				.iter()
+				.map(|comprising_simple| -> HalfAddr {
+					*(Self::from((Type::Simple, *comprising_simple)) + reorientation).get_half_addr()
+				})
+				.collect()
 		} else {
 			Vec::<HalfAddr>::new()
 		}
 	}
 
 	#[inline(always)]
-	pub fn get_half_addr(&self) -> HalfAddr { self.half_addr }
+	pub fn get_half_addr(&self) -> &HalfAddr { &self.half_addr }
 
 	pub fn set_half_addr(&mut self, half_addr: HalfAddr) -> &mut FullAddr {
 		assert!(self.half_addr_is_valid());
@@ -572,7 +585,7 @@ impl FullAddr {
 			(
 				page_index_type.mirror(),
 				if page_index_type.is_complex() {
-					self.get_half_addr()
+					*self.get_half_addr()
 				} else {
 
 					HalfAddr::new(
@@ -583,6 +596,14 @@ impl FullAddr {
 			).into()
 		} else {
 			Self::default()
+		}
+	}
+
+	pub fn is_identity_transformation(self) -> bool {
+		match self.get_page_index_type() {
+			Some(Type::Reorientation)	=> *self.get_half_addr() == HalfAddr::ORIGIN,
+			Some(Type::Simple)			=> self.get_word_index() == 0_usize,
+			_							=> false
 		}
 	}
 
@@ -607,6 +628,36 @@ impl FullAddr {
 	#[inline(always)]
 	unsafe fn get_page_index_unchecked(&self) -> usize {
 		self.page_index as usize
+	}
+}
+
+impl Add<HalfAddr> for FullAddr {
+	type Output = Self;
+
+	/// `add()`
+	/// 
+	/// Reorient a transformation
+	/// 
+	/// ## Params
+	/// 
+	/// * `self`: a transformation `FullAddr`
+	/// * `rhs`: a Reorientation `HalfAddr`
+	/// 
+	/// ## Returns
+	/// 
+	/// The resultant transformation after applying the `rhs.as_reorientation()` transformation. This differs from `{
+	/// self.half_addr += rhs; self }` because Simple transformations don't have their word indices affected by
+	/// reorientations.
+	fn add(self, rhs: HalfAddr) -> Self::Output {
+		let mut sum: Self = self;
+
+		sum.half_addr += rhs.as_reorientation();
+
+		if self.is_page_index_simple() {
+			sum.set_word_index(self.get_word_index());
+		}
+
+		sum
 	}
 }
 
@@ -750,7 +801,7 @@ impl Action {
 
 	pub fn camera_end(&self) -> HalfAddr {
 		if self.transformation.is_page_index_reorientation() {
-			self.transformation.get_half_addr()
+			*self.transformation.get_half_addr()
 		} else {
 			self.camera_start
 		}
@@ -761,7 +812,7 @@ impl Action {
 			if self.transformation.is_page_index_reorientation() {
 				Self::new(
 					self.camera_start.as_reorientation(),
-					self.transformation.get_half_addr()
+					*self.transformation.get_half_addr()
 				)
 			} else {
 				let self_standardization: FullAddr = self.standardization();

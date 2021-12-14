@@ -1,5 +1,3 @@
-use crate::puzzle::transformation::Addr;
-
 use {
 	crate::{
 		prelude::*,
@@ -11,6 +9,7 @@ use {
 			},
 			Polyhedron
 		},
+		preferences::SpeedData,
 		puzzle::{
 			consts::*,
 			transformation::{
@@ -210,6 +209,7 @@ define_struct_with_default!(
 		pub redo:							KeyCode									= bkc!(Right),
 		pub cycle_transformation_type_up:	KeyCode									= bkc!(Up),
 		pub cycle_transformation_type_down:	KeyCode									= bkc!(Down),
+		pub enable_modifiers:				KeyCode									= bkc!(E),
 		pub rotate_twice:					KeyCode									= bkc!(D),
 		pub counter_clockwise:				KeyCode									= bkc!(S),
 		pub alt_hemi:						KeyCode									= bkc!(A),
@@ -218,10 +218,10 @@ define_struct_with_default!(
 );
 
 pub struct ActiveTransformationAction {
-	pub action:				TransformationAction,
-	start:					Instant,
-	duration:				Duration,
-	pub camera_orientation:	Option<Quat>
+	pub transformation_action:	TransformationAction,
+	start:						Instant,
+	duration:					Duration,
+	pub camera_orientation:		Option<Quat>
 }
 
 impl ActiveTransformationAction {
@@ -252,29 +252,20 @@ impl ActiveTransformationAction {
 			Query<(&PieceComponent, &mut Transform)>
 		)>
 	) -> bool {
-		let end_quat: Quat = if warn_expect!(self.action.camera_start().is_valid()) {
+		let end_quat: Quat = if warn_expect!(self.transformation_action.camera_start().is_valid()) {
 			TransformationLibrary::get()
 				.orientation_data
-				.get_word(self.action.camera_end())
+				.get_word(self.transformation_action.camera_end())
 				.quat
 		} else {
 			Quat::IDENTITY
 		};
-		// let word_pack: Option<WordPack> = if self.action.transformation().is_valid() {
-		// 	Some(
-		// 		TransformationLibrary::get()
-		// 			.book_pack_data
-		// 			.get_word_pack(*self.action.transformation())
-		// 	)
-		// } else {
-		// 	None
-		// };
 
 		match self.s_now() {
 			Some(s) => {
-				if self.action.transformation().is_valid() {
+				if self.transformation_action.transformation().is_valid() {
 					let comprising_simples: Vec<HalfAddr> = self
-						.action
+						.transformation_action
 						.transformation()
 						.get_comprising_simples();
 					let total_cycles: f32 = FullAddr::get_cycles_for_comprising_simples(
@@ -306,7 +297,6 @@ impl ActiveTransformationAction {
 							let rotation: Quat = Quat::IDENTITY.short_slerp(*word_pack.quat, 
 								(s - cycle_count) / cycles
 							);
-							let puzzle_state: &InflatedPuzzleState = &extended_puzzle_state.puzzle_state;
 		
 							for (piece_component, mut transform) in queries
 								.q1_mut()
@@ -335,7 +325,7 @@ impl ActiveTransformationAction {
 
 				if let Some(camera_orientation) = self.camera_orientation {
 					if let Some((_, mut transform)) = queries.q0_mut().iter_mut().next() {
-						if self.action.camera_start().is_valid() {
+						if self.transformation_action.camera_start().is_valid() {
 							transform.rotation = camera_orientation.short_slerp(end_quat, s);
 						}
 					}
@@ -346,13 +336,13 @@ impl ActiveTransformationAction {
 			None => {
 				let mut standardization_word_pack_option: Option<WordPack> = None;
 
-				if self.action.transformation().is_valid() {
+				if self.transformation_action.transformation().is_valid() {
 					let transformation_word_pack: WordPack = TransformationLibrary::get()
 						.book_pack_data.
-						get_word_pack(*self.action.transformation());
+						get_word_pack(*self.transformation_action.transformation());
 					let standardization_word_pack: WordPack = TransformationLibrary::get()
 						.book_pack_data
-						.get_word_pack(self.action.standardization());
+						.get_word_pack(self.transformation_action.standardization());
 
 					*extended_puzzle_state += transformation_word_pack.trfm;
 					*extended_puzzle_state += standardization_word_pack.trfm;
@@ -370,12 +360,12 @@ impl ActiveTransformationAction {
 							.quat;
 					}
 
-					if !self.action.transformation().is_page_index_reorientation() {
+					if !self.transformation_action.transformation().is_page_index_reorientation() {
 						standardization_word_pack_option = Some(standardization_word_pack);
 					}
 				}
 
-				if self.action.camera_start().is_valid() {
+				if self.transformation_action.camera_start().is_valid() {
 					if let Some((_, mut transform)) = queries.q0_mut().iter_mut().next() {
 						transform.rotation = standardization_word_pack_option.map_or(
 							Quat::IDENTITY,
@@ -396,6 +386,7 @@ impl ActiveTransformationAction {
 
 #[derive(Clone, Copy)]
 pub struct InputToggles {
+	pub enable_modifiers:				bool,
 	pub rotate_twice:					bool,
 	pub counter_clockwise:				bool,
 	pub alt_hemi:						bool,
@@ -417,7 +408,7 @@ impl InputToggles {
 	}
 
 	fn word_index(&self) -> usize {
-		if !self.transformation_type.is_reorientation() || self.disable_recentering {
+		if self.enable_modifiers {
 			(
 				1_i32
 					* if self.rotate_twice { 2_i32 } else { 1_i32 }
@@ -430,13 +421,12 @@ impl InputToggles {
 			0_usize
 		}
 	}
-
-	fn disable_recentering(&self) -> bool { self.disable_recentering && !self.transformation_type.is_reorientation() }
 }
 
 impl Default for InputToggles {
 	fn default() -> Self {
 		Self {
+			enable_modifiers:		true,
 			rotate_twice:			false,
 			counter_clockwise:		false,
 			alt_hemi:				false,
@@ -447,6 +437,7 @@ impl Default for InputToggles {
 }
 
 pub enum Action {
+	RecenterCamera,
 	Transformation,
 	Undo,
 	Redo
@@ -469,10 +460,10 @@ impl InputPlugin {
 		view:						Res<View>,
 		time:						Res<Time>,
 		preferences:				Res<Preferences>,
+		camera_component_query:		Query<(&CameraComponent, &Transform)>,
 		mut mouse_motion_events:	EventReader<MouseMotion>,
 		mut mouse_wheel_events:		EventReader<MouseWheel>,
-		mut input_state:			ResMut<InputState>,
-		mut camera_component_query:	Query<(&mut CameraComponent, &Transform)>
+		mut input_state:			ResMut<InputState>
 	) -> () {
 		if !matches!(*view, View::Main) {
 			input_state.camera_rotation = Quat::IDENTITY;
@@ -489,6 +480,7 @@ impl InputPlugin {
 			}
 		}
 
+		check_toggle!(enable_modifiers);
 		check_toggle!(rotate_twice);
 		check_toggle!(counter_clockwise);
 		check_toggle!(alt_hemi);
@@ -566,137 +558,129 @@ impl InputPlugin {
 
 		match &mut input_state.action {
 			None => {
-				let mut default_position: Option<usize> = None;
-
-				for (index, key_code) in input_data.rotation_keys.iter().enumerate() {
-					if keyboard_input.just_pressed((*key_code).into()) {
-						default_position = Some(input_data.default_positions[index]);
-
-						break;
-					}
-				}
-
-				let camera_orientation: &Quat = &log_option_none!(camera_component_query.iter_mut().next()).1.rotation;
-				let camera_start: HalfAddr = CameraPlugin::compute_camera_addr(camera_orientation);
-				let start: Instant = Instant::now();
-				let duration: Duration = Duration::from_millis(preferences.speed.rotation_millis as u64);
-
-				match default_position {
-					Some(default_position) => {
-						let transformation: FullAddr = (
-							input_state.toggles.transformation_type,
-							{
-								let toggles_half_addr: HalfAddr = input_state.toggles.half_addr(default_position);
-								let mut transformation_half_addr: HalfAddr = toggles_half_addr
-									+ camera_start.as_reorientation();
-
-								if input_state.toggles.transformation_type.is_simple() {
-									transformation_half_addr.set_word_index(toggles_half_addr.get_word_index());
-								}
-
-								transformation_half_addr
-							}
-						).into();
-
-						input_state.action = Some((
-							Action::Transformation,
-							ActiveTransformationAction {
-								action: TransformationAction::new(transformation, camera_start),
-								start,
-								duration: if preferences.speed.uniform_transformation_duration {
-									duration
-								} else {
-									duration * max(transformation.get_cycles(), 1_u32)
-								},
-								camera_orientation: if input_state.toggles.disable_recentering() {
-									None
-								} else {
-									Some(*camera_orientation)
-								}
-							}
-						));
-					},
-					None => {
-						if keyboard_input.just_pressed(input_data.recenter_camera.into()) {
-							input_state.action = Some((
-								Action::Transformation,
-								ActiveTransformationAction {
-									action: TransformationAction::new(
-										FullAddr::default(),
-										camera_start
-									),
-									start,
-									duration,
-									camera_orientation: Some(*camera_orientation)
-								}
-							));
-						} else if keyboard_input.just_pressed(input_data.undo.into())
-							&& extended_puzzle_state.curr_action >= 0_i32
-						{
-							let action: TransformationAction = extended_puzzle_state
-								.actions
-								[extended_puzzle_state.curr_action as usize]
-								.invert();
-
-							input_state.action = Some((
-								Action::Undo,
-								ActiveTransformationAction {
-									action,
-									start,
-									duration: if !preferences.speed.animate_undo_and_redo {
-										Duration::ZERO
-									} else if preferences.speed.uniform_transformation_duration {
-										duration
-									} else {
-										duration * action.transformation().get_cycles()
-									},
-									camera_orientation: if input_state.toggles.disable_recentering() {
-										None
-									} else {
-										Some(*camera_orientation)
-									}
-								}
-							));
-						} else if keyboard_input.just_pressed(input_data.redo.into())
-							&& ((extended_puzzle_state.curr_action + 1_i32) as usize)
-							< extended_puzzle_state.actions.len()
-						{
-							let action: TransformationAction = extended_puzzle_state
-								.actions
-								[(extended_puzzle_state.curr_action + 1_i32) as usize];
-
-							input_state.action = Some((
-								Action::Redo,
-								ActiveTransformationAction {
-									action,
-									start,
-									duration: if !preferences.speed.animate_undo_and_redo {
-										Duration::ZERO
-									} else if preferences.speed.uniform_transformation_duration {
-										duration
-									} else {
-										duration * action.transformation().get_cycles()
-									},
-									camera_orientation: if input_state.toggles.disable_recentering() {
-										None
-									} else {
-										Some(*camera_orientation)
-									}
-								}
-							));
-						}
-					}
-				}
+				Self::update_action(
+					&extended_puzzle_state,
+					&keyboard_input,
+					&preferences,
+					&camera_component_query,
+					&mut input_state
+				);
 			},
-			Some((_, active_transformation_action)) => {
+			Some((action, active_transformation_action)) => {
 				if rolled_or_panned {
-					// Cancel active camera movement
-					active_transformation_action.camera_orientation = None;
+					if matches!(*action, Action::RecenterCamera) {
+						/* If the whole purpose of the current active transformation action is to recenter the camera,
+						which we no longer wish to do, end the active transformation action entirely */
+						input_state.action = None;
+					} else {
+						// Cancel active camera movement
+						active_transformation_action.camera_orientation = None;
+					}
 				}
 			}
 		}
 
 		input_state.toggles = toggles;
+	}
+
+	fn update_action(
+		extended_puzzle_state:		&ExtendedPuzzleState,
+		keyboard_input:				&Input<BevyKeyCode>,
+		preferences:				&Preferences,
+		camera_component_query:		&Query<(&CameraComponent, &Transform)>,
+		input_state:				&mut InputState
+	) -> () {
+		let input_data:				&InputData		= &preferences.input;
+		let speed_data:				&SpeedData		= &preferences.speed;
+		let mut action:				Option<Action>	= None;
+		let mut default_position:	Option<usize>	= None;
+
+		for (index, key_code) in input_data.rotation_keys.iter().enumerate() {
+			if keyboard_input.just_pressed((*key_code).into()) {
+				action = Some(Action::Transformation);
+				default_position = Some(input_data.default_positions[index]);
+
+				break;
+			}
+		}
+
+		if action.is_none() {
+			if keyboard_input.just_pressed(input_data.recenter_camera.into()) {
+				action = Some(Action::RecenterCamera);
+			} else if keyboard_input.just_pressed(input_data.undo.into())
+				&& extended_puzzle_state.curr_action >= 0_i32
+			{
+				action = Some(Action::Undo);
+			} else if keyboard_input.just_pressed(input_data.redo.into())
+				&& ((extended_puzzle_state.curr_action + 1_i32) as usize)
+				< extended_puzzle_state.actions.len()
+			{
+				action = Some(Action::Redo);
+			}
+		}
+
+		if let Some(action) = action {
+			let camera_orientation: &Quat = &log_option_none!(camera_component_query.iter().next()).1.rotation;
+			let camera_start: HalfAddr = CameraPlugin::compute_camera_addr(camera_orientation);
+			let recenter_camera: bool = matches!(action, Action::RecenterCamera);
+			let transformation_action: TransformationAction = match action {
+				Action::RecenterCamera => TransformationAction::new(
+					FullAddr::default(),
+					camera_start
+				),
+				Action::Transformation => TransformationAction::new(
+					FullAddr::from((
+						input_state.toggles.transformation_type,
+						input_state
+							.toggles
+							.half_addr(default_position.unwrap())
+					)) + camera_start,
+					camera_start
+				),
+				Action::Undo => extended_puzzle_state
+					.actions
+					[extended_puzzle_state.curr_action as usize]
+					.invert(),
+				Action::Redo => extended_puzzle_state
+					.actions
+					[(extended_puzzle_state.curr_action + 1_i32) as usize]
+			};
+
+			if !info_expect!(transformation_action.is_valid()
+				&& !transformation_action.transformation().is_identity_transformation()
+			) {
+				return;
+			}
+
+			let start: Instant = Instant::now();
+			let duration: Duration = if matches!(action, Action::Undo | Action::Redo)
+				&& !speed_data.animate_undo_and_redo
+			{
+				Duration::ZERO
+			} else {
+				Duration::from_millis(speed_data.rotation_millis as u64)
+					* if speed_data.uniform_transformation_duration || recenter_camera {
+						1_u32
+					} else {
+						max(transformation_action.transformation().get_cycles(), 1_u32)
+					}
+			};
+			let camera_orientation: Option<Quat> = if recenter_camera || !input_state.toggles.disable_recentering {
+				Some(*camera_orientation)
+			} else {
+				None
+			};
+
+			input_state.action = Some((
+				action,
+				ActiveTransformationAction {
+					transformation_action,
+					start,
+					duration,
+					camera_orientation
+				}
+			));
+		}
 	}
 }
 

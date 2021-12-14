@@ -387,7 +387,7 @@ pub mod inflated {
 			inflated_puzzle_state
 		}
 
-		pub fn standardization_half_addr(&self) -> HalfAddr { self.standardization_full_addr().get_half_addr() }
+		pub fn standardization_half_addr(&self) -> HalfAddr { *self.standardization_full_addr().get_half_addr() }
 
 		pub fn standardization_full_addr(&self) -> FullAddr {
 			self.full_addr(PENTAGON_INDEX_OFFSET).invert()
@@ -650,13 +650,13 @@ impl PuzzlePlugin {
 			) {
 				match *action {
 					InputAction::Transformation => {
-						if active_transformation_action.action.transformation().is_valid() {
+						if warn_expect!(active_transformation_action.transformation_action.transformation().is_valid()) {
 							extended_puzzle_state.curr_action += 1_i32;
 	
 							let len: usize = extended_puzzle_state.curr_action as usize;
 	
 							extended_puzzle_state.actions.truncate(len);
-							extended_puzzle_state.actions.push(active_transformation_action.action);
+							extended_puzzle_state.actions.push(active_transformation_action.transformation_action);
 						}
 					},
 					InputAction::Undo => {
@@ -664,7 +664,8 @@ impl PuzzlePlugin {
 					},
 					InputAction::Redo => {
 						extended_puzzle_state.curr_action += 1_i32;
-					}
+					},
+					_ => {}
 				}
 
 				input_state.action = None;

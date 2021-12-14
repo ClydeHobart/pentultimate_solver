@@ -118,17 +118,11 @@ impl UIPlugin {
 						}
 					}
 
+					modifier_row!(enable_modifiers,		"Enable Modifiers");
 					modifier_row!(rotate_twice,			"Rotate Twice");
 					modifier_row!(counter_clockwise,	"Counter Clockwise");
 					modifier_row!(alt_hemi,				"Alt. Hemi.");
-					modifier_row!(
-						disable_recentering,
-						if matches!(toggles.transformation_type, TransformationType::Reorientation) {
-							"Enable Modifiers"
-						} else {
-							"Disable Recentering"
-						}
-					);
+					modifier_row!(disable_recentering,	"Disable Recentering");
 
 					ui.end_row();
 				});
