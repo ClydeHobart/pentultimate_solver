@@ -41,3 +41,6 @@ default = ["const_fn_floating_point_arithmetic", "io_read_to_string"]
 [[bench]]
 name = "criterion_benchmarks"
 harness = false
+
+[profile.dev]
+opt-level = 0

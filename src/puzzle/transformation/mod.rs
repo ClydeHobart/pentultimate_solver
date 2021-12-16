@@ -28,7 +28,8 @@ use {
 		fmt::{
 			Debug,
 			Error,
-			Formatter
+			Formatter,
+			Write
 		},
 		iter::{
 			DoubleEndedIterator,
@@ -41,8 +42,6 @@ use {
 		ops::{
 			Add,
 			AddAssign,
-			Index,
-			IndexMut,
 			Neg,
 			Range
 		},
@@ -127,6 +126,55 @@ impl From<&Transformation> for Mask {
 	}
 }
 
+enum ComplexClass {
+	Complex1,
+	Complex2,
+	Complex3
+}
+
+const COMPLEX_CLASS_COUNT: usize = 3_usize;
+
+impl ComplexClass {
+	const fn is_invert_not_mirror(self) -> bool {
+		match self {
+			Self::Complex1 => false,
+			Self::Complex2 => false,
+			Self::Complex3 => true
+		}
+	}
+
+	const fn comprising_simples(self) -> &'static [HalfAddr] {
+		macro_rules! ha { ($line_index:expr, $word_index:expr) => { HalfAddr::new($line_index, $word_index) } }
+		const COMPRISING_SIMPLES_LUT: [&[HalfAddr]; COMPLEX_CLASS_COUNT] = [
+			&[
+				ha!(10,	4),	ha!(8,	1),	ha!(10,	1),	ha!(8,	4)
+			],
+			&[
+				ha!(10,	4),	ha!(8,	1),	ha!(10,	1),	ha!(8,	4),
+				ha!(10,	4),	ha!(8,	1),	ha!(10,	1),	ha!(8,	4)
+			],
+			&[
+				ha!(8,	3),	ha!(7,	2),	ha!(8,	2),	ha!(7,	3),
+				ha!(8,	3),	ha!(7,	2),	ha!(8,	2),	ha!(7,	3),
+				ha!(8,	3),	ha!(7,	2),	ha!(8,	2),	ha!(7,	3),
+				ha!(1,	3),	ha!(3,	3),	ha!(7,	2),	ha!(3,	2),
+				ha!(1,	3),	ha!(6,	3),	ha!(1,	2),	ha!(3,	2),
+				ha!(6,	3),	ha!(3,	3),	ha!(1,	2),	ha!(7,	2),
+			]
+		];
+
+		COMPRISING_SIMPLES_LUT[self as usize]
+	}
+
+	const fn invert_bit(self) -> u8 { if self.is_invert_not_mirror() { 2_u8 } else { 1_u8 } }
+
+	const fn mirror(self, sub_type: u8) -> u8 { (sub_type - COMPLEX_OFFSET as u8 ^ 1_u8) + COMPLEX_OFFSET as u8 }
+
+	const fn invert(self, sub_type: u8) -> u8 {
+		(sub_type - COMPLEX_OFFSET as u8 ^ self.invert_bit()) + COMPLEX_OFFSET as u8
+	}
+}
+
 macro_rules! list_type {
 	($macro:path) => {
 		$macro!(
@@ -134,12 +182,12 @@ macro_rules! list_type {
 			Simple,			// This rotates the hemispherical halves about the pentagonal piece `line_index` `word_index` fifth-rotations
 			Complex1A,		// This swaps two pairs of pentagons. No guarantees are made for triangles. PuzzleState.pos: [0, 1, _, _, 4, 5, ...] -> [1, 0, _, _, 5, 4, ...]
 			Complex1B,		// This is Complex1A mirrored
-			Complex1C,		// This is Complex1A inverted
-			Complex1D,		// This is Complex1B inverted
 			Complex2A,		// This is Complex1A performed twice, effectively rotating two pairs of pentagons opposite directions. PuzzleState.rot: [0, 0, _, _, 0, 0, ...] -> [4, 4, _, _, 1, 1, ...]
 			Complex2B,		// This is Complex2A mirrored
-			Complex2C,		// This is Complex2A inverted
-			Complex2D,		// This is Complex2B inverted
+			Complex3A,		// This cycles the positions of 3 triangles, while changing the rotations of 2 of them. Pentagons are left untouched.
+			Complex3B,		// This is Complex3A mirrored
+			Complex3C,		// This is Complex3A inverted
+			Complex3D,		// This is Complex3B inverted
 		);
 	}
 }
@@ -172,27 +220,21 @@ macro_rules! define_type {
 
 		#[allow(non_snake_case)]
 		struct ComprisingSimplesData {
-			$($variant: [HalfAddr; Type::$variant.comprising_simples_len()],)*
+			$($variant: Page<[HalfAddr; Type::$variant.comprising_simples_len()]>,)*
 		}
 
-		impl Index<Type> for ComprisingSimplesData {
-			type Output = [HalfAddr];
-
-			fn index(&self, index: Type) -> &Self::Output {
-				match index {
-					$(
-						Type::$variant => &self.$variant,
-					)*
+		impl GetWord<FullAddr, [HalfAddr]> for ComprisingSimplesData {
+			fn get_word(&self, addr: FullAddr) -> &Word<[HalfAddr]> {
+				match addr.get_page_index_type() {
+					$(Some(Type::$variant) => { self.$variant.get_word(*addr.get_half_addr()) }),*
+					None => { panic!("ComprisingSimplesData::get_word() called with addr {:?}", addr); }
 				}
 			}
-		}
 
-		impl IndexMut<Type> for ComprisingSimplesData {
-			fn index_mut(&mut self, index: Type) -> &mut Self::Output {
-				match index {
-					$(
-						Type::$variant => &mut self.$variant,
-					)*
+			fn get_word_mut(&mut self, addr: FullAddr) -> &mut Word<[HalfAddr]> {
+				match addr.get_page_index_type() {
+					$(Some(Type::$variant) => { self.$variant.get_word_mut(*addr.get_half_addr()) }),*
+					None => { panic!("ComprisingSimplesData::get_word_mut() called with addr {:?}", addr); }
 				}
 			}
 		}
@@ -218,33 +260,65 @@ impl Type {
 	pub const fn invert(self) -> Self { unsafe { transmute::<u8, Self>(TYPE_INVERT_LUT[self as usize]) } }
 
 	#[inline]
-	pub const fn is_mirrored(self) -> bool { self.is_complex() && (self as u8 - COMPLEX_OFFSET as u8) & 1_u8 != 0_u8 }
+	pub const fn is_mirrored(self) -> bool {
+		self.is_complex() && (self as u8 - COMPLEX_OFFSET as u8) & 1_u8 != 0_u8
+	}
 
-	#[inline]
-	pub const fn is_inverted(self) -> bool { self.is_complex() && (self as u8 - COMPLEX_OFFSET as u8) & 2_u8 != 0_u8 }
+	pub const fn is_inverted(self) -> bool {
+		match self.complex_class() {
+			Some(complex_class) =>
+				(self as u8 - COMPLEX_OFFSET as u8) & complex_class.invert_bit() != 0_u8,
+			None => false
+		}
+	}
+
+	pub const fn is_invert_not_mirror(self) -> bool {
+		match self.complex_class() {
+			Some(complex_class) => complex_class.is_invert_not_mirror(),
+			None => false
+		}
+	}
 
 	const fn mirror_variant(self) -> u8 {
-		if self.is_complex() { ((self as u8 - COMPLEX_OFFSET as u8) ^ 1_u8) + COMPLEX_OFFSET as u8 } else { self as u8 }
+		if let Some(complex_class) = self.complex_class() {
+			complex_class.mirror(self as u8)
+		} else {
+			self as u8
+		}
 	}
 
 	const fn invert_variant(self) -> u8 {
-		if self.is_complex() { ((self as u8 - COMPLEX_OFFSET as u8) ^ 2_u8) + COMPLEX_OFFSET as u8 } else { self as u8 }
+		if let Some(complex_class) = self.complex_class() {
+			complex_class.invert(self as u8)
+		} else {
+			self as u8
+		}
 	}
 
-	const fn comprising_simples_class(transformation_type: usize) -> usize {
-		transformation_type - COMPLEX_OFFSET >> 2_usize
+	const fn complex_class(self) -> Option<ComplexClass> {
+		macro_rules! map_to_class {
+			($($($type_variant:ident)|* => $class_variant:ident),*) => {
+				match self {
+					$(
+						$(Self::$type_variant)|* => Some(ComplexClass::$class_variant),
+					)*
+					_ => None
+				}
+			}
+		}
+
+		map_to_class!(
+			Complex1A | Complex1B							=> Complex1,
+			Complex2A | Complex2B							=> Complex2,
+			Complex3A | Complex3B | Complex3C | Complex3D	=> Complex3
+		)
 	}
 
 	const fn comprising_simples_len(self) -> usize {
-		if self.is_complex() {
-			const CLASS_COMPRISING_SIMPLES_LEN_LUT: [u8; Type::comprising_simples_class(TYPE_COUNT)] = [
-				4_u8,
-				8_u8
-			];
-
-			CLASS_COMPRISING_SIMPLES_LEN_LUT
-				[Type::comprising_simples_class(self as usize)]
-				as usize
+		if let Some(complex_class) = self.complex_class() {
+			complex_class.comprising_simples().len()
+		} else if self.is_simple() {
+			1_usize
 		} else {
 			0_usize
 		}
@@ -497,7 +571,7 @@ impl FullAddr {
 		}
 	}
 
-	pub fn get_cycles_for_comprising_simples(comprising_simples: &Vec<HalfAddr>) -> u32 {
+	pub fn get_cycles_for_comprising_simples(comprising_simples: &[HalfAddr]) -> u32 {
 		comprising_simples
 			.iter()
 			.map(|half_addr: &HalfAddr| -> u32 {
@@ -508,41 +582,38 @@ impl FullAddr {
 			.sum()
 	}
 
-	pub fn get_comprising_simples(self) -> Vec<HalfAddr> {
-		if let Some(page_index_type) = self.get_page_index_type() {
-			match page_index_type {
-				Type::Reorientation => {
-					vec![]
-				},
-				Type::Simple => {
-					vec![*self.get_half_addr()]
-				},
-				_ => {
-					self.get_comprising_simples_for_comprising_simples_data(&Library::get().comprising_simples_data)
-				}
-			}
+	pub fn get_comprising_simples(self) -> &'static [HalfAddr] {
+		if self.is_valid() {
+			Library::get().comprising_simples_data.get_word(self)
 		} else {
-			Vec::<HalfAddr>::new()
+			&[]
 		}
 	}
 
-	fn get_comprising_simples_for_comprising_simples_data(
-		self,
-		comprising_simples_data: &ComprisingSimplesData
-	) -> Vec<HalfAddr> {
-		if self.is_valid() {
-			let reorientation: HalfAddr = *self.get_half_addr();
+	pub fn get_comprising_simples_string(self) -> String {
+		let mut comprising_simples_string: String = String::new();
 
-			comprising_simples_data
-				[self.get_page_index_type().unwrap()]
-				.iter()
-				.map(|comprising_simple| -> HalfAddr {
-					*(Self::from((Type::Simple, *comprising_simple)) + reorientation).get_half_addr()
-				})
-				.collect()
-		} else {
-			Vec::<HalfAddr>::new()
+		for (comprising_simple_index, comprising_simple) in self.get_comprising_simples().iter().enumerate() {
+			write!(
+				comprising_simples_string,
+				"{0}{1:\t>2$}ha!({3},\t{4}),",
+				if comprising_simple_index & 0b11 == 0_usize {
+					"\n"
+				} else {
+					""
+				},
+				"",
+				if comprising_simple_index & 0b11 == 0_usize {
+					4_usize
+				} else {
+					1_usize
+				},
+				comprising_simple.get_line_index(),
+				comprising_simple.get_word_index()
+			).unwrap();
 		}
+
+		comprising_simples_string
 	}
 
 	#[inline(always)]
@@ -816,16 +887,11 @@ impl Action {
 				)
 			} else {
 				let self_standardization: FullAddr = self.standardization();
-				let mut transformation: FullAddr = self.transformation.invert();
-				let transformation_word_index: usize = transformation.get_word_index();
 
-				transformation.half_addr += self_standardization;
-
-				if transformation.is_page_index_simple() {
-					transformation.set_word_index(transformation_word_index);
-				}
-
-				Self::new(transformation, self.camera_end() + self_standardization)
+				Self::new(
+					self.transformation.invert() + *self_standardization.get_half_addr(),
+					self.camera_end() + self_standardization
+				)
 			}
 		} else {
 			Self::default()
@@ -975,7 +1041,7 @@ impl<T> FindWord<T> for Book<T>
 	}
 }
 
-pub trait GetWord<A : Addr, T> {
+pub trait GetWord<A : Addr, T : ?Sized> {
 	fn get_word(&self, addr: A) -> &Word<T>;
 	fn get_word_mut(&mut self, addr: A) -> &mut Word<T>;
 }
@@ -1059,41 +1125,67 @@ impl Library {
 				&self.orientation_data
 			);
 
-		for page_index in 0_usize .. TYPE_COUNT {
+		for page_index in 0_usize .. Library::PAGE_COUNT {
 			let transformation_type: Type = Type::try_from(page_index as u8).unwrap();
 
-			if transformation_type.is_complex() {
-				macro_rules! ha { ($line_index:expr, $word_index:expr) => { HalfAddr::new($line_index, $word_index) } }
-				const CLASS_COMPRISING_SIMPLES_LUT: [&[HalfAddr]; Type::comprising_simples_class(TYPE_COUNT)] = [
-					&[ha!(10, 4), ha!(8, 1), ha!(10, 1), ha!(8, 4)],
-					&[ha!(10, 4), ha!(8, 1), ha!(10, 1), ha!(8, 4), ha!(10, 4), ha!(8, 1), ha!(10, 1), ha!(8, 4)]
-				];
-				let class_comprising_simples: &[HalfAddr] = CLASS_COMPRISING_SIMPLES_LUT
-					[Type::comprising_simples_class(transformation_type as usize)];
+			if transformation_type.is_simple() {
+				for (line_index, line)
+					in comprising_simples_data.Simple.iter_mut().enumerate()
+				{
+					for (word_index, word) in line.iter_mut().enumerate() {
+						word[0] = HalfAddr::new(line_index, word_index);
+					}
+				}
+			} else if transformation_type.is_complex() {
+				let class_comprising_simples: &[HalfAddr] = transformation_type
+					.complex_class()
+					.unwrap()
+					.comprising_simples();
 				let is_mirrored: bool = transformation_type.is_mirrored();
-				let is_inverted: bool = transformation_type.is_inverted();
-				let comprising_simples: &mut [HalfAddr] = &mut comprising_simples_data[transformation_type];
-				let mut fwd_iter: Iter<HalfAddr> = class_comprising_simples.iter();
-				let mut rev_iter: Rev<Iter<HalfAddr>> = class_comprising_simples.iter().rev();
-				let double_ended_iter: &mut dyn DoubleEndedIterator<Item = &HalfAddr> = if is_inverted {
-					&mut rev_iter
-				} else {
-					&mut fwd_iter
-				};
+				let is_inverted: bool = transformation_type.is_inverted() && transformation_type.is_invert_not_mirror();
 
-				for (comprising_simple_index, class_simple) in double_ended_iter.enumerate() {
-					comprising_simples[comprising_simple_index] = HalfAddr::new(
-						if is_mirrored {
-							FullAddr::mirror_line_index(class_simple.get_line_index())
+				let class_comprising_simples_iter =
+					|f: &mut dyn FnMut(&mut dyn DoubleEndedIterator<Item = &HalfAddr>) -> ()| -> () {
+						let mut fwd_iter: Iter<HalfAddr> = class_comprising_simples.iter();
+						let mut rev_iter: Rev<Iter<HalfAddr>> = class_comprising_simples.iter().rev();
+
+						if is_inverted {
+							f(&mut rev_iter);
 						} else {
-							class_simple.get_line_index()
-						},
-						if is_mirrored ^ is_inverted {
-							FullAddr::invert_word_index(class_simple.get_word_index())
-						} else {
-							class_simple.get_word_index()
+							f(&mut fwd_iter);
 						}
-					);
+					};
+
+				for line_index in 0_usize .. Library::LINE_COUNT {
+					for word_index in 0_usize .. Library::WORD_COUNT {
+						let half_addr: HalfAddr = HalfAddr::new(line_index, word_index);
+						let comprising_simples: &mut [HalfAddr] = comprising_simples_data
+							.get_word_mut(FullAddr::from((transformation_type, half_addr)));
+
+						class_comprising_simples_iter(
+							&mut |class_comprising_simples_iter: &mut dyn DoubleEndedIterator<Item = &HalfAddr>| -> () {
+								for (comprising_simple_index, class_comprising_simple)
+									in class_comprising_simples_iter.enumerate()
+								{
+									comprising_simples[comprising_simple_index] = *(
+										FullAddr::from((
+											Type::Simple as usize,
+											if is_mirrored {
+												FullAddr::mirror_line_index(class_comprising_simple.get_line_index())
+											} else {
+												class_comprising_simple.get_line_index()
+											},
+											if is_mirrored ^ is_inverted {
+												FullAddr::invert_word_index(class_comprising_simple.get_word_index())
+											} else {
+												class_comprising_simple.get_word_index()
+											}
+										)) + half_addr
+									).get_half_addr();
+								}
+							}
+						);
+					}
 				}
 			}
 
@@ -1192,14 +1284,12 @@ impl Library {
 						{
 							let mut puzzle_state: PuzzleState = PuzzleState::SOLVED_STATE;
 
-							for comprising_simple
-								in FullAddr::from((page_index, line_index, word_index))
-									.get_comprising_simples_for_comprising_simples_data(comprising_simples_data)
+							for comprising_simple in comprising_simples_data.get_word(FullAddr::from((page_index, line_index, word_index)))
 							{
-								puzzle_state += simple_trfm_page.get_word(comprising_simple);
+								puzzle_state += simple_trfm_page.get_word(*comprising_simple);
 							}
 
-							*complex_trfm_word = &puzzle_state - &PuzzleState::SOLVED_STATE;
+							*complex_trfm_word = Transformation(puzzle_state);
 						}
 					}
 

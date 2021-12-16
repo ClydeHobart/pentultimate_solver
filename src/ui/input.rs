@@ -264,7 +264,7 @@ impl ActiveTransformationAction {
 		match self.s_now() {
 			Some(s) => {
 				if self.transformation_action.transformation().is_valid() {
-					let comprising_simples: Vec<HalfAddr> = self
+					let comprising_simples: &[HalfAddr] = self
 						.transformation_action
 						.transformation()
 						.get_comprising_simples();
@@ -274,7 +274,7 @@ impl ActiveTransformationAction {
 					let mut cycle_count: f32 = 0.0_f32;
 					let mut puzzle_state: InflatedPuzzleState = extended_puzzle_state.puzzle_state.clone();
 
-					for comprising_simple in &comprising_simples {
+					for comprising_simple in comprising_simples {
 						let comprising_simple: FullAddr = (
 							TransformationType::Simple,
 							*comprising_simple
@@ -436,6 +436,7 @@ impl Default for InputToggles {
 	}
 }
 
+#[derive(Debug)]
 pub enum Action {
 	RecenterCamera,
 	Transformation,
@@ -646,9 +647,16 @@ impl InputPlugin {
 					[(extended_puzzle_state.curr_action + 1_i32) as usize]
 			};
 
-			if !info_expect!(transformation_action.is_valid()
-				&& !transformation_action.transformation().is_identity_transformation()
+			if !info_expect!(matches!(action, Action::RecenterCamera)
+				|| transformation_action.is_valid()
+				&& if transformation_action.transformation().is_page_index_reorientation() {
+					*transformation_action.transformation().get_half_addr() != *transformation_action.camera_start()
+				} else {
+					!transformation_action.transformation().is_identity_transformation()
+				}
 			) {
+				debug_expr!(action, transformation_action);
+
 				return;
 			}
 
