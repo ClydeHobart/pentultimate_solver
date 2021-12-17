@@ -6,7 +6,6 @@ use {
 		preferences::Update,
 		puzzle::transformation::TYPE_COUNT
 	},
-	std::mem::transmute,
 	bevy::{
 		prelude::*,
 		app::CoreStage,
@@ -119,17 +118,11 @@ impl UIPlugin {
 						}
 					}
 
+					modifier_row!(enable_modifiers,		"Enable Modifiers");
 					modifier_row!(rotate_twice,			"Rotate Twice");
 					modifier_row!(counter_clockwise,	"Counter Clockwise");
 					modifier_row!(alt_hemi,				"Alt. Hemi.");
-					modifier_row!(
-						disable_recentering,
-						if matches!(toggles.transformation_type, TransformationType::Reorientation) {
-							"Enable Modifiers"
-						} else {
-							"Disable Recentering"
-						}
-					);
+					modifier_row!(disable_recentering,	"Disable Recentering");
 
 					ui.end_row();
 				});
@@ -143,10 +136,7 @@ impl UIPlugin {
 						Color32::GRAY
 					};
 
-					ui.label(format!(
-						"{:?}",
-						unsafe { transmute::<u8, TransformationType>(transformation_type_u8) }
-					));
+					ui.label(format!("{:?}", TransformationType::try_from(transformation_type_u8).unwrap()));
 				}
 			});
 

@@ -22,7 +22,8 @@ use {
 			Preferences
 		},
 		ui::input::Action as InputAction,
-		util::inspectable_bin_map::*
+		util::inspectable_bin_map::*,
+		max
 	},
 	self::{
 		consts::*,
@@ -75,12 +76,11 @@ pub mod consts {
 	use {
 		super::{
 			inflated::PieceStateComponent as IPSC,
-			Type
+			Type,
+			max
 		},
 		std::ops::Range
 	};
-
-	macro_rules! max { ($a:ident, $b:ident) => { if $a > $b { $a } else { $b } } }
 
 	pub const PENTAGON_PIECE_COUNT:			usize			= Type::Pentagon.instance_count();				// 12
 	pub const TRIANGLE_PIECE_COUNT:			usize			= Type::Triangle.instance_count();				// 20
@@ -387,7 +387,7 @@ pub mod inflated {
 			inflated_puzzle_state
 		}
 
-		pub fn standardization_half_addr(&self) -> HalfAddr { self.standardization_full_addr().get_half_addr() }
+		pub fn standardization_half_addr(&self) -> HalfAddr { *self.standardization_full_addr().get_half_addr() }
 
 		pub fn standardization_full_addr(&self) -> FullAddr {
 			self.full_addr(PENTAGON_INDEX_OFFSET).invert()
@@ -650,13 +650,13 @@ impl PuzzlePlugin {
 			) {
 				match *action {
 					InputAction::Transformation => {
-						if active_transformation_action.action.transformation().is_valid() {
+						if warn_expect!(active_transformation_action.transformation_action.transformation().is_valid()) {
 							extended_puzzle_state.curr_action += 1_i32;
 	
 							let len: usize = extended_puzzle_state.curr_action as usize;
 	
 							extended_puzzle_state.actions.truncate(len);
-							extended_puzzle_state.actions.push(active_transformation_action.action);
+							extended_puzzle_state.actions.push(active_transformation_action.transformation_action);
 						}
 					},
 					InputAction::Undo => {
@@ -664,7 +664,8 @@ impl PuzzlePlugin {
 					},
 					InputAction::Redo => {
 						extended_puzzle_state.curr_action += 1_i32;
-					}
+					},
+					_ => {}
 				}
 
 				input_state.action = None;
@@ -841,7 +842,7 @@ mod tests {
 
 		const ITERATION_COUNT: usize = 10000000_usize;
 
-		let standard_rotations:									&Page<Transformation>		= &TransformationLibrary::initialize_and_get().book_pack_data.trfm[TransformationType::StandardRotation as usize];
+		let simples:									&Page<Transformation>		= &TransformationLibrary::initialize_and_get().book_pack_data.trfm[TransformationType::Simple as usize];
 		let mut correct_pos_pent_piece_count_counts:			[u32; PENTAGON_PIECE_COUNT]	= [0_u32; PENTAGON_PIECE_COUNT];
 		let mut correct_pos_tri_piece_count_counts:				[u32; TRIANGLE_PIECE_COUNT]	= [0_u32; TRIANGLE_PIECE_COUNT];
 		let mut correct_rot_pent_piece_count_counts:			[u32; PENTAGON_PIECE_COUNT]	= [0_u32; PENTAGON_PIECE_COUNT];
@@ -854,7 +855,7 @@ mod tests {
 		let mut puzzle_state:									InflatedPuzzleState			= InflatedPuzzleState::SOLVED_STATE;
 
 		for _ in 0_usize .. ITERATION_COUNT {
-			puzzle_state += &standard_rotations[thread_rng.gen_range(PENTAGON_PIECE_RANGE)][thread_rng.gen_range(1_usize .. PENTAGON_SIDE_COUNT)];
+			puzzle_state += &simples[thread_rng.gen_range(PENTAGON_PIECE_RANGE)][thread_rng.gen_range(1_usize .. PENTAGON_SIDE_COUNT)];
 
 			let mut correct_pos_pent_piece_count:			u32 = 0_u32;
 			let mut correct_pos_tri_piece_count:			u32 = 0_u32;

@@ -9,7 +9,17 @@ pub use {
 		log_error,
 		log_option_none,
 		log_path,
-		log_result_err
+		log_result_err,
+		trace_expr,
+		debug_expr,
+		info_expr,
+		warn_expr,
+		error_expr,
+		trace_expect,
+		debug_expect,
+		info_expect,
+		warn_expect,
+		error_expect
 	},
 	std::convert::TryFrom,
 	::log::Level

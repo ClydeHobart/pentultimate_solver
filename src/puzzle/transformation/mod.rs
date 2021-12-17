@@ -9,7 +9,8 @@ use {
 			},
 			Polyhedron
 		},
-		util::StaticDataLibrary
+		util::StaticDataLibrary,
+		max
 	},
 	super::{
 		consts::*,
@@ -23,10 +24,16 @@ use {
 	bevy::prelude::*,
 	bit_field::BitField,
 	std::{
+		convert::TryFrom,
 		fmt::{
 			Debug,
 			Error,
-			Formatter
+			Formatter,
+			Write
+		},
+		iter::{
+			DoubleEndedIterator,
+			Rev
 		},
 		mem::{
 			MaybeUninit,
@@ -38,6 +45,7 @@ use {
 			Neg,
 			Range
 		},
+		slice::Iter,
 		sync::{
 			Mutex,
 			MutexGuard,
@@ -50,79 +58,283 @@ pub use packs::*;
 
 const_assert!(PIECE_COUNT <= u32::BITS as usize);
 
-#[derive(Clone, Copy)]
-pub struct Mask(u32);
+#[derive(Clone, Copy, Default)]
+pub struct Mask {
+	affected_poses:		u32,
+	affected_pieces:	u32
+}
 
 impl Mask {
 	#[inline]
+	pub fn affects_pos(&self, piece_index: usize) -> bool {
+		self.affected_poses & (1_u32 << piece_index) != 0_u32
+	}
+
+	#[inline]
 	pub fn affects_piece(&self, piece_index: usize) -> bool {
-		self.0 & (1_u32 << piece_index) != 0_u32
+		self.affected_pieces & (1_u32 << piece_index) != 0_u32
 	}
 
 	fn from_pentagon_index(pentagon_index: usize) -> Self {
-		Self({
-			if pentagon_index >= PENTAGON_PIECE_COUNT {
-				log::warn!(
-					"HemisphereMask::new({}) was called, but {} is an invalid pentagon index",
-					pentagon_index,
-					pentagon_index
-				);
+		if pentagon_index >= PENTAGON_PIECE_COUNT {
+			log::warn!(
+				"HemisphereMask::new({}) was called, but {} is an invalid pentagon index",
+				pentagon_index,
+				pentagon_index
+			);
 
-				0_u32
-			} else {
-				let data: &Data = Data::get(Polyhedron::Icosidodecahedron);
-				let faces: &Vec<FaceData> = &data.faces;
-				let face_normal: Vec3 = faces[pentagon_index].norm;
-
-				let mut mask: u32 = 0_u32;
-
-				for pent_index in 0_usize .. PIECE_COUNT {
-					mask |= ((faces[pent_index].norm.dot(face_normal) > 0.0_f32) as u32) << pent_index;
-				}
-
-				mask
+			Self {
+				affected_poses:		0_u32,
+				affected_pieces:	0_u32
 			}
-		})
-	}
+		} else {
+			let data: &Data = Data::get(Polyhedron::Icosidodecahedron);
+			let faces: &Vec<FaceData> = &data.faces;
+			let face_normal: Vec3 = faces[pentagon_index].norm;
 
-	fn from_puzzle_states(prev_puzzle_state: &PuzzleState, curr_puzzle_state: &PuzzleState) -> Self {
-		Self({
 			let mut mask: u32 = 0_u32;
 
-			for piece_index in PIECE_RANGE {
-				mask |= (
-					(curr_puzzle_state.pos[piece_index] != prev_puzzle_state.pos[piece_index]
-						|| curr_puzzle_state.rot[piece_index] != prev_puzzle_state.rot[piece_index]
-					) as u32
-				) << piece_index;
+			for pent_index in 0_usize .. PIECE_COUNT {
+				mask |= ((faces[pent_index].norm.dot(face_normal) > 0.0_f32) as u32) << pent_index;
 			}
 
-			mask
-		})
+			Self {
+				affected_poses:		mask,
+				affected_pieces:	mask
+			}
+		}
 	}
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Type {
-	Reorientation,		// This transformation will spherically rotate the puzzle so that the origin orientation is at the indexed orientation
-	StandardRotation	// This transformation rotates one of the hemispherical halves about one of the 12 pentagonal pieces n fifth-rotations, where n is in [0, 5)
+impl From<&Transformation> for Mask {
+	fn from(transformation: &Transformation) -> Self {
+		let mut affected_poses:		u32												= 0_u32;
+		let mut affected_pieces:	u32												= 0_u32;
+		let (pos, rot):				(&PuzzleStateComponent, &PuzzleStateComponent)	= transformation.as_ref().arrays();
+
+		for piece_index in PIECE_RANGE {
+			let affects_pos: bool = pos[piece_index] as usize != piece_index;
+
+			affected_poses |= (affects_pos as u32) << piece_index;
+			affected_pieces |= ((affects_pos || rot[piece_index] != 0 as PieceStateComponent) as u32) << piece_index;
+		}
+
+		Mask {
+			affected_poses,
+			affected_pieces
+		}
+	}
 }
 
-pub const TYPE_COUNT: usize = Type::StandardRotation as usize + 1_usize;
+enum ComplexClass {
+	Complex1,
+	Complex2,
+	Complex3
+}
+
+const COMPLEX_CLASS_COUNT: usize = 3_usize;
+
+impl ComplexClass {
+	const fn is_invert_not_mirror(self) -> bool {
+		match self {
+			Self::Complex1 => false,
+			Self::Complex2 => false,
+			Self::Complex3 => true
+		}
+	}
+
+	const fn comprising_simples(self) -> &'static [HalfAddr] {
+		macro_rules! ha { ($line_index:expr, $word_index:expr) => { HalfAddr::new($line_index, $word_index) } }
+		const COMPRISING_SIMPLES_LUT: [&[HalfAddr]; COMPLEX_CLASS_COUNT] = [
+			&[
+				ha!(10,	4),	ha!(8,	1),	ha!(10,	1),	ha!(8,	4)
+			],
+			&[
+				ha!(10,	4),	ha!(8,	1),	ha!(10,	1),	ha!(8,	4),
+				ha!(10,	4),	ha!(8,	1),	ha!(10,	1),	ha!(8,	4)
+			],
+			&[
+				ha!(8,	3),	ha!(7,	2),	ha!(8,	2),	ha!(7,	3),
+				ha!(8,	3),	ha!(7,	2),	ha!(8,	2),	ha!(7,	3),
+				ha!(8,	3),	ha!(7,	2),	ha!(8,	2),	ha!(7,	3),
+				ha!(1,	3),	ha!(3,	3),	ha!(7,	2),	ha!(3,	2),
+				ha!(1,	3),	ha!(6,	3),	ha!(1,	2),	ha!(3,	2),
+				ha!(6,	3),	ha!(3,	3),	ha!(1,	2),	ha!(7,	2),
+			]
+		];
+
+		COMPRISING_SIMPLES_LUT[self as usize]
+	}
+
+	const fn invert_bit(self) -> u8 { if self.is_invert_not_mirror() { 2_u8 } else { 1_u8 } }
+
+	const fn mirror(self, sub_type: u8) -> u8 { (sub_type - COMPLEX_OFFSET as u8 ^ 1_u8) + COMPLEX_OFFSET as u8 }
+
+	const fn invert(self, sub_type: u8) -> u8 {
+		(sub_type - COMPLEX_OFFSET as u8 ^ self.invert_bit()) + COMPLEX_OFFSET as u8
+	}
+}
+
+macro_rules! list_type {
+	($macro:path) => {
+		$macro!(
+			Reorientation,	// This will spherically rotate the puzzle so that the origin orientation is at the indexed orientation
+			Simple,			// This rotates the hemispherical halves about the pentagonal piece `line_index` `word_index` fifth-rotations
+			Complex1A,		// This swaps two pairs of pentagons. No guarantees are made for triangles. PuzzleState.pos: [0, 1, _, _, 4, 5, ...] -> [1, 0, _, _, 5, 4, ...]
+			Complex1B,		// This is Complex1A mirrored
+			Complex2A,		// This is Complex1A performed twice, effectively rotating two pairs of pentagons opposite directions. PuzzleState.rot: [0, 0, _, _, 0, 0, ...] -> [4, 4, _, _, 1, 1, ...]
+			Complex2B,		// This is Complex2A mirrored
+			Complex3A,		// This cycles the positions of 3 triangles, while changing the rotations of 2 of them. Pentagons are left untouched.
+			Complex3B,		// This is Complex3A mirrored
+			Complex3C,		// This is Complex3A inverted
+			Complex3D,		// This is Complex3B inverted
+		);
+	}
+}
+
+macro_rules! define_type {
+	($($variant:ident,)*) => {
+		#[derive(Clone, Copy, Debug, PartialEq)]
+		pub enum Type {
+			$(
+				$variant,
+			)*
+		}
+
+		const fn type_count() -> usize {
+			let mut max_type: usize = 0_usize;
+
+			$(
+				max_type = max!(max_type, Type::$variant as usize);
+			)*
+
+			max_type + 1_usize
+		}
+
+		pub const TYPE_COUNT: usize = type_count();
+		pub const COMPLEX_OFFSET: usize = Type::Simple as usize + 1_usize;
+
+		const TYPE_MIRROR_LUT: [u8; TYPE_COUNT] = [ $(Type::$variant.mirror_variant(),)* ];
+
+		const TYPE_INVERT_LUT: [u8; TYPE_COUNT] = [ $(Type::$variant.invert_variant(),)* ];
+
+		#[allow(non_snake_case)]
+		struct ComprisingSimplesData {
+			$($variant: Page<[HalfAddr; Type::$variant.comprising_simples_len()]>,)*
+		}
+
+		impl GetWord<FullAddr, [HalfAddr]> for ComprisingSimplesData {
+			fn get_word(&self, addr: FullAddr) -> &Word<[HalfAddr]> {
+				match addr.get_page_index_type() {
+					$(Some(Type::$variant) => { self.$variant.get_word(*addr.get_half_addr()) }),*
+					None => { panic!("ComprisingSimplesData::get_word() called with addr {:?}", addr); }
+				}
+			}
+
+			fn get_word_mut(&mut self, addr: FullAddr) -> &mut Word<[HalfAddr]> {
+				match addr.get_page_index_type() {
+					$(Some(Type::$variant) => { self.$variant.get_word_mut(*addr.get_half_addr()) }),*
+					None => { panic!("ComprisingSimplesData::get_word_mut() called with addr {:?}", addr); }
+				}
+			}
+		}
+	}
+}
+
+list_type!(define_type);
 
 impl Type {
-	// fn invert(self) -> Self {
-	// 	match self {
-	// 		// Eventually, compound transformations will be added that map to a different (also compound) type
-	// 		_ => { self }
-	// 	}
-	// }
-
 	#[inline(always)]
 	pub const fn is_reorientation(self) -> bool { self as u8 == Self::Reorientation as u8 }
 
 	#[inline(always)]
-	pub const fn is_standard_rotation(self) -> bool { self as u8 == Self::StandardRotation as u8 }
+	pub const fn is_simple(self) -> bool { self as u8 == Self::Simple as u8 }
+
+	#[inline(always)]
+	pub const fn is_complex(self) -> bool { self as u8 >= COMPLEX_OFFSET as u8 }
+
+	#[inline]
+	pub const fn mirror(self) -> Self { unsafe { transmute::<u8, Self>(TYPE_MIRROR_LUT[self as usize]) } }
+
+	#[inline]
+	pub const fn invert(self) -> Self { unsafe { transmute::<u8, Self>(TYPE_INVERT_LUT[self as usize]) } }
+
+	#[inline]
+	pub const fn is_mirrored(self) -> bool {
+		self.is_complex() && (self as u8 - COMPLEX_OFFSET as u8) & 1_u8 != 0_u8
+	}
+
+	pub const fn is_inverted(self) -> bool {
+		match self.complex_class() {
+			Some(complex_class) =>
+				(self as u8 - COMPLEX_OFFSET as u8) & complex_class.invert_bit() != 0_u8,
+			None => false
+		}
+	}
+
+	pub const fn is_invert_not_mirror(self) -> bool {
+		match self.complex_class() {
+			Some(complex_class) => complex_class.is_invert_not_mirror(),
+			None => false
+		}
+	}
+
+	const fn mirror_variant(self) -> u8 {
+		if let Some(complex_class) = self.complex_class() {
+			complex_class.mirror(self as u8)
+		} else {
+			self as u8
+		}
+	}
+
+	const fn invert_variant(self) -> u8 {
+		if let Some(complex_class) = self.complex_class() {
+			complex_class.invert(self as u8)
+		} else {
+			self as u8
+		}
+	}
+
+	const fn complex_class(self) -> Option<ComplexClass> {
+		macro_rules! map_to_class {
+			($($($type_variant:ident)|* => $class_variant:ident),*) => {
+				match self {
+					$(
+						$(Self::$type_variant)|* => Some(ComplexClass::$class_variant),
+					)*
+					_ => None
+				}
+			}
+		}
+
+		map_to_class!(
+			Complex1A | Complex1B							=> Complex1,
+			Complex2A | Complex2B							=> Complex2,
+			Complex3A | Complex3B | Complex3C | Complex3D	=> Complex3
+		)
+	}
+
+	const fn comprising_simples_len(self) -> usize {
+		if let Some(complex_class) = self.complex_class() {
+			complex_class.comprising_simples().len()
+		} else if self.is_simple() {
+			1_usize
+		} else {
+			0_usize
+		}
+	}
+}
+
+impl TryFrom<u8> for Type {
+	type Error = ();
+
+	fn try_from(value: u8) -> Result<Self, Self::Error> {
+		if value < TYPE_COUNT as u8 {
+			Ok(unsafe { transmute::<u8, Self>(value) })
+		} else {
+			Err(())
+		}
+	}
 }
 
 pub trait Addr {
@@ -141,6 +353,7 @@ pub trait HalfAddrConsts {
 	const INVALID:			u8;
 	const LINE_INDEX_BITS:	Range<usize>;
 	const WORD_INDEX_BITS:	Range<usize>;
+	const WORD_INDEX_MASK:	u8;
 	const ORIGIN:			HalfAddr;
 }
 
@@ -185,29 +398,37 @@ impl HalfAddr {
 	#[inline(always)]
 	pub fn as_reorientation(self) -> FullAddr { FullAddr::from((Type::Reorientation, self)) }
 
-	pub fn invert(self) -> Self { self.as_reorientation().invert().get_half_addr() }
+	#[inline(always)]
+	const unsafe fn get_line_index_unchecked(&self) -> usize { (self.0 >> Self::LINE_INDEX_BITS.start) as usize }
 
 	#[inline(always)]
-	unsafe fn get_line_index_unchecked(&self) -> usize {
-		self.0.get_bits(Self::LINE_INDEX_BITS) as usize
-	}
-
-	#[inline(always)]
-	unsafe fn get_word_index_unchecked(&self) -> usize {
-		self.0.get_bits(Self::WORD_INDEX_BITS) as usize
-	}
+	const unsafe fn get_word_index_unchecked(&self) -> usize { (self.0 & Self::WORD_INDEX_MASK) as usize }
 }
 
 impl HalfAddrConsts for HalfAddr {
 	const INVALID:			u8				= u8::MAX;
 	const LINE_INDEX_BITS:	Range<usize>	= 3_usize .. u8::BIT_LENGTH;
 	const WORD_INDEX_BITS:	Range<usize>	= 0_usize .. 3_usize;
+	const WORD_INDEX_MASK:	u8				= (1_u8 << HalfAddr::WORD_INDEX_BITS.end) - 1_u8;
 	const ORIGIN:			HalfAddr		= HalfAddr::new(0_usize, 0_usize);
 }
 
 impl Add<FullAddr> for HalfAddr {
 	type Output = Self;
 
+	/// # `add()`
+	/// 
+	/// Transform an orientation to where a transformation maps it to
+	/// 
+	/// ## Params
+	/// 
+	/// * `self`: an orientation `HalfAddr`
+	/// * `rhs`: a transformation `FullAddr`
+	/// 
+	/// ## Returns
+	/// 
+	/// The resultant orientation `HalfAddr` representing where the `self` orientation is mapped to after performing
+	/// the `rhs` transformation.
 	fn add(self, rhs: FullAddr) -> Self::Output {
 		if self.is_valid() && rhs.is_valid() {
 			let mut sum: HalfAddr = Library::get()
@@ -328,7 +549,7 @@ impl FullAddr {
 	#[inline(always)]
 	pub fn word_index_is_valid(&self) -> bool { self.half_addr.word_index_is_valid() }
 
-	pub fn get_page_index_type(&self) -> Option<Type> {
+	pub fn get_page_index_type(self) -> Option<Type> {
 		if self.page_index_is_valid() {
 			Some(unsafe { transmute(self.page_index) })
 		} else {
@@ -340,41 +561,63 @@ impl FullAddr {
 	pub fn is_page_index_reorientation(&self) -> bool { self.page_index == Type::Reorientation as u8 }
 
 	#[inline(always)]
-	pub fn is_page_index_standard_rotation(&self) -> bool { self.page_index == Type::StandardRotation as u8 }
+	pub fn is_page_index_simple(&self) -> bool { self.page_index == Type::Simple as u8 }
 
-	pub fn get_cycles(&self) -> u32 {
-		if matches!(self.get_page_index_type(), Some(Type::Reorientation)) {
+	pub fn get_cycles(self) -> u32 {
+		if self.is_page_index_reorientation() {
 			1_u32
 		} else {
-			Self::get_cycles_for_comprising_standard_rotations(&self.get_comprising_standard_rotations())
+			Self::get_cycles_for_comprising_simples(&self.get_comprising_simples())
 		}
 	}
 
-	pub fn get_cycles_for_comprising_standard_rotations(comprising_standard_rotations: &Vec<HalfAddr>) -> u32 {
-		comprising_standard_rotations
+	pub fn get_cycles_for_comprising_simples(comprising_simples: &[HalfAddr]) -> u32 {
+		comprising_simples
 			.iter()
 			.map(|half_addr: &HalfAddr| -> u32 {
-				(((half_addr.get_word_index() as i32 + 2_i32) % PENTAGON_SIDE_COUNT as i32) - 2_i32).abs() as u32
+				const CYCLES_LUT: [u8; Library::WORD_COUNT] = [0_u8, 1_u8, 2_u8, 2_u8, 1_u8];
+
+				CYCLES_LUT[half_addr.get_word_index()] as u32
 			})
 			.sum()
 	}
 
-	pub fn get_comprising_standard_rotations(&self) -> Vec<HalfAddr> {
-		if let Some(page_index_type) = self.get_page_index_type() {
-			match page_index_type {
-				Type::Reorientation => {
-					vec![]
-				},
-				Type::StandardRotation => {
-					vec![self.get_half_addr()]
-				}
-			}
+	pub fn get_comprising_simples(self) -> &'static [HalfAddr] {
+		if self.is_valid() {
+			Library::get().comprising_simples_data.get_word(self)
 		} else {
-			Vec::<HalfAddr>::new()
+			&[]
 		}
 	}
 
-	pub fn get_half_addr(&self) -> HalfAddr { self.half_addr }
+	pub fn get_comprising_simples_string(self) -> String {
+		let mut comprising_simples_string: String = String::new();
+
+		for (comprising_simple_index, comprising_simple) in self.get_comprising_simples().iter().enumerate() {
+			write!(
+				comprising_simples_string,
+				"{0}{1:\t>2$}ha!({3},\t{4}),",
+				if comprising_simple_index & 0b11 == 0_usize {
+					"\n"
+				} else {
+					""
+				},
+				"",
+				if comprising_simple_index & 0b11 == 0_usize {
+					4_usize
+				} else {
+					1_usize
+				},
+				comprising_simple.get_line_index(),
+				comprising_simple.get_word_index()
+			).unwrap();
+		}
+
+		comprising_simples_string
+	}
+
+	#[inline(always)]
+	pub fn get_half_addr(&self) -> &HalfAddr { &self.half_addr }
 
 	pub fn set_half_addr(&mut self, half_addr: HalfAddr) -> &mut FullAddr {
 		assert!(self.half_addr_is_valid());
@@ -395,20 +638,97 @@ impl FullAddr {
 		self.half_addr.invalidate();
 	}
 
-	pub fn invert(&self) -> Self {
+	pub fn invert(self) -> Self {
 		if self.is_valid() {
 			*Library::get()
 				.book_pack_data
 				.addr
-				.get_word(*self)
+				.get_word(self)
 		} else {
-			FullAddr::default()
+			Self::default()
 		}
+	}
+
+	pub fn mirror(self) -> Self {
+		if self.is_valid() {
+			let page_index_type: Type = self.get_page_index_type().unwrap();
+
+			(
+				page_index_type.mirror(),
+				if page_index_type.is_complex() {
+					*self.get_half_addr()
+				} else {
+
+					HalfAddr::new(
+						Self::mirror_line_index(self.get_line_index()),
+						Self::invert_word_index(self.get_word_index())
+					)
+				}
+			).into()
+		} else {
+			Self::default()
+		}
+	}
+
+	pub fn is_identity_transformation(self) -> bool {
+		match self.get_page_index_type() {
+			Some(Type::Reorientation)	=> *self.get_half_addr() == HalfAddr::ORIGIN,
+			Some(Type::Simple)			=> self.get_word_index() == 0_usize,
+			_							=> false
+		}
+	}
+
+	#[inline]
+	pub const fn mirror_line_index(line_index: usize) -> usize {
+		const LINE_INDEX_LUT: [u8; Library::LINE_COUNT] = [
+			0_u8,	1_u8,	2_u8,	3_u8, // Unchanged
+			5_u8,	4_u8,	7_u8,	6_u8, // ABCD -> BADC
+			10_u8,	11_u8,	8_u8,	9_u8, // ABCD -> CDAB
+		];
+
+		LINE_INDEX_LUT[line_index] as usize
+	}
+
+	#[inline]
+	pub const fn invert_word_index(word_index: usize) -> usize {
+		const WORD_INDEX_LUT: [u8; Library::WORD_COUNT] = [0_u8, 4_u8, 3_u8, 2_u8, 1_u8];
+
+		WORD_INDEX_LUT[word_index] as usize
 	}
 
 	#[inline(always)]
 	unsafe fn get_page_index_unchecked(&self) -> usize {
 		self.page_index as usize
+	}
+}
+
+impl Add<HalfAddr> for FullAddr {
+	type Output = Self;
+
+	/// `add()`
+	/// 
+	/// Reorient a transformation
+	/// 
+	/// ## Params
+	/// 
+	/// * `self`: a transformation `FullAddr`
+	/// * `rhs`: a Reorientation `HalfAddr`
+	/// 
+	/// ## Returns
+	/// 
+	/// The resultant transformation after applying the `rhs.as_reorientation()` transformation. This differs from `{
+	/// self.half_addr += rhs; self }` because Simple transformations don't have their word indices affected by
+	/// reorientations.
+	fn add(self, rhs: HalfAddr) -> Self::Output {
+		let mut sum: Self = self;
+
+		sum.half_addr += rhs.as_reorientation();
+
+		if self.is_page_index_simple() {
+			sum.set_word_index(self.get_word_index());
+		}
+
+		sum
 	}
 }
 
@@ -552,7 +872,7 @@ impl Action {
 
 	pub fn camera_end(&self) -> HalfAddr {
 		if self.transformation.is_page_index_reorientation() {
-			self.transformation.get_half_addr()
+			*self.transformation.get_half_addr()
 		} else {
 			self.camera_start
 		}
@@ -563,20 +883,15 @@ impl Action {
 			if self.transformation.is_page_index_reorientation() {
 				Self::new(
 					self.camera_start.as_reorientation(),
-					self.transformation.get_half_addr()
+					*self.transformation.get_half_addr()
 				)
 			} else {
 				let self_standardization: FullAddr = self.standardization();
-				let mut transformation: FullAddr = self.transformation.invert();
-				let transformation_word_index: usize = transformation.get_word_index();
 
-				transformation.half_addr += self_standardization;
-
-				if transformation.is_page_index_standard_rotation() {
-					transformation.set_word_index(transformation_word_index);
-				}
-
-				Self::new(transformation, self.camera_end() + self_standardization)
+				Self::new(
+					self.transformation.invert() + *self_standardization.get_half_addr(),
+					self.camera_end() + self_standardization
+				)
 			}
 		} else {
 			Self::default()
@@ -643,7 +958,7 @@ The TrfmPage means different things depending on its corresponding Type
 * Reorientation:
 	* The first index is the current position of piece 0
 	* The second index is the current rotation of piece 0
-* StandardRotation:
+* Simple:
 	* The first index is which piece will be the basis of rotation
 	* The second index is how many times it will be turned
 */
@@ -726,7 +1041,7 @@ impl<T> FindWord<T> for Book<T>
 	}
 }
 
-pub trait GetWord<A : Addr, T> {
+pub trait GetWord<A : Addr, T : ?Sized> {
 	fn get_word(&self, addr: A) -> &Word<T>;
 	fn get_word_mut(&mut self, addr: A) -> &mut Word<T>;
 }
@@ -764,8 +1079,9 @@ impl<A : Addr + Sized, T> GetWord<A, T> for Book<T> {
 // A multi-tiered collection of transformations and associated data
 // Due to the alignment restrictions on Trfm, it wastes less space to store this as an SoA(oAoA) vs an A(oAoA)oS
 pub struct Library {
-	pub book_pack_data:		BookPackData,
-	pub orientation_data:	LongPage<OrientationData>
+	pub book_pack_data:			BookPackData,
+	pub orientation_data:		LongPage<OrientationData>,
+	comprising_simples_data:	ComprisingSimplesData
 }
 
 impl LibraryConsts for Library {
@@ -776,15 +1092,13 @@ impl LibraryConsts for Library {
 }
 
 impl Library {
-	fn new() -> Self {
+	fn initialize(&mut self) -> () {
 		Data::initialize();
 
 		let icosidodecahedron_data: &Data = Data::get(Polyhedron::Icosidodecahedron);
 
-		let mut transformation_library: Library = unsafe { std::mem::MaybeUninit::<Library>::zeroed().assume_init() };
-
 		for (long_line_index, orientation_data_long_line)
-			in transformation_library.orientation_data.iter_mut().enumerate()
+			in self.orientation_data.iter_mut().enumerate()
 		{
 			let face_data: &FaceData = &icosidodecahedron_data.faces[long_line_index];
 
@@ -795,101 +1109,206 @@ impl Library {
 			}
 		}
 
-		{
-			let (book_pack_data, orientation_data): (&mut BookPackData, &LongPage<OrientationData>) =
-				(&mut transformation_library.book_pack_data, &transformation_library.orientation_data);
+		let (
+				book_pack_data,
+				comprising_simples_data,
+				orientation_data
+			):
+			(
+				&mut BookPackData,
+				&mut ComprisingSimplesData,
+				&LongPage<OrientationData>
+			) =
+			(
+				&mut self.book_pack_data,
+				&mut self.comprising_simples_data,
+				&self.orientation_data
+			);
 
-			{
-				let origin_conj_quat: Quat = icosidodecahedron_data.faces[PENTAGON_INDEX_OFFSET].quat.conjugate();
-				let reorientation_page_index: usize = Type::Reorientation as usize;
+		for page_index in 0_usize .. Library::PAGE_COUNT {
+			let transformation_type: Type = Type::try_from(page_index as u8).unwrap();
 
-				let mut page_pack_mut: PagePackMut = book_pack_data
-					.get_page_pack_mut(Type::Reorientation as usize);
+			if transformation_type.is_simple() {
+				for (line_index, line)
+					in comprising_simples_data.Simple.iter_mut().enumerate()
+				{
+					for (word_index, word) in line.iter_mut().enumerate() {
+						word[0] = HalfAddr::new(line_index, word_index);
+					}
+				}
+			} else if transformation_type.is_complex() {
+				let class_comprising_simples: &[HalfAddr] = transformation_type
+					.complex_class()
+					.unwrap()
+					.comprising_simples();
+				let is_mirrored: bool = transformation_type.is_mirrored();
+				let is_inverted: bool = transformation_type.is_inverted() && transformation_type.is_invert_not_mirror();
 
-				page_pack_mut.iter_mut(|line_index: usize, mut line_pack_mut: LinePackMut| -> () {
-					line_pack_mut.iter_mut(|word_index: usize, word_pack_mut: WordPackMut| -> () {
-						let reorientation_quat: Quat = orientation_data[line_index][word_index].quat * origin_conj_quat;
-						let (pos_array, rot_array): (&mut PuzzleStateComponent, &mut PuzzleStateComponent) =
-							word_pack_mut.trfm.arrays_mut();
+				let class_comprising_simples_iter =
+					|f: &mut dyn FnMut(&mut dyn DoubleEndedIterator<Item = &HalfAddr>) -> ()| -> () {
+						let mut fwd_iter: Iter<HalfAddr> = class_comprising_simples.iter();
+						let mut rev_iter: Rev<Iter<HalfAddr>> = class_comprising_simples.iter().rev();
 
-						for piece_index in PIECE_RANGE {
-							let (pos, rot): (usize, usize) = icosidodecahedron_data.get_pos_and_rot(
-								&(reorientation_quat * icosidodecahedron_data.faces[piece_index].quat),
-								None /* We could put a filter in here, but it'd be slower, and the quat math is
-									precise enough that it's unnecessary here */
-							);
-
-							pos_array[piece_index] = pos as PieceStateComponent;
-							rot_array[piece_index] = rot as PieceStateComponent;
+						if is_inverted {
+							f(&mut rev_iter);
+						} else {
+							f(&mut fwd_iter);
 						}
+					};
 
-						*word_pack_mut.quat = reorientation_quat;
-						*word_pack_mut.mask = Mask::from_puzzle_states(
-							&PuzzleState::SOLVED_STATE,
-							word_pack_mut.trfm.as_ref()
+				for line_index in 0_usize .. Library::LINE_COUNT {
+					for word_index in 0_usize .. Library::WORD_COUNT {
+						let half_addr: HalfAddr = HalfAddr::new(line_index, word_index);
+						let comprising_simples: &mut [HalfAddr] = comprising_simples_data
+							.get_word_mut(FullAddr::from((transformation_type, half_addr)));
+
+						class_comprising_simples_iter(
+							&mut |class_comprising_simples_iter: &mut dyn DoubleEndedIterator<Item = &HalfAddr>| -> () {
+								for (comprising_simple_index, class_comprising_simple)
+									in class_comprising_simples_iter.enumerate()
+								{
+									comprising_simples[comprising_simple_index] = *(
+										FullAddr::from((
+											Type::Simple as usize,
+											if is_mirrored {
+												FullAddr::mirror_line_index(class_comprising_simple.get_line_index())
+											} else {
+												class_comprising_simple.get_line_index()
+											},
+											if is_mirrored ^ is_inverted {
+												FullAddr::invert_word_index(class_comprising_simple.get_word_index())
+											} else {
+												class_comprising_simple.get_word_index()
+											}
+										)) + half_addr
+									).get_half_addr();
+								}
+							}
 						);
-						*word_pack_mut.addr = FullAddr::default();
-					});
-				});
-
-				let trfm_page:		&Page<Trfm>			= page_pack_mut.trfm;
-				let addr_page_mut:	&mut Page<FullAddr>	= page_pack_mut.addr;
-
-				for (line_index, addr_line_mut) in addr_page_mut.iter_mut().enumerate() {
-					for (word_index, addr_word_mut) in addr_line_mut.iter_mut().enumerate() {
-						*addr_word_mut = trfm_page
-							.find_word(&(-&trfm_page[line_index][word_index]))
-							.map(|mut address: FullAddr| -> FullAddr {
-								*address.set_page_index(reorientation_page_index)
-							})
-							.unwrap_or_default();
 					}
 				}
 			}
 
-			{
-				let mut page_pack_mut: PagePackMut =
-					book_pack_data.get_page_pack_mut(Type::StandardRotation as usize);
+			let mut page_pack_mut: PagePackMut = book_pack_data.get_page_pack_mut(page_index);
 
-				page_pack_mut.iter_mut(|line_index: usize, mut line_pack_mut: LinePackMut| -> () {
-					let face_data: &FaceData = &icosidodecahedron_data.faces[line_index];
-					let mask: Mask = Mask::from_pentagon_index(line_index);
+			match transformation_type {
+				Type::Reorientation => {
+					let origin_conj_quat: Quat = icosidodecahedron_data.faces[PENTAGON_INDEX_OFFSET].quat.conjugate();
 
-					line_pack_mut.iter_mut(|word_index: usize, word_pack_mut: WordPackMut| -> () {
-						let rotation_quat: Quat = face_data.get_rotation_quat(word_index as u32);
-						let mask: Mask = if word_index != 0 { mask } else { Mask(0_u32) };
+					page_pack_mut.iter_mut(|line_index: usize, mut line_pack_mut: LinePackMut| -> () {
+						line_pack_mut.iter_mut(|word_index: usize, word_pack_mut: WordPackMut| -> () {
+							let reorientation_quat: Quat = orientation_data[line_index][word_index].quat * origin_conj_quat;
+							let (pos_array, rot_array): (&mut PuzzleStateComponent, &mut PuzzleStateComponent) =
+								word_pack_mut.trfm.arrays_mut();
 
-						let (pos_array, rot_array): (&mut PuzzleStateComponent, &mut PuzzleStateComponent) =
-							word_pack_mut.trfm.arrays_mut();
+							for piece_index in PIECE_RANGE {
+								let (pos, rot): (usize, usize) = icosidodecahedron_data.get_pos_and_rot(
+									&(reorientation_quat * icosidodecahedron_data.faces[piece_index].quat),
+									None /* We could put a filter in here, but it'd be slower, and the quat math is
+										precise enough that it's unnecessary here */
+								);
 
-						for piece_index in PIECE_RANGE {
-							let (pos, rot): (usize, usize) = if mask.affects_piece(piece_index) {
-								icosidodecahedron_data.get_pos_and_rot(
-									&(rotation_quat * icosidodecahedron_data.faces[piece_index].quat),
-									None /* We could put a filter in here, but it'd be slower, and the quat math
-										is precise enough that it's unnecessary here */
-								)
-							} else {
-								(piece_index, 0)
-							};
+								pos_array[piece_index] = pos as PieceStateComponent;
+								rot_array[piece_index] = rot as PieceStateComponent;
+							}
 
-							pos_array[piece_index] = pos as PieceStateComponent;
-							rot_array[piece_index] = rot as PieceStateComponent;
-						}
-
-						*word_pack_mut.quat = rotation_quat;
-						*word_pack_mut.mask = mask;
-						*word_pack_mut.addr = FullAddr::from((
-							Type::StandardRotation as usize,
-							line_index,
-							(Library::WORD_COUNT - word_index) % Library::WORD_COUNT
-						));
+							*word_pack_mut.quat = reorientation_quat;
+							*word_pack_mut.mask = Mask::from(&*word_pack_mut.trfm);
+							*word_pack_mut.addr = FullAddr::default();
+						});
 					});
-				});
+
+					let trfm_page:		&Page<Trfm>			= page_pack_mut.trfm;
+					let addr_page_mut:	&mut Page<FullAddr>	= page_pack_mut.addr;
+
+					for (line_index, addr_line_mut) in addr_page_mut.iter_mut().enumerate() {
+						for (word_index, addr_word_mut) in addr_line_mut.iter_mut().enumerate() {
+							*addr_word_mut = trfm_page
+								.find_word(&(-&trfm_page[line_index][word_index]))
+								.map(|mut address: FullAddr| -> FullAddr {
+									*address.set_page_index(page_index)
+								})
+								.unwrap_or_default();
+						}
+					}
+				},
+				Type::Simple => {
+					page_pack_mut.iter_mut(|line_index: usize, mut line_pack_mut: LinePackMut| -> () {
+						let face_data: &FaceData = &icosidodecahedron_data.faces[line_index];
+						let mask: Mask = Mask::from_pentagon_index(line_index);
+
+						line_pack_mut.iter_mut(|word_index: usize, word_pack_mut: WordPackMut| -> () {
+							let rotation_quat: Quat = face_data.get_rotation_quat(word_index as u32);
+							let mask: Mask = if word_index != 0 { mask } else { Mask::default() };
+
+							let (pos_array, rot_array): (&mut PuzzleStateComponent, &mut PuzzleStateComponent) =
+								word_pack_mut.trfm.arrays_mut();
+
+							for piece_index in PIECE_RANGE {
+								let (pos, rot): (usize, usize) = if mask.affects_piece(piece_index) {
+									icosidodecahedron_data.get_pos_and_rot(
+										&(rotation_quat * icosidodecahedron_data.faces[piece_index].quat),
+										None /* We could put a filter in here, but it'd be slower, and the quat
+											math is precise enough that it's unnecessary here */
+									)
+								} else {
+									(piece_index, 0)
+								};
+
+								pos_array[piece_index] = pos as PieceStateComponent;
+								rot_array[piece_index] = rot as PieceStateComponent;
+							}
+
+							*word_pack_mut.quat = rotation_quat;
+							*word_pack_mut.mask = mask;
+							*word_pack_mut.addr = FullAddr::from((
+								transformation_type.invert() as usize,
+								line_index,
+								FullAddr::invert_word_index(word_index)
+							));
+						});
+					});
+				},
+				_ => {
+					let (non_complex_trfm_pages, complex_trfm_pages):
+						(&mut [Page<Trfm>], &mut [Page<Trfm>]) =
+						book_pack_data.trfm.split_at_mut(COMPLEX_OFFSET);
+					let simple_trfm_page: &Page<Trfm> = &non_complex_trfm_pages[Type::Simple as usize];
+					let complex_trfm_page: &mut Page<Trfm> = &mut complex_trfm_pages[page_index - COMPLEX_OFFSET];
+
+					for (line_index, complex_trfm_line)
+						in complex_trfm_page.iter_mut().enumerate()
+					{
+						for (word_index, complex_trfm_word)
+							in complex_trfm_line.iter_mut().enumerate()
+						{
+							let mut puzzle_state: PuzzleState = PuzzleState::SOLVED_STATE;
+
+							for comprising_simple in comprising_simples_data.get_word(FullAddr::from((page_index, line_index, word_index)))
+							{
+								puzzle_state += simple_trfm_page.get_word(*comprising_simple);
+							}
+
+							*complex_trfm_word = Transformation(puzzle_state);
+						}
+					}
+
+					let mut page_pack_mut: PagePackMut = book_pack_data.get_page_pack_mut(page_index);
+
+					page_pack_mut.iter_mut(|line_index: usize, mut line_pack_mut: LinePackMut| -> () {
+						line_pack_mut.iter_mut(|word_index: usize, word_pack_mut: WordPackMut| -> () {
+							*word_pack_mut.quat = Quat::IDENTITY;
+							*word_pack_mut.mask = Mask::from(&*word_pack_mut.trfm);
+							*word_pack_mut.addr = FullAddr::from((
+								transformation_type.invert() as usize,
+								line_index,
+								word_index
+							));
+						});
+					});
+				}
 			}
 		}
-
-		transformation_library
 	}
 }
 
@@ -907,7 +1326,7 @@ impl StaticDataLibrary for Library {
 
 		if !*mutex_guard {
 			unsafe {
-				LIBRARY = MaybeUninit::<Self>::new(Self::new());
+				LIBRARY.assume_init_mut().initialize();
 			}
 
 			*mutex_guard = true;
@@ -920,7 +1339,7 @@ impl StaticDataLibrary for Library {
 pub struct TransformationPlugin;
 
 impl Plugin for TransformationPlugin {
-	fn build(&self, _: &mut AppBuilder) -> () { Library::initialize(); }
+	fn build(&self, _: &mut AppBuilder) -> () { <Library as StaticDataLibrary>::initialize(); }
 }
 
 #[cfg(test)]
@@ -993,8 +1412,8 @@ mod tests {
 		let library: &Library = Library::get();
 		let page_pack: PagePack =
 			library.book_pack_data.get_page_pack(Type::Reorientation as usize);
-		let standard_rotation_page: &Page<Trfm> =
-			&library.book_pack_data.trfm[Type::StandardRotation as usize];
+		let simple_page: &Page<Trfm> =
+			&library.book_pack_data.trfm[Type::Simple as usize];
 		let reorientation_tests: [Vec<(usize, usize)>; PENTAGON_PIECE_COUNT] =
 			from_ron::<[Vec<(usize, usize)>; PENTAGON_PIECE_COUNT]>(
 				STRING_DATA.tests.reorientation_tests.as_ref()
@@ -1004,12 +1423,12 @@ mod tests {
 			let pent_puzzle_state: PuzzleState = {
 				let mut solved_state: PuzzleState = PuzzleState::SOLVED_STATE;
 
-				for (standard_rotation_pent_index, standard_rotation_rotation_index)
+				for (simple_pent_index, simple_rotation_index)
 					in &reorientation_tests[line_index]
 				{
-					solved_state += &standard_rotation_page
-						[*standard_rotation_pent_index]
-						[*standard_rotation_rotation_index];
+					solved_state += &simple_page
+						[*simple_pent_index]
+						[*simple_rotation_index];
 				}
 
 				solved_state
@@ -1026,7 +1445,7 @@ mod tests {
 				let prev_puzzle_state: PuzzleState	= {
 					let mut pent_puzzle_state_clone: PuzzleState = pent_puzzle_state.clone();
 
-					pent_puzzle_state_clone += &standard_rotation_page[line_index][word_index];
+					pent_puzzle_state_clone += &simple_page[line_index][word_index];
 
 					pent_puzzle_state_clone
 				};
@@ -1037,7 +1456,7 @@ mod tests {
 						line_index,
 						word_index
 					);
-					error_expr!(pent_puzzle_state, standard_rotation_page[line_index][word_index], prev_puzzle_state);
+					error_expr!(pent_puzzle_state, simple_page[line_index][word_index], prev_puzzle_state);
 
 					panic!();
 				}
@@ -1199,9 +1618,9 @@ mod tests {
 		});
 	}
 
-	fn test_standard_rotations() -> () {
+	fn test_simples() -> () {
 		let library: &Library = Library::get();
-		let page_pack: PagePack = library.book_pack_data.get_page_pack(Type::StandardRotation as usize);
+		let page_pack: PagePack = library.book_pack_data.get_page_pack(Type::Simple as usize);
 
 		page_pack.iter(|line_index: usize, line_pack: LinePack| -> () {
 			line_pack.iter(|word_index: usize, word_pack: WordPack| -> () {
@@ -1256,12 +1675,13 @@ mod tests {
 	#[test]
 	fn test_transformation_library() -> () {
 		init_env_logger();
-		Library::initialize();
+		crate::info_expr!(std::mem::size_of::<Library>());
+		<Library as StaticDataLibrary>::initialize();
 		test_validity();
 
-		// Though Type::Reorientation is listed before StandardRotation (intentionally: it doesn't actually change the (standardized) state of the puzzle),
-		// Type::StandardRotation needs to be tested first, since the former is dependent on the latter
-		test_standard_rotations();
+		// Though Type::Reorientation is listed before Simple (intentionally: it doesn't actually change the (standardized) state of the puzzle),
+		// Type::Simple needs to be tested first, since the former is dependent on the latter
+		test_simples();
 		test_reorientations();
 	}
 }
