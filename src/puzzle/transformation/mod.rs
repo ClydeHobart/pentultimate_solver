@@ -499,6 +499,10 @@ impl From<(usize, usize)> for HalfAddr {
 	fn from((line_index, word_index): (usize, usize)) -> Self { Self::new(line_index, word_index) }
 }
 
+impl From<u8> for HalfAddr { fn from(value: u8) -> Self { Self(value) } }
+
+impl From<HalfAddr> for u8 { fn from(value: HalfAddr) -> Self { value.0 } }
+
 impl Debug for HalfAddr {
 	fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
 		formatter
@@ -846,6 +850,10 @@ impl From<(Type, HalfAddr)> for FullAddr {
 		}
 	}
 }
+
+impl From<u16> for FullAddr { fn from(value: u16) -> Self { unsafe { transmute::<u16, Self>(value) } } }
+
+impl From<FullAddr> for u16 { fn from(value: FullAddr) -> Self { unsafe { transmute::<FullAddr, Self>(value) } } }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Action {
@@ -1675,7 +1683,6 @@ mod tests {
 	#[test]
 	fn test_transformation_library() -> () {
 		init_env_logger();
-		crate::info_expr!(std::mem::size_of::<Library>());
 		<Library as StaticDataLibrary>::initialize();
 		test_validity();
 

@@ -31,12 +31,37 @@ define_struct_with_default!(
 	}
 );
 
-define_struct_with_default!(
-	#[derive(Deserialize)]
-	pub Tests<String> {
-		pub reorientation_tests			= "reorientationTests.ron",
+#[cfg(debug_assertions)]
+pub mod debug {
+	use super::*;
+
+	define_struct_with_default!(
+		#[derive(Deserialize)]
+		pub Debug<String> {
+			pub debug_modes				= "debugModes.ron",
+		}
+	);
+
+	impl Debug {
+		pub fn default() -> Self { from_ron_or_default("debugStringData.ron") }
 	}
-);
+}
+
+#[cfg(test)]
+pub mod test {
+	use super::*;
+
+	define_struct_with_default!(
+		#[derive(Deserialize)]
+		pub Test<String> {
+			pub reorientation_tests		= "reorientationTests.ron",
+		}
+	);
+
+	impl Test {
+		pub fn default() -> Self { from_ron_or_default("testStringData.ron") }
+	}
+}
 
 #[derive(Default, Deserialize)]
 pub struct StringData {
@@ -44,8 +69,13 @@ pub struct StringData {
 	pub labels:	Labels,
 	pub misc:	Misc,
 
+	#[cfg(debug_assertions)]
+	#[serde(skip, default = "debug::Debug::default")]
+	pub debug:	debug::Debug,
+
 	#[cfg(test)]
-	pub tests:	Tests,
+	#[serde(skip, default = "test::Test::default")]
+	pub tests:	test::Test,
 }
 
 lazy_static!{

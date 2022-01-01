@@ -7,6 +7,7 @@ pub mod prelude {
 	pub use super::{
 		log::prelude::*,
 		FromAlt,
+		IntoAlt,
 		ShortSlerp,
 		StaticDataLibrary,
 		ToOption,
@@ -14,6 +15,7 @@ pub mod prelude {
 		from_ron,
 		from_ron_or_default,
 		init_env_logger,
+		red_to_green,
 		untracked_ref,
 		untracked_ref_mut
 	};
@@ -25,17 +27,209 @@ pub use crate::util::log::init_env_logger;
 
 use {
 	crate::prelude::*,
-	std::fmt::Debug,
-	bevy::app::{
-		AppExit,
-		EventWriter
+	std::{
+		cmp::min,
+		fmt::{
+			Debug,
+			Write
+		},
+		mem::transmute,
+		time::Duration
 	},
+	num_format::{
+		Buffer,
+		Locale
+	},
+	bevy::{
+		app::{
+			AppExit,
+			EventWriter
+		},
+		render::color::Color
+	},
+	egui::color::Color32,
 	::log::Level,
 	serde::Deserialize
 };
 
 pub trait FromAlt<T> {
 	fn from_alt(value: T) -> Self;
+}
+
+impl FromAlt<Duration> for String {
+	fn from_alt(value: Duration) -> Self {
+		const CONVERSION_FACTORS: [u128; 7_usize] = [
+			1000_u128,
+			1000_u128,
+			1000_u128,
+			60_u128,
+			60_u128,
+			24_u128,
+			u128::MAX
+		];
+
+		#[allow(dead_code)] // Not actually dead code due to the transmute
+		#[derive(PartialEq)]
+		enum Field {
+			Nano,
+			Micro,
+			Milli,
+			Sec,
+			Min,
+			Hr,
+			Day
+		}
+
+		let mut fields: [u32; 7_usize] = [0_u32; 7_usize];
+		let mut populated_fields: u8 = 0_u8;
+		let mut nanos: u128 = value.as_nanos();
+
+		for field_index in Field::Nano as usize ..= Field::Day as usize {
+			let conversion_factor: u128 = CONVERSION_FACTORS[field_index];
+			let field: u32 = (nanos % conversion_factor) as u32;
+
+			fields[field_index] = field;
+			populated_fields |= ((field != 0_u32) as u8) << field_index;
+			nanos /= conversion_factor;
+		}
+
+		let		min_field_i8:		i8		= populated_fields.trailing_zeros() as i8;
+		let		max_field_i8:		i8		= (i8::BITS - min(populated_fields.leading_zeros(), 7_u32) - 1_u32)
+			as i8;
+		let		max_field:			Field	= unsafe { transmute::<i8, Field>(max_field_i8) };
+		let mut	field_i8:			i8		= max_field_i8;
+		let mut	duration_string:	String	= String::new();
+
+		macro_rules! print_min_field_digits {
+			() => {{
+				let field_count: u32 = fields[field_i8 as usize];
+				let (digits, digit_count): (u32, usize) = {
+					if field_count % 10_u32 != 0_u32 {
+						(field_count, 3_usize)
+					} else if field_count % 100_u32 != 0_u32 {
+						(field_count / 10_u32, 2_usize)
+					} else {
+						(field_count / 100_u32, 1_usize)
+					}
+				};
+
+				match max_field {
+					Field::Sec		=> write!(duration_string,	"{0:01$}s",		digits,	digit_count),
+					Field::Milli	=> write!(duration_string,	"{0:01$}ms",	digits,	digit_count),
+					Field::Micro	=> write!(duration_string,	"{0:01$}μs",	digits,	digit_count),
+					_				=> write!(duration_string,	"{0:01$}",		digits,	digit_count)
+				}
+			}}
+		}
+
+		while field_i8 >= 0 {
+			let field: Field = unsafe { transmute::<i8, Field>(field_i8) };
+
+			match field {
+				Field::Day => {
+					let mut buffer: Buffer = Buffer::default();
+
+					buffer.write_formatted(&fields[Field::Day as usize], &Locale::en);
+					write!(duration_string, "{}d", buffer.as_str()).unwrap();
+
+					if field_i8 == min_field_i8 {
+						field_i8 = 0_i8;
+					} else {
+						write!(duration_string, " ").unwrap();
+					}
+				},
+				Field::Hr	=> { write!(duration_string, "{:02}:", fields[Field::Hr as usize]).unwrap(); },
+				Field::Min	=> { write!(duration_string, "{:02}:", fields[Field::Min as usize]).unwrap(); },
+				Field::Sec	=> {
+					let is_min_field: bool = field_i8 == min_field_i8;
+					let is_max_field: bool = field_i8 == max_field_i8;
+					let secs: u32 = fields[Field::Sec as usize];
+
+					match (is_min_field, is_max_field) {
+						(false,	false)	=> write!(duration_string,	"{:02}.",	secs),
+						(false,	true)	=> write!(duration_string,	"{}.",		secs),
+						(true,	false)	=> write!(duration_string,	"{:02}",	secs),
+						(true,	true)	=> write!(duration_string,	"{}s",		secs)
+					}.unwrap();
+
+					if is_min_field {
+						field_i8 = 0_i8;
+					}
+				},
+				Field::Milli => {
+					let is_min_field: bool = field_i8 == min_field_i8;
+					let is_max_field: bool = field_i8 == max_field_i8;
+					let millis: u32 = fields[Field::Milli as usize];
+
+					match (is_min_field, is_max_field) {
+						(false, false) => write!(duration_string, "{:03}", millis),
+						(false, true) => write!(duration_string, "{}.", millis),
+						(true, false) => print_min_field_digits!(),
+						(true, true) => write!(duration_string, "{}ms", millis)
+					}.unwrap();
+
+					if is_min_field {
+						field_i8 = 0_i8;
+					}
+				},
+				Field::Micro => {
+					let is_min_field: bool = field_i8 == min_field_i8;
+					let is_max_field: bool = field_i8 == max_field_i8;
+					let micros: u32 = fields[Field::Micro as usize];
+
+					match (is_min_field, is_max_field) {
+						(false, false) => write!(duration_string, "{:03}", micros),
+						(false, true) => write!(duration_string, "{}.", micros),
+						(true, false) => print_min_field_digits!(),
+						(true, true) => write!(duration_string, "{}μs", micros)
+					}.unwrap();
+
+					if is_min_field {
+						field_i8 = 0_i8;
+					}
+				},
+				Field::Nano => {
+					let nanos: u32 = fields[Field::Nano as usize];
+
+					if field_i8 == max_field_i8 {
+						write!(duration_string, "{}ns", nanos)
+					} else {
+						print_min_field_digits!()
+					}.unwrap();
+				}
+			}
+
+			field_i8 -= 1_i8;
+		}
+
+		duration_string
+	}
+}
+
+impl FromAlt<Color> for Color32 {
+	fn from_alt(value: Color) -> Self {
+		const U8_MAX_F32: f32 = u8::MAX as f32;
+		let rgba: [f32; 4_usize] = value.as_rgba_f32();
+
+		Color32::from_rgba_premultiplied(
+			(rgba[0_usize] * U8_MAX_F32) as u8,
+			(rgba[1_usize] * U8_MAX_F32) as u8,
+			(rgba[2_usize] * U8_MAX_F32) as u8,
+			(rgba[3_usize] * U8_MAX_F32) as u8
+		)
+	}
+}
+
+pub trait IntoAlt<T> {
+	fn into_alt(self) -> T;
+}
+
+impl<T, U> IntoAlt<U> for T
+	where U: FromAlt<T>
+{
+	fn into_alt(self) -> U {
+		U::from_alt(self)
+	}
 }
 
 pub trait ToResult<T> where Self: Sized {
@@ -177,11 +371,25 @@ impl ShortSlerp for bevy::math::Quat {
 	}
 }
 
+pub fn red_to_green(s: f32) -> Color {
+	let s: f32 = {
+		let s: f32 = s.clamp(0.0_f32, 1.0_f32);
+
+		if s.is_nan() {
+			0.0_f32
+		} else {
+			s
+		}
+	};
+
+	Color::hsl(s * 120.0_f32, 1.0_f32, 0.5_f32)
+}
+
 // Macro adapted from https://stackoverflow.com/questions/66291962/how-do-i-use-macro-rules-to-define-a-struct-with-optional-cfg
 #[macro_export(local_inner_macros)]
 macro_rules! define_struct_with_default {
 	(
-		$(#[$struct_attr:meta])?
+		$(#[$struct_attr:meta])*
 		$struct_vis:vis $struct_name:ident {
 			$(
 				$(#[$field_attr:meta])?
@@ -189,7 +397,7 @@ macro_rules! define_struct_with_default {
 			)*
 		}
 	) => {
-		$(#[$struct_attr])?
+		$(#[$struct_attr])*
 		$struct_vis struct $struct_name {
 			$(
 				$(#[$field_attr])?
@@ -209,7 +417,7 @@ macro_rules! define_struct_with_default {
 	};
 
 	(
-		$(#[$struct_attr:meta])?
+		$(#[$struct_attr:meta])*
 		$struct_vis:vis $struct_name:ident <$field_type:ty> {
 			$(
 				$(#[$field_attr:meta])?
@@ -217,7 +425,7 @@ macro_rules! define_struct_with_default {
 			)*
 		}
 	) => {
-		$(#[$struct_attr])?
+		$(#[$struct_attr])*
 		$struct_vis struct $struct_name {
 			$(
 				$(#[$field_attr])?
@@ -268,6 +476,7 @@ mod tests {
 			ToOption,
 			ToResult
 		},
+		std::time::Duration,
 		::log::Level
 	};
 
@@ -375,5 +584,27 @@ mod tests {
 		init_env_logger();
 		to_option_test_ok();
 		to_option_test_err();
+	}
+
+	#[test]
+	fn string_from_alt_duration() -> () {
+		assert_eq!(String::from_alt(Duration::from_nanos(1_u64)),						"1ns");
+		assert_eq!(String::from_alt(Duration::from_nanos(12_u64)),						"12ns");
+		assert_eq!(String::from_alt(Duration::from_nanos(123_u64)),						"123ns");
+		assert_eq!(String::from_alt(Duration::from_nanos(1_234_u64)),					"1.234μs");
+		assert_eq!(String::from_alt(Duration::from_nanos(12_345_u64)),					"12.345μs");
+		assert_eq!(String::from_alt(Duration::from_nanos(123_456_u64)),					"123.456μs");
+		assert_eq!(String::from_alt(Duration::from_nanos(1_234_567_u64)),				"1.234567ms");
+		assert_eq!(String::from_alt(Duration::from_nanos(12_345_678_u64)),				"12.345678ms");
+		assert_eq!(String::from_alt(Duration::from_nanos(123_456_789_u64)),				"123.456789ms");
+		assert_eq!(String::from_alt(Duration::from_nanos(1_234_567_891_u64)),			"1.234567891s");
+		assert_eq!(String::from_alt(Duration::from_nanos(12_345_678_912_u64)),			"12.345678912s");
+		assert_eq!(String::from_alt(Duration::from_nanos(123_456_789_123_u64)),			"02:03.456789123");
+		assert_eq!(String::from_alt(Duration::from_nanos(1_234_567_891_234_u64)),		"20:34.567891234");
+		assert_eq!(String::from_alt(Duration::from_nanos(12_345_678_912_345_u64)),		"03:25:45.678912345");
+		assert_eq!(String::from_alt(Duration::from_nanos(123_456_789_123_456_u64)),		"1d 10:17:36.789123456");
+		assert_eq!(String::from_alt(Duration::from_nanos(1_234_567_891_234_567_u64)),	"14d 06:56:07.891234567");
+		assert_eq!(String::from_alt(Duration::from_nanos(12_345_678_912_345_678_u64)),	"142d 21:21:18.912345678");
+		assert_eq!(String::from_alt(Duration::from_nanos(123_456_789_123_456_789_u64)),	"1,428d 21:33:09.123456789");
 	}
 }

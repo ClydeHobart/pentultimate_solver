@@ -290,33 +290,24 @@ impl Data {
 impl Data {
 	fn validate_polyhedra() -> LogErrorResult {
 		let log_target: String = log_path!("validate_polyhedra").to_string();
-		let mut mutex_guard: MutexGuard<bool> = DATA_LIBRARY_MUTEX
-			.lock()
-			.unwrap_or_else(PoisonError::<MutexGuard<bool>>::into_inner);
+		let mut data: MaybeUninit<[Data; 4]> = MaybeUninit::<[Data; 4]>::zeroed();
+		let data: &mut [Data; 4] = unsafe { data.assume_init_mut() };
 
-		unsafe {
-			let data: &mut [Data; 4] = DATA_LIBRARY.0.assume_init_mut();
+		for polyhedron_usize in 0_usize .. 4_usize {
+			let mut data_builder: DataBuilder = DataBuilder {
+				data: &mut data[polyhedron_usize],
+				polyhedron: PolyhedronOption::from(polyhedron_usize as u8).0.unwrap()
+			};
 
-			for polyhedron_usize in 0_usize .. 4_usize {
-				let mut data_builder: DataBuilder = DataBuilder {
-					data: &mut data[polyhedron_usize],
-					polyhedron: PolyhedronOption::from(polyhedron_usize as u8).0.unwrap()
-				};
-
-				data_builder.generate_checked()?;
-			}
-
-			*mutex_guard = true;
+			data_builder.generate_checked()?;
 		}
-
-		drop(mutex_guard);
 
 		let validate_dual_polyhedra = |polyhedron_a: Polyhedron| -> LogErrorResult {
 			let polyhedron_b:	Polyhedron	= polyhedron_a.dual();
 			let properties_a:	&Properties	= Properties::get(polyhedron_a);
 			let properties_b:	&Properties	= Properties::get(polyhedron_b);
-			let data_a:			&Data		= Data::get(polyhedron_a);
-			let data_b:			&Data		= Data::get(polyhedron_b);
+			let data_a:			&Data		= &data[polyhedron_a as usize];
+			let data_b:			&Data		= &data[polyhedron_b as usize];
 
 			if properties_a.vert_count != properties_b.face_count {
 				return Err(log_error!(
@@ -1045,12 +1036,10 @@ impl StaticDataLibrary for DataLibrary {
 						faces:			Vec::<FaceData>::new()
 					};
 
-					let mut data_builder: DataBuilder = DataBuilder {
+					DataBuilder {
 						data,
 						polyhedron: PolyhedronOption::from(polyhedron_usize as u8).0.unwrap()
-					};
-
-					data_builder.generate();
+					}.generate();
 				}
 
 				*mutex_guard = true;

@@ -5,6 +5,9 @@ use {
 	bevy_inspector_egui::Inspectable
 };
 
+#[cfg(debug_assertions)]
+use crate::debug::DebugModes;
+
 pub use {
 	crate::{
 		ui::{
@@ -24,7 +27,7 @@ pub trait Update {
 define_struct_with_default!(
 	#[derive(Clone, Deserialize, Inspectable, PartialEq)]
 	pub SpeedData {
-		#[inspectable(min = 125, max = 2000)]
+		#[inspectable(min = 0, max = 2000)]
 		pub rotation_millis:					u32		= 250_u32,
 
 		#[inspectable(min = 1, max = 100)]
@@ -49,6 +52,11 @@ pub struct Preferences {
 	pub light_and_camera:	LightAndCameraData,
 	#[inspectable(collapse)]
 	pub speed:				SpeedData,
+
+	#[cfg(debug_assertions)]
+	#[inspectable(collapse)]
+	#[serde(skip, default = "DebugModes::default")]
+	pub debug_modes:		DebugModes,
 }
 
 impl Update for Preferences {

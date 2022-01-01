@@ -87,16 +87,20 @@ impl UIPlugin {
 	}
 
 	fn render_main(egui_context: &EguiContext, world: &mut World) -> () {
+		const OFFSET: f32 = 20.0_f32;
+		const INPUT_STATE_OFFSET: Vec2 = Vec2::new(OFFSET, -OFFSET);
+		const ACTION_STACK_OFFSET: Vec2 = Vec2::new(-OFFSET, -OFFSET);
+
 		let extended_puzzle_state: &ExtendedPuzzleState = log_option_none!(world.get_resource::<ExtendedPuzzleState>());
 		let input_state: &InputState = log_option_none!(world.get_resource::<InputState>());
 		let preferences: &Preferences = log_option_none!(world.get_resource::<Preferences>());
 
 		egui::Area::new("InputState")
-			.anchor(egui::Align2::LEFT_BOTTOM, Vec2::new(30.0_f32, -30.0_f32))
+			.anchor(egui::Align2::LEFT_BOTTOM, INPUT_STATE_OFFSET)
 			.show(egui_context.ctx(), |ui: &mut Ui| -> () {
 				let toggles: &InputToggles = &input_state.toggles;
 
-				ui.style_mut().visuals.widgets.noninteractive.bg_fill = Color32::TRANSPARENT;
+				// ui.style_mut().visuals.widgets.noninteractive.bg_fill = Color32::TRANSPARENT;
 				egui::Grid::new("ModifierTable").show(ui, |ui: &mut Ui| -> () {
 					let input: &InputData = &preferences.input;
 
@@ -141,7 +145,7 @@ impl UIPlugin {
 			});
 
 		egui::Area::new("ActionStack")
-			.anchor(egui::Align2::RIGHT_BOTTOM, Vec2::new(-30.0_f32, -30.0_f32))
+			.anchor(egui::Align2::RIGHT_BOTTOM, ACTION_STACK_OFFSET)
 			.show(egui_context.ctx(), |ui: &mut Ui| -> () {
 				// ui.label("Action Stack");
 				egui::ScrollArea::auto_sized().show(ui, |ui: &mut Ui| -> () {
@@ -155,6 +159,40 @@ impl UIPlugin {
 					}
 				});
 			});
+
+		#[cfg(debug_assertions)]
+		{
+			world.resource_scope(|world: &mut World, mut preferences: Mut<Preferences>| -> () {
+				if preferences.debug_modes.should_render() {
+					const DEBUG_MODES_OFFSET: Vec2 = Vec2::new(OFFSET, OFFSET);
+					const BACKGROUND: Color32 = Color32::from_rgba_premultiplied(
+						0x1B_u8,
+						0x1B_u8,
+						0x1B_u8,
+						0xC0_u8
+					);
+					const WINDOW_SHADOW: epaint::Shadow = epaint::Shadow {
+						extrusion: 0.0_f32,
+						color: Color32::TRANSPARENT
+					};
+					let prev_style: egui::Style = (*egui_context.ctx().style()).clone();
+					let mut curr_style: egui::Style = prev_style.clone();
+
+					curr_style.visuals.widgets.active.fg_stroke.color = Color32::WHITE;
+					curr_style.visuals.widgets.noninteractive.bg_fill = BACKGROUND;
+					curr_style.visuals.window_shadow = WINDOW_SHADOW;
+					curr_style.wrap = Some(false);
+					egui_context.ctx().set_style(curr_style);
+					egui::Window::new("DebugModes")
+						.anchor(egui::Align2::LEFT_TOP, DEBUG_MODES_OFFSET)
+						.title_bar(false)
+						.show(egui_context.ctx(), |ui: &mut Ui| -> () {
+							preferences.debug_modes.render(ui, world);
+						});
+					egui_context.ctx().set_style(prev_style);
+				}
+			});
+		}
 	}
 
 	fn render_preferences(egui_context: &EguiContext, world: &mut World) -> () {

@@ -65,12 +65,16 @@ pub use {
 	deflated::PuzzleState as DeflatedPuzzleState,
 	inflated::{
 		ExtendedPuzzleState,
-		PuzzleState as InflatedPuzzleState
+		PieceStateComponent as InflatedPieceStateComponent,
+		PuzzleState as InflatedPuzzleState,
+		PuzzleStateComponent as InflatedPuzzleStateComponent,
+		PuzzleStateConsts as InflatedPuzzleStateConsts
 	},
 	transformation::TransformationPlugin,
 };
 
 pub mod transformation;
+pub mod explore;
 
 pub mod consts {
 	use {
@@ -93,10 +97,12 @@ pub mod consts {
 	pub const ROTATION_BIT_MASK:			IPSC			= ((1 as IPSC) << ROTATION_BIT_COUNT) - 1;		// 0b111
 	pub const PENTAGON_PIECE_COUNT_F32:		f32				= PENTAGON_PIECE_COUNT as f32;
 	pub const TRIANGLE_PIECE_COUNT_F32:		f32				= TRIANGLE_PIECE_COUNT as f32;
+	pub const PIECE_COUNT_F32:				f32				= PENTAGON_PIECE_COUNT_F32 + TRIANGLE_SIDE_COUNT_F32;
 	pub const PENTAGON_SIDE_COUNT_F32:		f32				= PENTAGON_SIDE_COUNT as f32;
 	pub const TRIANGLE_SIDE_COUNT_F32:		f32				= TRIANGLE_SIDE_COUNT as f32;
 	pub const PENTAGON_SIDE_COUNT_IPSC:		IPSC			= PENTAGON_SIDE_COUNT as IPSC;
 	pub const TRIANGLE_SIDE_COUNT_IPSC:		IPSC			= TRIANGLE_SIDE_COUNT as IPSC;
+	pub const ZERO_IPSC:					IPSC			= 0 as IPSC;
 	pub const PENTAGON_PIECE_RANGE:			Range<usize>	= PENTAGON_INDEX_OFFSET .. PENTAGON_INDEX_OFFSET + PENTAGON_PIECE_COUNT;
 	pub const TRIANGLE_PIECE_RANGE:			Range<usize>	= TRIANGLE_INDEX_OFFSET .. TRIANGLE_INDEX_OFFSET + TRIANGLE_PIECE_COUNT;
 	pub const PIECE_RANGE:					Range<usize>	= 0_usize .. PIECE_COUNT;
@@ -109,7 +115,7 @@ pub mod deflated {
 
 	pub type PieceState = u8;
 
-	#[derive(Debug)]
+	#[derive(Debug, Eq, Hash)]
 	#[repr(align(32))]
 	pub struct PuzzleState {
 		pub pieces: [PieceState; PIECE_COUNT]
@@ -393,11 +399,13 @@ pub mod inflated {
 			self.full_addr(PENTAGON_INDEX_OFFSET).invert()
 		}
 
-		pub fn standardize(&mut self) -> () {
+		pub fn standardize(&mut self) -> &mut Self {
 			*self += TransformationLibrary::get()
 				.book_pack_data
 				.trfm
 				.get_word(self.standardization_full_addr());
+
+			self
 		}
 	}
 
@@ -841,6 +849,8 @@ mod tests {
 		};
 
 		const ITERATION_COUNT: usize = 10000000_usize;
+
+		init_env_logger();
 
 		let simples:									&Page<Transformation>		= &TransformationLibrary::initialize_and_get().book_pack_data.trfm[TransformationType::Simple as usize];
 		let mut correct_pos_pent_piece_count_counts:			[u32; PENTAGON_PIECE_COUNT]	= [0_u32; PENTAGON_PIECE_COUNT];
