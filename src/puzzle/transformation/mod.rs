@@ -23,6 +23,12 @@ use {
 	},
 	bevy::prelude::*,
 	bit_field::BitField,
+	bevy_inspector_egui::{
+		options::NumberAttributes,
+		Context,
+		Inspectable
+	},
+	egui::Ui,
 	std::{
 		convert::TryFrom,
 		fmt::{
@@ -389,8 +395,6 @@ impl HalfAddr {
 		}
 	}
 
-	pub const fn origin() -> Self { Self::new(0_usize, 0_usize) }
-
 	pub fn invalidate(&mut self) -> () {
 		self.0 = Self::INVALID;
 	}
@@ -514,6 +518,88 @@ impl Debug for HalfAddr {
 }
 
 impl Default for HalfAddr { fn default() -> Self { HalfAddr::default() } }
+
+#[derive(Clone, Copy, Default)]
+pub struct HalfAddrAttrs {
+	pub allow_long_line_indices: bool
+}
+
+impl Inspectable for HalfAddr {
+	type Attributes = HalfAddrAttrs;
+
+	fn ui(&mut self, ui: &mut Ui, options: Self::Attributes, context: &Context) -> bool {
+		let mut changed: bool = false;
+
+		ui.vertical_centered(|ui: &mut Ui| -> () {
+			egui::Grid::new(context.id()).show(ui, |ui: &mut Ui| {
+				if ui.small_button("Zero").clicked() && *self != Self::ORIGIN {
+					*self = Self::ORIGIN;
+					changed = true;
+				}
+
+				if ui.small_button("Invalid").clicked() && self.is_valid() {
+					self.invalidate();
+					changed = true;
+				}
+
+				ui.end_row();
+
+				if self.is_valid() {
+					ui.label("line_index");
+
+					let mut line_index: usize = self.get_line_index();
+
+					if line_index.ui(
+						ui,
+						NumberAttributes::<usize>::between(
+							0_usize,
+							if options.allow_long_line_indices {
+								Library::LONG_LINE_COUNT
+							} else {
+								Library::LINE_COUNT
+							}
+						),
+						&context.with_id(0_u64)
+					) {
+						self.set_long_line_index(line_index);
+						changed = true;
+					}
+
+					ui.end_row();
+					ui.label("word_index");
+
+					let mut word_index: usize = self.get_word_index();
+
+					if word_index.ui(
+						ui,
+						NumberAttributes::<usize>::between(
+							0_usize,
+							Library::WORD_COUNT
+						),
+						&context.with_id(1_u64)
+					) {
+						self.set_word_index(word_index);
+						changed = true;
+					}
+
+					ui.end_row();
+				} else {
+					let mut filler_index: i32 = -1_i32;
+
+					ui.set_enabled(false);
+					ui.label("line_index");
+					filler_index.ui(ui, NumberAttributes::<i32>::default(), &context.with_id(0_u64));
+					ui.end_row();
+					ui.label("word_index");
+					filler_index.ui(ui, NumberAttributes::<i32>::default(), &context.with_id(1_u64));
+					ui.end_row();
+				}
+			});
+		});
+
+		changed
+	}
+}
 
 pub trait FullAddrConsts {
 	const INVALID_INDEX: u8;

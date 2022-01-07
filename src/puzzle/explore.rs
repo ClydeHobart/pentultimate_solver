@@ -1,14 +1,10 @@
 use super::transformation::Addr;
 
 use {
-	crate::util::{
-		FromAlt,
-		StaticDataLibrary
-	},
+	crate::util::FromAlt,
 	super::{
 		transformation::{
 			FullAddr,
-			GetWord,
 			Library,
 			LibraryConsts,
 			Type
@@ -240,8 +236,7 @@ impl Explorer {
 							continue;
 						}
 
-						let state_to_push: InflatedPuzzleState = &state
-							+ Library::get().book_pack_data.trfm.get_word(full_addr);
+						let state_to_push: InflatedPuzzleState = &state + full_addr;
 
 						if self.seen.insert(DeflatedPuzzleState::from(&*state_to_push.clone().standardize())) {
 							continue;

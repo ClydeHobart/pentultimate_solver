@@ -31,6 +31,7 @@ use {
 			Action,
 			FullAddr,
 			HalfAddr,
+			Library,
 			Transformation,
 			Type as TransformationType,
 			GetWord
@@ -400,10 +401,7 @@ pub mod inflated {
 		}
 
 		pub fn standardize(&mut self) -> &mut Self {
-			*self += TransformationLibrary::get()
-				.book_pack_data
-				.trfm
-				.get_word(self.standardization_full_addr());
+			*self += self.standardization_full_addr();
 
 			self
 		}
@@ -432,6 +430,14 @@ pub mod inflated {
 		}
 	}
 
+	impl<'a> Add<FullAddr> for &'a PuzzleState {
+		type Output = PuzzleState;
+
+		fn add(self, rhs: FullAddr) -> Self::Output {
+			self + Library::get().book_pack_data.trfm.get_word(rhs)
+		}
+	}
+
 	impl<'a> AddAssign<&'a Transformation> for PuzzleState {
 		#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
 		fn add_assign(self: &mut PuzzleState, transformation: &'a Transformation) -> () {
@@ -443,6 +449,12 @@ pub mod inflated {
 		#[cfg(not(all(target_arch = "x86_64", target_feature = "avx2")))]
 		fn add_assign(self: &mut PuzzleState, transformation: &'a Transformation) -> () {
 			Self::naive_add_assign_inline(self, transformation);
+		}
+	}
+
+	impl AddAssign<FullAddr> for PuzzleState {
+		fn add_assign(&mut self, rhs: FullAddr) {
+			*self += Library::get().book_pack_data.trfm.get_word(rhs);
 		}
 	}
 

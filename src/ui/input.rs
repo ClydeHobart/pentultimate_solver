@@ -285,10 +285,7 @@ impl ActiveTransformationAction {
 						if cycles == 0.0_f32 {
 							continue;
 						} else if s >= cycle_count + cycles {
-							puzzle_state += TransformationLibrary::get()
-								.book_pack_data
-								.trfm
-								.get_word(comprising_simple);
+							puzzle_state += comprising_simple;
 							cycle_count += cycles;
 						} else {
 							let word_pack: WordPack = TransformationLibrary::get()

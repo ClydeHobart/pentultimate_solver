@@ -22,8 +22,9 @@ pub mod prelude {
 }
 
 pub mod inspectable_bin_map;
+pub mod inspectable_bit_array;
 
-pub use crate::util::log::init_env_logger;
+pub use self::log::init_env_logger;
 
 use {
 	crate::prelude::*,
@@ -218,6 +219,10 @@ impl FromAlt<Color> for Color32 {
 			(rgba[3_usize] * U8_MAX_F32) as u8
 		)
 	}
+}
+
+impl FromAlt<[u8; 4_usize]> for Color32 {
+	fn from_alt(value: [u8; 4_usize]) -> Self { unsafe { transmute::<[u8; 4_usize], Self>(value) } }
 }
 
 pub trait IntoAlt<T> {
