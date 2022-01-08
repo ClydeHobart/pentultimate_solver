@@ -210,7 +210,7 @@ impl DebugModeData for PuzzleStateData {
 	
 					ui.label("Correct Pos").on_hover_text("Correct Position Count");
 					colored_label!(correct_pent_pos_count, PENTAGON_PIECE_COUNT_F32);
-					colored_label!(correct_tri_pos_count, TRIANGLE_PIECE_COUNT_F32);;
+					colored_label!(correct_tri_pos_count, TRIANGLE_PIECE_COUNT_F32);
 					colored_label!(correct_pent_pos_count + correct_tri_pos_count, PIECE_COUNT_F32);
 					ui.end_row();
 	
