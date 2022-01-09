@@ -15,7 +15,7 @@ use {
 			transformation::{
 				self,
 				packs::*,
-				Action as TransformationAction,
+				Action,
 				FullAddr,
 				GetWord,
 				HalfAddr,
@@ -31,6 +31,7 @@ use {
 	},
 	std::{
 		cmp::max,
+		collections::VecDeque,
 		mem::transmute,
 		time::{
 			Duration,
@@ -217,14 +218,23 @@ define_struct_with_default!(
 	}
 );
 
-pub struct ActiveTransformationAction {
-	pub transformation_action:	TransformationAction,
-	start:						Instant,
-	duration:					Duration,
-	pub camera_orientation:		Option<Quat>
+#[derive(Debug)]
+pub enum ActionType {
+	RecenterCamera,
+	Transformation,
+	Undo,
+	Redo
 }
 
-impl ActiveTransformationAction {
+pub struct ActiveAction {
+	pub action_type:			ActionType,
+	pub actions:				VecDeque<Action>,
+	pub camera_orientation:		Option<Quat>,
+	start:						Instant,
+	duration:					Duration
+}
+
+impl ActiveAction {
 	pub fn s_now(&self) -> Option<f32> {
 		if self.duration.is_zero() {
 			None
@@ -243,7 +253,7 @@ impl ActiveTransformationAction {
 	///
 	/// ## Return value
 	///
-	/// `bool` representing whether or not the action has bee completed
+	/// `bool` representing whether or not the action has been completed
 	pub fn update(
 		&self,
 		extended_puzzle_state:	&mut ExtendedPuzzleState,
@@ -252,10 +262,15 @@ impl ActiveTransformationAction {
 			Query<(&PieceComponent, &mut Transform)>
 		)>
 	) -> bool {
-		let end_quat: Quat = if warn_expect!(self.transformation_action.camera_start().is_valid()) {
+		let action: Action = if let Some(action) = self.actions.front() {
+			*action
+		} else {
+			return true;
+		};
+		let end_quat: Quat = if warn_expect!(action.is_valid()) {
 			TransformationLibrary::get()
 				.orientation_data
-				.get_word(self.transformation_action.camera_end())
+				.get_word(action.camera_end())
 				.quat
 		} else {
 			Quat::IDENTITY
@@ -263,9 +278,8 @@ impl ActiveTransformationAction {
 
 		match self.s_now() {
 			Some(s) => {
-				if self.transformation_action.transformation().is_valid() {
-					let comprising_simples: &[HalfAddr] = self
-						.transformation_action
+				if action.transformation().is_valid() {
+					let comprising_simples: &[HalfAddr] = action
 						.transformation()
 						.get_comprising_simples();
 					let total_cycles: f32 = FullAddr::get_cycles_for_comprising_simples(
@@ -322,7 +336,7 @@ impl ActiveTransformationAction {
 
 				if let Some(camera_orientation) = self.camera_orientation {
 					if let Some((_, mut transform)) = queries.q0_mut().iter_mut().next() {
-						if self.transformation_action.camera_start().is_valid() {
+						if action.camera_start().is_valid() {
 							transform.rotation = camera_orientation.short_slerp(end_quat, s);
 						}
 					}
@@ -333,13 +347,13 @@ impl ActiveTransformationAction {
 			None => {
 				let mut standardization_word_pack_option: Option<WordPack> = None;
 
-				if self.transformation_action.transformation().is_valid() {
+				if action.transformation().is_valid() {
 					let transformation_word_pack: WordPack = TransformationLibrary::get()
 						.book_pack_data.
-						get_word_pack(*self.transformation_action.transformation());
+						get_word_pack(*action.transformation());
 					let standardization_word_pack: WordPack = TransformationLibrary::get()
 						.book_pack_data
-						.get_word_pack(self.transformation_action.standardization());
+						.get_word_pack(action.standardization());
 
 					*extended_puzzle_state += transformation_word_pack.trfm;
 					*extended_puzzle_state += standardization_word_pack.trfm;
@@ -357,12 +371,12 @@ impl ActiveTransformationAction {
 							.quat;
 					}
 
-					if !self.transformation_action.transformation().is_page_index_reorientation() {
+					if !action.transformation().is_page_index_reorientation() {
 						standardization_word_pack_option = Some(standardization_word_pack);
 					}
 				}
 
-				if self.transformation_action.camera_start().is_valid() {
+				if action.camera_start().is_valid() {
 					if let Some((_, mut transform)) = queries.q0_mut().iter_mut().next() {
 						transform.rotation = standardization_word_pack_option.map_or(
 							Quat::IDENTITY,
@@ -383,12 +397,12 @@ impl ActiveTransformationAction {
 
 #[derive(Clone, Copy)]
 pub struct InputToggles {
-	pub enable_modifiers:				bool,
-	pub rotate_twice:					bool,
-	pub counter_clockwise:				bool,
-	pub alt_hemi:						bool,
-	pub disable_recentering:			bool,
-	pub transformation_type:			TransformationType,
+	pub enable_modifiers:		bool,
+	pub rotate_twice:			bool,
+	pub counter_clockwise:		bool,
+	pub alt_hemi:				bool,
+	pub disable_recentering:	bool,
+	pub transformation_type:	TransformationType,
 }
 
 impl InputToggles {
@@ -433,18 +447,10 @@ impl Default for InputToggles {
 	}
 }
 
-#[derive(Debug)]
-pub enum Action {
-	RecenterCamera,
-	Transformation,
-	Undo,
-	Redo
-}
-
 #[derive(Default)]
 pub struct InputState {
 	pub toggles:			InputToggles,
-	pub action:				Option<(Action, ActiveTransformationAction)>,
+	pub action:				Option<ActiveAction>,
 	pub camera_rotation:	Quat,
 }
 
@@ -564,15 +570,15 @@ impl InputPlugin {
 					&mut input_state
 				);
 			},
-			Some((action, active_transformation_action)) => {
+			Some(active_action) => {
 				if rolled_or_panned {
-					if matches!(*action, Action::RecenterCamera) {
+					if matches!(active_action.action_type, ActionType::RecenterCamera) {
 						/* If the whole purpose of the current active transformation action is to recenter the camera,
 						which we no longer wish to do, end the active transformation action entirely */
 						input_state.action = None;
 					} else {
 						// Cancel active camera movement
-						active_transformation_action.camera_orientation = None;
+						active_action.camera_orientation = None;
 					}
 				}
 			}
@@ -588,45 +594,45 @@ impl InputPlugin {
 		camera_component_query:		&Query<(&CameraComponent, &Transform)>,
 		input_state:				&mut InputState
 	) -> () {
-		let input_data:				&InputData		= &preferences.input;
-		let speed_data:				&SpeedData		= &preferences.speed;
-		let mut action:				Option<Action>	= None;
-		let mut default_position:	Option<usize>	= None;
+		let input_data:				&InputData			= &preferences.input;
+		let speed_data:				&SpeedData			= &preferences.speed;
+		let mut action_type:		Option<ActionType>	= None;
+		let mut default_position:	Option<usize>		= None;
 
 		for (index, key_code) in input_data.rotation_keys.iter().enumerate() {
 			if keyboard_input.just_pressed((*key_code).into()) {
-				action = Some(Action::Transformation);
+				action_type = Some(ActionType::Transformation);
 				default_position = Some(input_data.default_positions[index]);
 
 				break;
 			}
 		}
 
-		if action.is_none() {
+		if action_type.is_none() {
 			if keyboard_input.just_pressed(input_data.recenter_camera.into()) {
-				action = Some(Action::RecenterCamera);
+				action_type = Some(ActionType::RecenterCamera);
 			} else if keyboard_input.just_pressed(input_data.undo.into())
 				&& extended_puzzle_state.curr_action >= 0_i32
 			{
-				action = Some(Action::Undo);
+				action_type = Some(ActionType::Undo);
 			} else if keyboard_input.just_pressed(input_data.redo.into())
 				&& ((extended_puzzle_state.curr_action + 1_i32) as usize)
 				< extended_puzzle_state.actions.len()
 			{
-				action = Some(Action::Redo);
+				action_type = Some(ActionType::Redo);
 			}
 		}
 
-		if let Some(action) = action {
+		if let Some(action_type) = action_type {
 			let camera_orientation: &Quat = &log_option_none!(camera_component_query.iter().next()).1.rotation;
 			let camera_start: HalfAddr = CameraPlugin::compute_camera_addr(camera_orientation);
-			let recenter_camera: bool = matches!(action, Action::RecenterCamera);
-			let transformation_action: TransformationAction = match action {
-				Action::RecenterCamera => TransformationAction::new(
+			let recenter_camera: bool = matches!(action_type, ActionType::RecenterCamera);
+			let action: Action = match action_type {
+				ActionType::RecenterCamera => Action::new(
 					FullAddr::default(),
 					camera_start
 				),
-				Action::Transformation => TransformationAction::new(
+				ActionType::Transformation => Action::new(
 					FullAddr::from((
 						input_state.toggles.transformation_type,
 						input_state
@@ -635,30 +641,31 @@ impl InputPlugin {
 					)) + camera_start,
 					camera_start
 				),
-				Action::Undo => extended_puzzle_state
+				ActionType::Undo => extended_puzzle_state
 					.actions
 					[extended_puzzle_state.curr_action as usize]
 					.invert(),
-				Action::Redo => extended_puzzle_state
+				ActionType::Redo => extended_puzzle_state
 					.actions
 					[(extended_puzzle_state.curr_action + 1_i32) as usize]
 			};
 
-			if !info_expect!(matches!(action, Action::RecenterCamera)
-				|| transformation_action.is_valid()
-				&& if transformation_action.transformation().is_page_index_reorientation() {
-					*transformation_action.transformation().get_half_addr() != *transformation_action.camera_start()
+			if !info_expect!(matches!(action_type, ActionType::RecenterCamera)
+				|| action.is_valid()
+				&& if action.transformation().is_page_index_reorientation() {
+					*action.transformation().get_half_addr() != *action.camera_start()
 				} else {
-					!transformation_action.transformation().is_identity_transformation()
+					!action.transformation().is_identity_transformation()
 				}
 			) {
-				debug_expr!(action, transformation_action);
+				debug_expr!(action_type, action);
 
 				return;
 			}
 
+			let actions: VecDeque<Action> = VecDeque::<Action>::from([action]);
 			let start: Instant = Instant::now();
-			let duration: Duration = if matches!(action, Action::Undo | Action::Redo)
+			let duration: Duration = if matches!(action_type, ActionType::Undo | ActionType::Redo)
 				&& !speed_data.animate_undo_and_redo
 			{
 				Duration::ZERO
@@ -667,7 +674,7 @@ impl InputPlugin {
 					* if speed_data.uniform_transformation_duration || recenter_camera {
 						1_u32
 					} else {
-						max(transformation_action.transformation().get_cycles(), 1_u32)
+						max(action.transformation().get_cycles(), 1_u32)
 					}
 			};
 			let camera_orientation: Option<Quat> = if recenter_camera || !input_state.toggles.disable_recentering {
@@ -676,15 +683,15 @@ impl InputPlugin {
 				None
 			};
 
-			input_state.action = Some((
-				action,
-				ActiveTransformationAction {
-					transformation_action,
+			input_state.action = Some(
+				ActiveAction {
+					action_type,
+					actions,
 					start,
 					duration,
 					camera_orientation
 				}
-			));
+			);
 		}
 	}
 }

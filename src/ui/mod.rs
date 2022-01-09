@@ -60,19 +60,14 @@ impl UIPlugin {
 							ui.set_enabled(matches!(*view, View::Main));
 	
 							if ui.button("Preferences").clicked() {
-								let preferences: View = View::Preferences(
+								*view = View::Preferences(
 									Box::new(world
 										.get_resource::<Preferences>()
-										.map_or(
-											Preferences::default(),
-											|preferences: &Preferences| -> Preferences {
-												preferences.clone()
-											}
-										)
+										.map_or_else(Preferences::default, Preferences::clone)
 								));
-	
-								*view = preferences;
 							}
+
+							
 	
 							ui.set_enabled(false);
 	

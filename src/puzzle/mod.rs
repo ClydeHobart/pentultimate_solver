@@ -21,7 +21,7 @@ use {
 			},
 			Preferences
 		},
-		ui::input::Action as InputAction,
+		ui::input::ActionType,
 		util::inspectable_bin_map::*,
 		max
 	},
@@ -661,28 +661,30 @@ impl PuzzlePlugin {
 			Query<(&PieceComponent, &mut Transform)>
 		)>
 	) -> () {
-		if let Some((action, active_transformation_action)) =
+		if let Some(active_action) =
 			&input_state.action
 		{
-			if active_transformation_action.update(
+			if active_action.update(
 				&mut*extended_puzzle_state,
 				&mut queries
 			) {
-				match *action {
-					InputAction::Transformation => {
-						if warn_expect!(active_transformation_action.transformation_action.transformation().is_valid()) {
+				match active_action.action_type {
+					ActionType::Transformation => {
+						let action: Option<&Action> = active_action.actions.front();
+
+						if warn_expect!(action.is_some() && action.unwrap().transformation().is_valid()) {
 							extended_puzzle_state.curr_action += 1_i32;
 	
 							let len: usize = extended_puzzle_state.curr_action as usize;
 	
 							extended_puzzle_state.actions.truncate(len);
-							extended_puzzle_state.actions.push(active_transformation_action.transformation_action);
+							extended_puzzle_state.actions.push(*action.unwrap());
 						}
 					},
-					InputAction::Undo => {
+					ActionType::Undo => {
 						extended_puzzle_state.curr_action -= 1_i32;
 					},
-					InputAction::Redo => {
+					ActionType::Redo => {
 						extended_puzzle_state.curr_action += 1_i32;
 					},
 					_ => {}
