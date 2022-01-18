@@ -9,6 +9,8 @@ use {
 			},
 			Polyhedron
 		},
+		preferences::AnimationSpeedData,
+		ui::input::ActionType,
 		util::StaticDataLibrary,
 		max
 	},
@@ -29,8 +31,18 @@ use {
 		Inspectable
 	},
 	egui::Ui,
+	rand::{
+		rngs::ThreadRng,
+		Rng
+	},
+	serde::Deserialize,
 	std::{
-		convert::TryFrom,
+		convert::{
+			AsMut,
+			AsRef,
+			TryFrom
+		},
+		cmp::max,
 		fmt::{
 			Debug,
 			Error,
@@ -56,7 +68,8 @@ use {
 			Mutex,
 			MutexGuard,
 			PoisonError
-		}
+		},
+		time::Duration
 	}
 };
 
@@ -200,7 +213,7 @@ macro_rules! list_type {
 
 macro_rules! define_type {
 	($($variant:ident,)*) => {
-		#[derive(Clone, Copy, Debug, PartialEq)]
+		#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
 		pub enum Type {
 			$(
 				$variant,
@@ -368,10 +381,26 @@ pub struct HalfAddr(u8);
 
 impl HalfAddr {
 	#[inline(always)]
+	pub fn as_reorientation(self) -> FullAddr { FullAddr::from((Type::Reorientation, self)) }
+
+	pub fn invalidate(&mut self) -> () {
+		self.0 = Self::INVALID;
+	}
+
+	#[inline(always)]
 	pub fn is_valid(&self) -> bool { self.0 != Self::INVALID && self.word_index_is_valid()}
 
 	#[inline(always)]
 	pub fn line_index_is_valid(&self) -> bool { Self::is_valid_line_index(unsafe { self.get_line_index_unchecked() }) }
+
+	#[inline(always)]
+	pub fn word_index_is_valid(&self) -> bool { Self::is_valid_word_index(unsafe { self.get_word_index_unchecked() }) }
+
+	pub fn quat(self) -> Option<&'static Quat> {
+		if self.is_valid() { Some(&Library::get().orientation_data.get_word(self).quat) } else { None }
+	}
+
+	pub const fn default() -> Self { Self(Self::INVALID) }
 
 	#[inline(always)]
 	pub const fn is_valid_line_index(line_index: usize) -> bool { line_index < Library::LINE_COUNT }
@@ -380,12 +409,7 @@ impl HalfAddr {
 	pub const fn is_valid_long_line_index(long_line_index: usize) -> bool { long_line_index < Library::LONG_LINE_COUNT }
 
 	#[inline(always)]
-	pub fn word_index_is_valid(&self) -> bool { Self::is_valid_word_index(unsafe { self.get_word_index_unchecked() }) }
-
-	#[inline(always)]
 	pub const fn is_valid_word_index(word_index: usize) -> bool { word_index < Library::WORD_COUNT }
-
-	pub const fn default() -> Self { Self(Self::INVALID) }
 
 	pub const fn new(line_index: usize, word_index: usize) -> Self {
 		if Self::is_valid_long_line_index(line_index) && Self::is_valid_word_index(word_index) {
@@ -394,13 +418,6 @@ impl HalfAddr {
 			Self::default()
 		}
 	}
-
-	pub fn invalidate(&mut self) -> () {
-		self.0 = Self::INVALID;
-	}
-
-	#[inline(always)]
-	pub fn as_reorientation(self) -> FullAddr { FullAddr::from((Type::Reorientation, self)) }
 
 	#[inline(always)]
 	const unsafe fn get_line_index_unchecked(&self) -> usize { (self.0 >> Self::LINE_INDEX_BITS.start) as usize }
@@ -435,12 +452,7 @@ impl Add<FullAddr> for HalfAddr {
 	/// the `rhs` transformation.
 	fn add(self, rhs: FullAddr) -> Self::Output {
 		if self.is_valid() && rhs.is_valid() {
-			let mut sum: HalfAddr = Library::get()
-				.book_pack_data
-				.trfm
-				.get_word(rhs)
-				.as_ref()
-				.half_addr(self.get_line_index());
+			let mut sum: HalfAddr = rhs.trfm().unwrap().as_ref().half_addr(self.get_line_index());
 
 			*sum.set_word_index((sum.get_word_index() + self.get_word_index()) % Library::WORD_COUNT)
 		} else {
@@ -504,6 +516,30 @@ impl From<(usize, usize)> for HalfAddr {
 }
 
 impl From<u8> for HalfAddr { fn from(value: u8) -> Self { Self(value) } }
+
+pub struct RandHalfAddrParams<'a> {
+	pub thread_rng:					&'a mut ThreadRng,
+	pub allow_long_line_indices:	bool
+}
+
+impl<'a> From<RandHalfAddrParams<'a>> for HalfAddr {
+	fn from(rand_half_addr_params: RandHalfAddrParams<'a>) -> Self {
+		const LONG_LINE_COUNT_F32: f32 = Library::LONG_LINE_COUNT as f32;
+		const LINE_COUNT_F32: f32 = Library::LINE_COUNT as f32;
+		const WORD_COUNT_F32: f32 = Library::WORD_COUNT as f32;
+
+		*Self::default()
+			.set_long_line_index(
+				(rand_half_addr_params.thread_rng.gen::<f32>()
+					* if rand_half_addr_params.allow_long_line_indices {
+						LONG_LINE_COUNT_F32
+					} else {
+						LINE_COUNT_F32
+					}
+				) as usize)
+			.set_word_index((rand_half_addr_params.thread_rng.gen::<f32>() * WORD_COUNT_F32) as usize)
+	}
+}
 
 impl From<HalfAddr> for u8 { fn from(value: HalfAddr) -> Self { value.0 } }
 
@@ -616,62 +652,6 @@ impl FullAddrConsts for FullAddr {
 }
 
 impl FullAddr {
-	#[inline(always)]
-	pub fn is_valid(&self) -> bool { self.page_index_is_valid() && self.half_addr_is_valid() }
-
-	#[inline(always)]
-	pub fn page_index_is_valid(&self) -> bool { Self::is_valid_page_index(unsafe { self.get_page_index_unchecked() }) }
-
-	#[inline(always)]
-	pub fn is_valid_page_index(page_index: usize) -> bool { page_index < Library::PAGE_COUNT }
-
-	#[inline(always)]
-	pub fn half_addr_is_valid(&self) -> bool { Self::is_valid_half_addr(self.half_addr) }
-
-	#[inline(always)]
-	pub fn is_valid_half_addr(half_addr: HalfAddr) -> bool {
-		half_addr.line_index_is_valid() && half_addr.word_index_is_valid()
-	}
-
-	#[inline(always)]
-	pub fn line_index_is_valid(&self) -> bool { self.half_addr.line_index_is_valid() }
-
-	#[inline(always)]
-	pub fn word_index_is_valid(&self) -> bool { self.half_addr.word_index_is_valid() }
-
-	pub fn get_page_index_type(self) -> Option<Type> {
-		if self.page_index_is_valid() {
-			Some(unsafe { transmute(self.page_index) })
-		} else {
-			None
-		}
-	}
-
-	#[inline(always)]
-	pub fn is_page_index_reorientation(&self) -> bool { self.page_index == Type::Reorientation as u8 }
-
-	#[inline(always)]
-	pub fn is_page_index_simple(&self) -> bool { self.page_index == Type::Simple as u8 }
-
-	pub fn get_cycles(self) -> u32 {
-		if self.is_page_index_reorientation() {
-			1_u32
-		} else {
-			Self::get_cycles_for_comprising_simples(&self.get_comprising_simples())
-		}
-	}
-
-	pub fn get_cycles_for_comprising_simples(comprising_simples: &[HalfAddr]) -> u32 {
-		comprising_simples
-			.iter()
-			.map(|half_addr: &HalfAddr| -> u32 {
-				const CYCLES_LUT: [u8; Library::WORD_COUNT] = [0_u8, 1_u8, 2_u8, 2_u8, 1_u8];
-
-				CYCLES_LUT[half_addr.get_word_index()] as u32
-			})
-			.sum()
-	}
-
 	pub fn get_comprising_simples(self) -> &'static [HalfAddr] {
 		if self.is_valid() {
 			Library::get().comprising_simples_data.get_word(self)
@@ -706,15 +686,27 @@ impl FullAddr {
 		comprising_simples_string
 	}
 
+	pub fn get_cycles(self) -> u32 {
+		if self.is_page_index_reorientation() {
+			1_u32
+		} else {
+			Self::get_cycles_for_comprising_simples(&self.get_comprising_simples())
+		}
+	}
+
 	#[inline(always)]
 	pub fn get_half_addr(&self) -> &HalfAddr { &self.half_addr }
 
-	pub fn set_half_addr(&mut self, half_addr: HalfAddr) -> &mut FullAddr {
-		assert!(self.half_addr_is_valid());
-		self.half_addr = half_addr;
-
-		self
+	pub fn get_page_index_type(self) -> Option<Type> {
+		if self.page_index_is_valid() {
+			Some(unsafe { transmute(self.page_index) })
+		} else {
+			None
+		}
 	}
+
+	#[inline(always)]
+	pub fn half_addr_is_valid(&self) -> bool { Self::is_valid_half_addr(self.half_addr) }
 
 	pub fn invalidate(&mut self) -> () {
 		*self = Self::default()
@@ -729,15 +721,28 @@ impl FullAddr {
 	}
 
 	pub fn invert(self) -> Self {
-		if self.is_valid() {
-			*Library::get()
-				.book_pack_data
-				.addr
-				.get_word(self)
-		} else {
-			Self::default()
+		self.word_pack().map(|word_pack: WordPack<'static>| -> Self { *word_pack.addr }).unwrap_or_default()
+	}
+
+	pub fn is_identity_transformation(self) -> bool {
+		match self.get_page_index_type() {
+			Some(Type::Reorientation)	=> *self.get_half_addr() == HalfAddr::ORIGIN,
+			Some(Type::Simple)			=> self.get_word_index() == 0_usize,
+			_							=> false
 		}
 	}
+
+	#[inline(always)]
+	pub fn is_page_index_reorientation(&self) -> bool { self.page_index == Type::Reorientation as u8 }
+
+	#[inline(always)]
+	pub fn is_page_index_simple(&self) -> bool { self.page_index == Type::Simple as u8 }
+
+	#[inline(always)]
+	pub fn is_valid(&self) -> bool { self.page_index_is_valid() && self.half_addr_is_valid() }
+
+	#[inline(always)]
+	pub fn line_index_is_valid(&self) -> bool { self.half_addr.line_index_is_valid() }
 
 	pub fn mirror(self) -> Self {
 		if self.is_valid() {
@@ -760,13 +765,52 @@ impl FullAddr {
 		}
 	}
 
-	pub fn is_identity_transformation(self) -> bool {
-		match self.get_page_index_type() {
-			Some(Type::Reorientation)	=> *self.get_half_addr() == HalfAddr::ORIGIN,
-			Some(Type::Simple)			=> self.get_word_index() == 0_usize,
-			_							=> false
-		}
+	#[inline(always)]
+	pub fn page_index_is_valid(&self) -> bool { Self::is_valid_page_index(unsafe { self.get_page_index_unchecked() }) }
+
+	pub fn set_half_addr(&mut self, half_addr: HalfAddr) -> &mut FullAddr {
+		assert!(self.half_addr_is_valid());
+		self.half_addr = half_addr;
+
+		self
 	}
+
+	pub fn trfm(self) -> Option<&'static Transformation> {
+		self.word_pack().map(|word_pack: WordPack<'static>| -> &'static Transformation { word_pack.trfm })
+	}
+
+	#[inline(always)]
+	pub fn word_index_is_valid(&self) -> bool { self.half_addr.word_index_is_valid() }
+
+	pub fn word_pack(self) -> Option<WordPack<'static>> {
+		if self.is_valid() { Some(Library::get().book_pack_data.get_word_pack(self)) } else { None }
+	}
+
+	pub fn get_cycles_for_comprising_simples(comprising_simples: &[HalfAddr]) -> u32 {
+		comprising_simples
+			.iter()
+			.map(|half_addr: &HalfAddr| -> u32 {
+				const CYCLES_LUT: [u8; Library::WORD_COUNT] = [0_u8, 1_u8, 2_u8, 2_u8, 1_u8];
+
+				CYCLES_LUT[half_addr.get_word_index()] as u32
+			})
+			.sum()
+	}
+
+	#[inline]
+	pub const fn invert_word_index(word_index: usize) -> usize {
+		const WORD_INDEX_LUT: [u8; Library::WORD_COUNT] = [0_u8, 4_u8, 3_u8, 2_u8, 1_u8];
+
+		WORD_INDEX_LUT[word_index] as usize
+	}
+
+	#[inline(always)]
+	pub fn is_valid_half_addr(half_addr: HalfAddr) -> bool {
+		half_addr.line_index_is_valid() && half_addr.word_index_is_valid()
+	}
+
+	#[inline(always)]
+	pub fn is_valid_page_index(page_index: usize) -> bool { page_index < Library::PAGE_COUNT }
 
 	#[inline]
 	pub const fn mirror_line_index(line_index: usize) -> usize {
@@ -777,13 +821,6 @@ impl FullAddr {
 		];
 
 		LINE_INDEX_LUT[line_index] as usize
-	}
-
-	#[inline]
-	pub const fn invert_word_index(word_index: usize) -> usize {
-		const WORD_INDEX_LUT: [u8; Library::WORD_COUNT] = [0_u8, 4_u8, 3_u8, 2_u8, 1_u8];
-
-		WORD_INDEX_LUT[word_index] as usize
 	}
 
 	#[inline(always)]
@@ -957,18 +994,30 @@ impl Action {
 
 	#[inline(always)]
 	pub fn transformation(&self) -> &FullAddr { &self.transformation }
+
 	#[inline(always)]
 	pub fn camera_start(&self) -> &HalfAddr { &self.camera_start }
-	#[inline(always)]
-	pub fn standardization(&self) -> FullAddr { (HalfAddr::ORIGIN + self.transformation).as_reorientation().invert() }
-
-	pub fn is_valid(&self) -> bool { self.transformation.is_valid() && self.camera_start.is_valid() }
 
 	pub fn camera_end(&self) -> HalfAddr {
 		if self.transformation.is_page_index_reorientation() {
 			*self.transformation.get_half_addr()
 		} else {
 			self.camera_start
+		}
+	}
+
+	pub fn duration(&self, animation_speed_data: &AnimationSpeedData, action_type: ActionType) -> Duration {
+		if matches!(action_type, ActionType::Undo | ActionType::Redo)
+			&& !animation_speed_data.animate_undo_and_redo
+		{
+			Duration::ZERO
+		} else {
+			Duration::from_millis(animation_speed_data.rotation_millis as u64)
+				* if animation_speed_data.uniform_transformation_duration || !self.transformation.is_valid() {
+					1_u32
+				} else {
+					max(self.transformation.get_cycles(), 1_u32)
+				}
 		}
 	}
 
@@ -991,6 +1040,10 @@ impl Action {
 			Self::default()
 		}
 	}
+
+	pub fn is_valid(&self) -> bool { self.transformation.is_valid() && self.camera_start.is_valid() }
+	#[inline(always)]
+	pub fn standardization(&self) -> FullAddr { (HalfAddr::ORIGIN + self.transformation).as_reorientation().invert() }
 }
 
 pub struct OrientationData {
@@ -1009,18 +1062,14 @@ impl Transformation {
 		self.0.arrays_mut()
 	}
 
-	pub fn as_ref(&self) -> &PuzzleState {
-		&self.0
-	}
-
-	pub fn as_ref_mut(&mut self) -> &mut PuzzleState {
-		&mut self.0
-	}
-
 	pub fn is_valid(&self) -> bool {
 		self.0.is_valid()
 	}
 }
+
+impl AsMut<PuzzleState> for Transformation { fn as_mut(&mut self) -> &mut PuzzleState { &mut self.0 } }
+
+impl AsRef<PuzzleState> for Transformation { fn as_ref(&self) -> &PuzzleState { &self.0 } }
 
 impl Debug for Transformation {
 	fn fmt(&self, formatter: &mut Formatter<'_>) -> Result<(), Error> {

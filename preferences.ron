@@ -4,22 +4,27 @@ Preferences(
 		colors_with_mat: (
 			polyhedron_to_colors: [
 				(Dodecahedron, [
-					"FFFFFF", // White
-					"0000FF", // Blue
-					"80C0FF", // Light Blue
-					"808080", // Gray
-					"008000", // Dark Green
-					"800080", // Purple
-					"FF80FF", // Pink
-					"80FF00", // Light Green
-					"FF0000", // Red
-					"FFFFA0", // Light Yellow
-					"FFFF00", // Yellow
-					"FF8000", // Orange
+					"FFFFFF", // White,			0
+					"0000FF", // Blue,			1
+					"80C0FF", // Light Blue,	2
+					"808080", // Gray,			3
+					"008000", // Dark Green,	4
+					"800080", // Purple,		5
+					"FF80FF", // Pink,			6
+					"80FF00", // Light Green,	7
+					"FF0000", // Red,			8
+					"FFFFA0", // Light Yellow,	9
+					"FFFF00", // Yellow,		10
+					"FF8000", // Orange,		11
 				])
 			],
 			base_color: "000000" // Black
 		)
+	),
+	file_menu:			FileMenuData(
+		random_transformation_types:	[ Simple ],
+		random_transformation_count:	30,
+		randomization_type:				FromSolved
 	),
 	input:				InputData(
 		default_positions:				(	0,			5,			10,			1,			8,			4		),
@@ -46,10 +51,14 @@ Preferences(
 		)
 	),
 	speed:				SpeedData(
-		rotation_millis:					250,
-		pan_speed:							50,
-		roll_speed:							50,
-		uniform_transformation_duration:	false,
-		animate_undo_and_redo:				true,
+		camera:		CameraSpeedData(
+			pan_speed:	50,
+			roll_speed:	50,
+		),
+		animation:	AnimationSpeedData(
+			rotation_millis:					250,
+			uniform_transformation_duration:	false,
+			animate_undo_and_redo:				true,
+		)
 	),
 )

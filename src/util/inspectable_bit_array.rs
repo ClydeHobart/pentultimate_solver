@@ -96,7 +96,7 @@ impl<T: InstpectableBitArraySuperTrait, const N: usize> Default for InspectableB
 #[derive(Default)]
 pub struct InspectableBitArrayAttrs {
 	pub length:			Option<usize>,
-	pub fetch_label:	Option<Box<dyn Fn(usize) -> &'static str>>
+	pub fetch_label:	Option<Box<dyn Fn(usize) -> String>>
 }
 
 impl Clone for InspectableBitArrayAttrs {
@@ -113,35 +113,66 @@ impl<T: InstpectableBitArraySuperTrait, const N: usize> Inspectable for Inspecta
 		);
 		let mut changed: bool = false;
 
-		ui.horizontal(|ui: &mut Ui| -> () {
-			if ui.small_button("| 1").clicked() {
-				T::set_all(&mut self.0, length);
-			}
-
-			if ui.small_button("& 0").clicked() {
-				T::clear_all(&mut self.0, length);
-			}
-
-			if ui.small_button("^ 1").clicked() {
-				T::toggle_all(&mut self.0, length);
+		ui.vertical(|ui: &mut Ui| -> () {
+			ui.horizontal(|ui: &mut Ui| -> () {
+				if ui.small_button("| 1").clicked() {
+					T::set_all(&mut self.0, length);
+				}
+	
+				if ui.small_button("& 0").clicked() {
+					T::clear_all(&mut self.0, length);
+				}
+	
+				if ui.small_button("^ 1").clicked() {
+					T::toggle_all(&mut self.0, length);
+				}
+			});
+	
+			for bit in 0_usize .. length {
+				let mut is_checked: bool = self.0.get_bit(bit);
+	
+				if ui.checkbox(
+					&mut is_checked,
+					options.fetch_label.as_ref().map_or_else(
+						|| -> String { format!("{}", bit) },
+						|fetch_label: &Box<dyn Fn(usize) -> String>| -> String { (fetch_label)(bit) }
+					)
+				).changed() {
+					self.0.set_bit(bit, is_checked);
+					changed = true;
+				}
 			}
 		});
 
-		for bit in 0_usize .. length {
-			let mut is_checked: bool = self.0.get_bit(bit);
+		changed
+	}
+}
 
-			if ui.checkbox(
-				&mut is_checked,
-				options.fetch_label.as_ref().map_or_else(
-					|| -> String { format!("{}", bit) },
-					|fetch_label: &Box<dyn Fn(usize) -> &'static str>| -> String { (fetch_label)(bit).into() }
-				)
-			).changed() {
-				self.0.set_bit(bit, is_checked);
-				changed = true;
+#[macro_export]
+macro_rules! impl_deserialize_and_inspectable_for_inspectable_bit_array_wrapper {
+	($enum:ty, $outer:path, $inner:ty) => {
+		impl<'de> Deserialize<'de> for $outer {
+			fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+				let mut inner: $inner = <$inner>::default();
+
+				for variant in Vec::<$enum>::deserialize(deserializer)? {
+					let variant_bit: usize = variant as usize;
+
+					if variant_bit < inner.0.bit_length() {
+						inner.0.set_bit(variant_bit, true);
+					}
+				}
+
+				Ok($outer(inner))
 			}
 		}
 
-		changed
-	}
+		impl Inspectable for $outer {
+			type Attributes = <$inner as Inspectable>::Attributes;
+
+			fn ui(&mut self, ui: &mut Ui, options: Self::Attributes, context: &Context) -> bool {
+				self.0.ui(ui, options, context)
+			}
+		}
+	};
 }

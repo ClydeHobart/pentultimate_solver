@@ -45,7 +45,9 @@ pub mod prelude {
 		ui::{
 			camera::{
 				CameraComponent,
-				CameraPlugin
+				CameraPlugin,
+				CameraQuery,
+				CameraQueryNT
 			},
 			input::{
 				InputData,

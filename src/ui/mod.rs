@@ -4,7 +4,12 @@ use {
 		prelude::*,
 		app::prelude::*,
 		preferences::Update,
-		puzzle::transformation::TYPE_COUNT
+		puzzle::transformation::TYPE_COUNT,
+		ui::input::{
+			ActionType,
+			ActiveAction,
+			PendingActions
+		}
 	},
 	bevy::{
 		prelude::*,
@@ -58,7 +63,7 @@ impl UIPlugin {
 					ui.group(|ui: &mut Ui| -> () {
 						world.resource_scope(|world: &mut World, mut view: Mut<View>| -> () {
 							ui.set_enabled(matches!(*view, View::Main));
-	
+
 							if ui.button("Preferences").clicked() {
 								*view = View::Preferences(
 									Box::new(world
@@ -67,10 +72,45 @@ impl UIPlugin {
 								));
 							}
 
-							
-	
+							if ui.button("Randomize").clicked() {
+								world.resource_scope(|world: &mut World, mut input_state: Mut<InputState>| -> () {
+									if input_state.action.is_none() {
+										if let (
+											Some(camera_orientation),
+											Some(preferences),
+											Some(extended_puzzle_state)
+										) = (
+											world
+												.query::<(&CameraComponent, &Transform)>()
+												.iter(world)
+												.next()
+												.map(|(_, transform): (&CameraComponent, &Transform)| -> Quat {
+													transform.rotation
+												}
+											),
+											world.get_resource::<Preferences>(),
+											world.get_resource::<ExtendedPuzzleState>()
+										) {
+											input_state.action = Some(ActiveAction {
+												action_type: ActionType::Randomize,
+												current_action: None,
+												pending_actions: Some(Box::<PendingActions>::new(
+													PendingActions::scramble(
+														preferences,
+														&extended_puzzle_state.puzzle_state,
+														CameraPlugin::compute_camera_addr(
+															&camera_orientation
+														)
+													)
+												))
+											});
+										}
+									}
+								});
+							}
+
 							ui.set_enabled(false);
-	
+
 							if ui.button("Save Puzzle State").clicked() {
 								unreachable!();
 							}
@@ -102,7 +142,7 @@ impl UIPlugin {
 					macro_rules! modifier_row {
 						($toggle:ident, $modifier_name:expr) => {
 							let text_stroke: &mut egui::Stroke = &mut ui.visuals_mut().widgets.noninteractive.fg_stroke;
-	
+
 							if toggles.$toggle {
 								text_stroke.color = Color32::WHITE;
 								text_stroke.width = 1.5_f32;
@@ -110,7 +150,7 @@ impl UIPlugin {
 								text_stroke.color = Color32::GRAY;
 								text_stroke.width = 1.0_f32;
 							}
-	
+
 							ui.label(format!("[{:?}]", BevyKeyCode::from(input.$toggle)));
 							ui.label($modifier_name);
 							ui.end_row();
@@ -248,25 +288,43 @@ impl UIPlugin {
 					let prev_style: egui::Style = (*egui_context.ctx().style()).clone();
 					let mut curr_style: egui::Style = prev_style.clone();
 
-					curr_style.visuals.widgets.noninteractive.bg_fill			= FILL_COLORS[Fill::WidgetsNoninteractiveBg as usize];
-					curr_style.visuals.widgets.noninteractive.bg_stroke.color	= STROKE_COLORS[Stroke::NoninteractiveBg as usize];
-					curr_style.visuals.widgets.noninteractive.fg_stroke.color	= STROKE_COLORS[Stroke::NoninteractiveFg as usize];
-					curr_style.visuals.widgets.inactive.bg_fill					= FILL_COLORS[Fill::WidgetsInactiveBg as usize];
-					curr_style.visuals.widgets.inactive.bg_stroke.color			= STROKE_COLORS[Stroke::InactiveBg as usize];
-					curr_style.visuals.widgets.inactive.fg_stroke.color			= STROKE_COLORS[Stroke::InactiveFg as usize];
-					curr_style.visuals.widgets.hovered.bg_fill					= FILL_COLORS[Fill::WidgetsHoveredBg as usize];
-					curr_style.visuals.widgets.hovered.bg_stroke.color			= STROKE_COLORS[Stroke::HoveredBg as usize];
-					curr_style.visuals.widgets.hovered.fg_stroke.color			= STROKE_COLORS[Stroke::HoveredFg as usize];
-					curr_style.visuals.widgets.active.bg_fill					= FILL_COLORS[Fill::WidgetsActiveBg as usize];
-					curr_style.visuals.widgets.active.bg_stroke.color			= STROKE_COLORS[Stroke::ActiveBg as usize];
-					curr_style.visuals.widgets.active.fg_stroke.color			= STROKE_COLORS[Stroke::ActiveFg as usize];
-					curr_style.visuals.widgets.open.bg_fill						= FILL_COLORS[Fill::WidgetsOpenBg as usize];
-					curr_style.visuals.widgets.open.bg_stroke.color				= STROKE_COLORS[Stroke::OpenBg as usize];
-					curr_style.visuals.widgets.open.fg_stroke.color				= STROKE_COLORS[Stroke::OpenFg as usize];
-					curr_style.visuals.faint_bg_color							= FILL_COLORS[Fill::FaintBgColor as usize];
-					curr_style.visuals.extreme_bg_color							= FILL_COLORS[Fill::ExtremeBgColor as usize];
-					curr_style.visuals.code_bg_color							= FILL_COLORS[Fill::CodeBgColor as usize];
-					curr_style.visuals.window_shadow							= WINDOW_SHADOW;
+					macro_rules! modify_curr_style {
+						(
+							$($fill_field:expr => $fill_variant:ident),*;
+							$($stroke_field:expr => $stroke_variant:ident),*
+						) => {
+							$(
+								$fill_field = FILL_COLORS[Fill::$fill_variant as usize];
+							)*
+							$(
+								$stroke_field = STROKE_COLORS[Stroke::$stroke_variant as usize];
+							)*
+						}
+					}
+
+					modify_curr_style!(
+						curr_style.visuals.widgets.noninteractive.bg_fill			=> WidgetsNoninteractiveBg,
+						curr_style.visuals.widgets.inactive.bg_fill					=> WidgetsInactiveBg,
+						curr_style.visuals.widgets.hovered.bg_fill					=> WidgetsHoveredBg,
+						curr_style.visuals.widgets.active.bg_fill					=> WidgetsActiveBg,
+						curr_style.visuals.widgets.open.bg_fill						=> WidgetsOpenBg,
+						curr_style.visuals.faint_bg_color							=> FaintBgColor,
+						curr_style.visuals.extreme_bg_color							=> ExtremeBgColor,
+						curr_style.visuals.code_bg_color							=> CodeBgColor;
+
+						curr_style.visuals.widgets.noninteractive.bg_stroke.color	=> NoninteractiveBg,
+						curr_style.visuals.widgets.noninteractive.fg_stroke.color	=> NoninteractiveFg,
+						curr_style.visuals.widgets.inactive.bg_stroke.color			=> InactiveBg,
+						curr_style.visuals.widgets.inactive.fg_stroke.color			=> InactiveFg,
+						curr_style.visuals.widgets.hovered.bg_stroke.color			=> HoveredBg,
+						curr_style.visuals.widgets.hovered.fg_stroke.color			=> HoveredFg,
+						curr_style.visuals.widgets.active.bg_stroke.color			=> ActiveBg,
+						curr_style.visuals.widgets.active.fg_stroke.color			=> ActiveFg,
+						curr_style.visuals.widgets.open.bg_stroke.color				=> OpenBg,
+						curr_style.visuals.widgets.open.fg_stroke.color				=> OpenFg
+					);
+
+					curr_style.visuals.window_shadow = WINDOW_SHADOW;
 					curr_style.wrap = Some(false);
 					egui_context.ctx().set_style(curr_style);
 					egui::Window::new("DebugModes")

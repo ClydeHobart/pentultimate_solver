@@ -94,6 +94,21 @@ impl Update for LightAndCameraData {
 }
 
 pub struct CameraComponent;
+pub type CameraQuery<'a, 'b, 'c> = Query<'a, (&'b CameraComponent, &'c mut Transform)>;
+pub struct CameraQueryNT<'a, 'b, 'c, 'd>(pub &'a mut CameraQuery<'b, 'c, 'd>);
+
+impl<'a, 'b, 'c,'d> CameraQueryNT<'a, 'b, 'c, 'd> {
+	pub fn orientation<T, F: FnOnce(Option<&mut Quat>) -> T>(&mut self, f: F) -> T {
+		match self.0.iter_mut().next() {
+			Some((_, mut transform)) => {
+				f(Some(&mut transform.rotation))
+			},
+			None => {
+				f(None)
+			}
+		}
+	}
+}
 
 pub struct CameraPlugin;
 
@@ -125,9 +140,9 @@ impl CameraPlugin {
 
 	fn run(
 		input_state: Res<InputState>,
-		mut camera_component_query: Query<(&CameraComponent, &mut Transform)>
+		mut camera_query: CameraQuery
 	) -> () {
-		log_option_none!(camera_component_query.iter_mut().next()).1.rotate(input_state.camera_rotation);
+		log_option_none!(camera_query.iter_mut().next()).1.rotate(input_state.camera_rotation);
 	}
 
 	pub fn compute_camera_addr(quat: &Quat) -> HalfAddr {

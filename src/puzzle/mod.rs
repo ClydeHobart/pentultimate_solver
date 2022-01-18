@@ -21,7 +21,6 @@ use {
 			},
 			Preferences
 		},
-		ui::input::ActionType,
 		util::inspectable_bin_map::*,
 		max
 	},
@@ -31,10 +30,7 @@ use {
 			Action,
 			FullAddr,
 			HalfAddr,
-			Library,
-			Transformation,
-			Type as TransformationType,
-			GetWord
+			Transformation
 		}
 	},
 	std::{
@@ -221,7 +217,7 @@ pub mod inflated {
 	}
 
 	#[derive(Clone)]
-	#[repr(align(256))]
+	#[repr(align(32))]
 	pub struct PuzzleState {
 		pub pos: PuzzleStateComponent,	// An array representing the current position of the piece with the given index
 		pub rot: PuzzleStateComponent	// An array representing the cumulative rotation of the piece with the given index
@@ -277,7 +273,7 @@ pub mod inflated {
 		}
 
 		pub fn full_addr(&self, piece_index: usize) -> FullAddr {
-			(TransformationType::Reorientation, self.half_addr(piece_index)).into()
+			self.half_addr(piece_index).as_reorientation()
 		}
 
 		pub fn arrays(&self) -> (&PuzzleStateComponent, &PuzzleStateComponent) {
@@ -434,7 +430,7 @@ pub mod inflated {
 		type Output = PuzzleState;
 
 		fn add(self, rhs: FullAddr) -> Self::Output {
-			self + Library::get().book_pack_data.trfm.get_word(rhs)
+			if let Some(trfm) = rhs.trfm() { self + trfm } else { self.clone() }
 		}
 	}
 
@@ -453,8 +449,10 @@ pub mod inflated {
 	}
 
 	impl AddAssign<FullAddr> for PuzzleState {
-		fn add_assign(&mut self, rhs: FullAddr) {
-			*self += Library::get().book_pack_data.trfm.get_word(rhs);
+		fn add_assign(&mut self, rhs: FullAddr) -> () {
+			if let Some(trfm) = rhs.trfm() {
+				*self += trfm;
+			}
 		}
 	}
 
@@ -565,7 +563,6 @@ pub mod inflated {
 	#[repr(align(32))]
 	pub struct ExtendedPuzzleState {
 		pub puzzle_state:	PuzzleState,
-		pub pos_to_piece:	PuzzleStateComponent,
 		pub actions:		Vec<Action>,
 		pub curr_action:	i32
 	}
@@ -577,10 +574,6 @@ pub mod inflated {
 	impl<'a> AddAssign<&'a Transformation> for ExtendedPuzzleState {
 		fn add_assign(&mut self, transformation: &'a Transformation) -> () {
 			self.puzzle_state += transformation;
-
-			for piece_index in PIECE_RANGE {
-				self.pos_to_piece[self.puzzle_state.pos[piece_index] as usize] = piece_index as PieceStateComponent;
-			}
 		}
 	}
 
@@ -588,7 +581,6 @@ pub mod inflated {
 		fn default() -> Self {
 			Self {
 				puzzle_state:	PuzzleState::SOLVED_STATE,
-				pos_to_piece:	PuzzleStateComponent::SOLVED_STATE,
 				actions:		Vec::<Action>::new(),
 				curr_action:	-1_i32
 			}
@@ -657,41 +649,14 @@ impl PuzzlePlugin {
 		mut extended_puzzle_state: ResMut<ExtendedPuzzleState>,
 		mut input_state: ResMut<InputState>,
 		mut queries: QuerySet<(
-			Query<(&mut CameraComponent, &mut Transform)>,
+			Query<(&CameraComponent, &mut Transform)>,
 			Query<(&PieceComponent, &mut Transform)>
 		)>
 	) -> () {
-		if let Some(active_action) =
-			&input_state.action
+		if input_state.action.is_some()
+			&& input_state.action.as_mut().unwrap().update(&mut *extended_puzzle_state, &mut queries)
 		{
-			if active_action.update(
-				&mut*extended_puzzle_state,
-				&mut queries
-			) {
-				match active_action.action_type {
-					ActionType::Transformation => {
-						let action: Option<&Action> = active_action.actions.front();
-
-						if warn_expect!(action.is_some() && action.unwrap().transformation().is_valid()) {
-							extended_puzzle_state.curr_action += 1_i32;
-	
-							let len: usize = extended_puzzle_state.curr_action as usize;
-	
-							extended_puzzle_state.actions.truncate(len);
-							extended_puzzle_state.actions.push(*action.unwrap());
-						}
-					},
-					ActionType::Undo => {
-						extended_puzzle_state.curr_action -= 1_i32;
-					},
-					ActionType::Redo => {
-						extended_puzzle_state.curr_action += 1_i32;
-					},
-					_ => {}
-				}
-
-				input_state.action = None;
-			}
+			input_state.action = None;
 		}
 	}
 }

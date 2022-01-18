@@ -1,3 +1,5 @@
+use crate::puzzle::transformation::Addr;
+
 use {
 	crate::{
 		prelude::*,
@@ -9,7 +11,11 @@ use {
 			},
 			Polyhedron
 		},
-		preferences::SpeedData,
+		preferences::{
+			AnimationSpeedData,
+			RandomizationType,
+			SpeedData
+		},
 		puzzle::{
 			consts::*,
 			transformation::{
@@ -17,20 +23,21 @@ use {
 				packs::*,
 				Action,
 				FullAddr,
-				GetWord,
 				HalfAddr,
-				Type as TransformationType
+				RandHalfAddrParams,
+				Type as TransformationType,
+				TYPE_COUNT
 			},
 			ExtendedPuzzleState,
-			InflatedPuzzleState
-		}
+			InflatedPuzzleState,
+			InflatedPuzzleStateConsts
+		},
 	},
 	super::{
 		Preferences,
 		View
 	},
 	std::{
-		cmp::max,
 		collections::VecDeque,
 		mem::transmute,
 		time::{
@@ -53,6 +60,12 @@ use {
 		egui,
 		Context,
 		Inspectable
+	},
+	bit_field::BitArray,
+	rand::{
+		rngs::ThreadRng,
+		Rng,
+		thread_rng
 	},
 	serde::Deserialize
 };
@@ -218,29 +231,30 @@ define_struct_with_default!(
 	}
 );
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum ActionType {
 	RecenterCamera,
 	Transformation,
 	Undo,
-	Redo
+	Redo,
+	Randomize
 }
 
-pub struct ActiveAction {
-	pub action_type:			ActionType,
-	pub actions:				VecDeque<Action>,
-	pub camera_orientation:		Option<Quat>,
+pub struct CurrentAction {
+	pub camera_orientation:		Quat,
 	start:						Instant,
-	duration:					Duration
+	duration:					Duration,
+	pub action:					Action,
+	pub has_camera_orientation:	bool
 }
 
-impl ActiveAction {
+impl CurrentAction {
 	pub fn s_now(&self) -> Option<f32> {
 		if self.duration.is_zero() {
 			None
 		} else {
 			let s: f32 = (Instant::now() - self.start).as_millis() as f32 / self.duration.as_millis() as f32;
-	
+
 			if s < 1.0_f32 {
 				Some(s)
 			} else {
@@ -248,6 +262,149 @@ impl ActiveAction {
 			}
 		}
 	}
+}
+
+pub struct PendingActions {
+	pub puzzle_state:			InflatedPuzzleState,
+	pub actions:				VecDeque<Action>,
+	pub animation_speed_data:	AnimationSpeedData,
+	pub set_puzzle_state:		bool
+}
+
+impl PendingActions {
+	fn pop_current_action(&mut self, camera_query: &mut CameraQuery, action_type: ActionType) -> Option<CurrentAction> {
+		if let (
+			Some(action),
+			Some(camera_orientation)
+		) = (
+			self.actions.pop_front(),
+			CameraQueryNT(camera_query)
+				.orientation(|camera_orientation: Option<&mut Quat>| -> Option<Quat> { camera_orientation.copied() })
+		) {
+			Some(CurrentAction {
+				camera_orientation,
+				start:					Instant::now(),
+				duration:				action.duration(&self.animation_speed_data, action_type),
+				action,
+				has_camera_orientation:	true,
+			})
+		} else {
+			None
+		}
+	}
+
+	pub fn scramble(preferences: &Preferences, puzzle_state: &InflatedPuzzleState, mut camera: HalfAddr) -> Self {
+		let mut pending_actions: PendingActions = PendingActions {
+			puzzle_state:			InflatedPuzzleState::SOLVED_STATE,
+			actions:				VecDeque::<Action>::new(),
+			animation_speed_data:	preferences.speed.animation.clone(),
+			set_puzzle_state:		false
+		};
+		let (puzzle_state, actions): (InflatedPuzzleState, VecDeque<Action>) = {
+			let random_transformation_count: usize = preferences.file_menu.random_transformation_count as usize;
+			let transformation_types: Vec<TransformationType> = {
+				let mut transformation_types: Vec<TransformationType> = Vec::<TransformationType>::new();
+
+				for type_usize in 0_usize .. TYPE_COUNT {
+					if preferences.file_menu.random_transformation_types.0.0.get_bit(type_usize) {
+						transformation_types.push(TransformationType::try_from(type_usize as u8).unwrap());
+					}
+				}
+
+				transformation_types
+			};
+			let transformation_type_count: f32 = transformation_types.len() as f32;
+			let mut puzzle_state: InflatedPuzzleState = if matches!(
+				preferences.file_menu.randomization_type,
+				RandomizationType::FromCurrent
+			) { puzzle_state.clone() } else { InflatedPuzzleState::SOLVED_STATE };
+			let mut actions: VecDeque<Action> = VecDeque::<Action>::with_capacity(random_transformation_count);
+			let mut thread_rng: ThreadRng = thread_rng();
+
+			while actions.len() < random_transformation_count {
+				let transformation: FullAddr = FullAddr::from((
+					transformation_types[(thread_rng.gen::<f32>() * transformation_type_count) as usize],
+					HalfAddr::from(RandHalfAddrParams { thread_rng: &mut thread_rng, allow_long_line_indices: false })
+				));
+
+				if transformation.is_identity_transformation() {
+					continue;
+				}
+
+				if let Some(prev_action) = actions.back() {
+					let prev_transformation: FullAddr = *prev_action.transformation();
+
+					if match (
+						transformation.get_page_index_type().unwrap(),
+						prev_transformation.get_page_index_type().unwrap()
+					) {
+						(
+							TransformationType::Reorientation,
+							TransformationType::Reorientation
+						) => true,
+						(
+							TransformationType::Simple,
+							TransformationType::Simple
+						) => transformation.get_line_index() == prev_transformation.get_line_index(),
+						_ => transformation.invert() == prev_transformation
+					} {
+						continue;
+					}
+				}
+
+				let action: Action = Action::new(transformation, camera);
+				let standardization: FullAddr = action.standardization();
+
+				actions.push_back(action);
+				puzzle_state += transformation;
+				puzzle_state += standardization;
+				camera = action.camera_end() + standardization;
+			}
+
+			(puzzle_state, actions)
+		};
+
+		match preferences.file_menu.randomization_type {
+			RandomizationType::FromCurrent => {
+				pending_actions.actions = actions;
+			},
+			RandomizationType::FromSolved => {
+				pending_actions.actions = actions;
+				pending_actions.set_puzzle_state = true;
+			},
+			RandomizationType::FromSolvedNoStack => {
+				pending_actions.puzzle_state = puzzle_state;
+				pending_actions.set_puzzle_state = true;
+			}
+		};
+
+		pending_actions
+	}
+}
+
+pub struct ActiveAction {
+	pub action_type:		ActionType,
+	pub current_action:		Option<CurrentAction>,
+	pub pending_actions:	Option<Box<PendingActions>>
+}
+
+#[test]
+fn test_size() -> () {
+	use std::mem::{align_of, size_of};
+
+	macro_rules! print_size_and_align {
+		($($type:ty),*) => {
+			$(
+				println!("size_of::<{}>() == {}, align_of::<{}>() == {}", stringify!($type), size_of::<$type>(), stringify!($type), align_of::<$type>());
+			)*
+		}
+	}
+
+	print_size_and_align!(CurrentAction, Option<CurrentAction>);
+	print_size_and_align!(ActiveAction, Option<ActiveAction>);
+}
+
+impl ActiveAction {
 
 	/// # `update()`
 	///
@@ -255,143 +412,182 @@ impl ActiveAction {
 	///
 	/// `bool` representing whether or not the action has been completed
 	pub fn update(
-		&self,
+		&mut self,
 		extended_puzzle_state:	&mut ExtendedPuzzleState,
 		queries:				&mut QuerySet<(
-			Query<(&mut CameraComponent, &mut Transform)>,
+			CameraQuery,
 			Query<(&PieceComponent, &mut Transform)>
 		)>
 	) -> bool {
-		let action: Action = if let Some(action) = self.actions.front() {
-			*action
-		} else {
-			return true;
-		};
-		let end_quat: Quat = if warn_expect!(action.is_valid()) {
-			TransformationLibrary::get()
-				.orientation_data
-				.get_word(action.camera_end())
-				.quat
-		} else {
-			Quat::IDENTITY
-		};
+		let mut completed: bool = true;
 
-		match self.s_now() {
-			Some(s) => {
-				if action.transformation().is_valid() {
-					let comprising_simples: &[HalfAddr] = action
-						.transformation()
-						.get_comprising_simples();
-					let total_cycles: f32 = FullAddr::get_cycles_for_comprising_simples(
-						&comprising_simples
-					) as f32;
-					let mut cycle_count: f32 = 0.0_f32;
-					let mut puzzle_state: InflatedPuzzleState = extended_puzzle_state.puzzle_state.clone();
+		loop {
+			if self.current_action.is_none() {
+				if let Some(pending_actions) = self
+					.pending_actions
+					.as_mut()
+					.map(Box::<PendingActions>::as_mut)
+				{
+					if pending_actions.set_puzzle_state {
+						*extended_puzzle_state = ExtendedPuzzleState {
+							puzzle_state: pending_actions.puzzle_state.clone(),
+							.. ExtendedPuzzleState::default()
+						};
 
-					for comprising_simple in comprising_simples {
-						let comprising_simple: FullAddr = (
-							TransformationType::Simple,
-							*comprising_simple
-						).into();
-						let cycles: f32 = comprising_simple.get_cycles() as f32;
-						let s: f32 = s * total_cycles;
+						pending_actions.set_puzzle_state = false;
+					}
 
-						if cycles == 0.0_f32 {
-							continue;
-						} else if s >= cycle_count + cycles {
-							puzzle_state += comprising_simple;
-							cycle_count += cycles;
-						} else {
-							let word_pack: WordPack = TransformationLibrary::get()
-								.book_pack_data
-								.get_word_pack(comprising_simple);
-							let rotation: Quat = Quat::IDENTITY.short_slerp(*word_pack.quat, 
-								(s - cycle_count) / cycles
-							);
-		
+					self.current_action = pending_actions
+						.pop_current_action(&mut queries.q0_mut(), self.action_type);
+				}
+			}
+
+			if let Some(current_action) = &self.current_action {
+				let action: Action = current_action.action;
+				let end_quat: Option<Quat> = action.camera_end().quat().copied();
+
+				match current_action.s_now() {
+					Some(s) => {
+						if action.transformation().is_valid() {
+							let comprising_simples: &[HalfAddr] = action
+								.transformation()
+								.get_comprising_simples();
+							let total_cycles: f32 = FullAddr::get_cycles_for_comprising_simples(
+								&comprising_simples
+							) as f32;
+							let mut cycle_count: f32 = 0.0_f32;
+							let mut puzzle_state: InflatedPuzzleState = extended_puzzle_state.puzzle_state.clone();
+
+							for comprising_simple in comprising_simples {
+								let comprising_simple: FullAddr = (
+									TransformationType::Simple,
+									*comprising_simple
+								).into();
+								let cycles: f32 = comprising_simple.get_cycles() as f32;
+								let s: f32 = s * total_cycles;
+
+								if cycles == 0.0_f32 {
+									continue;
+								} else if s >= cycle_count + cycles {
+									puzzle_state += comprising_simple;
+									cycle_count += cycles;
+								} else {
+									let word_pack: WordPack = comprising_simple.word_pack().unwrap();
+									let rotation: Quat = Quat::IDENTITY.short_slerp(*word_pack.quat, 
+										(s - cycle_count) / cycles
+									);
+
+									for (piece_component, mut transform) in queries
+										.q1_mut()
+										.iter_mut()
+									{
+										let piece_index: usize = piece_component.index;
+
+										transform.rotation = if word_pack
+											.mask
+											.affects_piece(puzzle_state.pos[piece_index] as usize)
+										{
+											rotation
+										} else {
+											Quat::IDENTITY
+										} * (*puzzle_state.half_addr(piece_index).quat().unwrap());
+									}
+
+									break;
+								}
+							}
+						}
+
+						if current_action.has_camera_orientation {
+							CameraQueryNT(queries.q0_mut()).orientation(|camera_orientation: Option<&mut Quat>| -> () {
+								if let (
+									Some(camera_orientation),
+									Some(end_quat)
+								) = (
+									camera_orientation,
+									end_quat
+								) {
+									*camera_orientation = current_action.camera_orientation.short_slerp(end_quat, s);
+								}
+							});
+						}
+
+						completed = false;
+
+						break;
+					},
+					None => {
+						let mut standardization_word_pack_option: Option<WordPack> = None;
+
+						if action.transformation().is_valid() {
+							let transformation_word_pack: WordPack = action.transformation().word_pack().unwrap();
+							let standardization_word_pack: WordPack = action.standardization().word_pack().unwrap();
+
+							*extended_puzzle_state += transformation_word_pack.trfm;
+							*extended_puzzle_state += standardization_word_pack.trfm;
+							warn_expect!(extended_puzzle_state.puzzle_state.is_standardized());
+
+							let puzzle_state: &InflatedPuzzleState = &extended_puzzle_state.puzzle_state;
+
 							for (piece_component, mut transform) in queries
 								.q1_mut()
 								.iter_mut()
 							{
-								let piece_index: usize = piece_component.index;
-
-								transform.rotation = if word_pack
-									.mask
-									.affects_piece(puzzle_state.pos[piece_index] as usize)
-								{
-									rotation
-								} else {
-									Quat::IDENTITY
-								}
-									* TransformationLibrary::get()
-										.orientation_data
-										.get_word(puzzle_state.half_addr(piece_index))
-										.quat;
+								transform.rotation = *puzzle_state
+									.half_addr(piece_component.index)
+									.quat()
+									.unwrap();
 							}
 
-							break;
+							if !action.transformation().is_page_index_reorientation() {
+								standardization_word_pack_option = Some(standardization_word_pack);
+							}
 						}
-					}
-				}
 
-				if let Some(camera_orientation) = self.camera_orientation {
-					if let Some((_, mut transform)) = queries.q0_mut().iter_mut().next() {
 						if action.camera_start().is_valid() {
-							transform.rotation = camera_orientation.short_slerp(end_quat, s);
+							CameraQueryNT(queries.q0_mut()).orientation(|camera_orientation: Option<&mut Quat>| -> () {
+								if let Some(camera_orientation) = camera_orientation {
+									*camera_orientation = standardization_word_pack_option.map_or(
+										Quat::IDENTITY,
+										|word_pack: WordPack| -> Quat { *word_pack.quat }
+									) * if current_action.has_camera_orientation && end_quat.is_some() {
+										end_quat.unwrap()
+									} else {
+										*camera_orientation
+									};
+								}
+							});
 						}
+
+						match self.action_type {
+							ActionType::Transformation | ActionType::Randomize => {
+								if warn_expect!(action.transformation().is_valid()) {
+									extended_puzzle_state.curr_action += 1_i32;
+
+									let len: usize = extended_puzzle_state.curr_action as usize;
+
+									extended_puzzle_state.actions.truncate(len);
+									extended_puzzle_state.actions.push(action);
+								}
+							},
+							ActionType::Undo => {
+								extended_puzzle_state.curr_action -= 1_i32;
+							},
+							ActionType::Redo => {
+								extended_puzzle_state.curr_action += 1_i32;
+							},
+							_ => {}
+						}
+
+						self.current_action = None;
 					}
 				}
-
-				false
-			},
-			None => {
-				let mut standardization_word_pack_option: Option<WordPack> = None;
-
-				if action.transformation().is_valid() {
-					let transformation_word_pack: WordPack = TransformationLibrary::get()
-						.book_pack_data.
-						get_word_pack(*action.transformation());
-					let standardization_word_pack: WordPack = TransformationLibrary::get()
-						.book_pack_data
-						.get_word_pack(action.standardization());
-
-					*extended_puzzle_state += transformation_word_pack.trfm;
-					*extended_puzzle_state += standardization_word_pack.trfm;
-					warn_expect!(extended_puzzle_state.puzzle_state.is_standardized());
-
-					let puzzle_state: &InflatedPuzzleState = &extended_puzzle_state.puzzle_state;
-
-					for (piece_component, mut transform) in queries
-						.q1_mut()
-						.iter_mut()
-					{
-						transform.rotation = TransformationLibrary::get()
-							.orientation_data
-							.get_word(puzzle_state.half_addr(piece_component.index))
-							.quat;
-					}
-
-					if !action.transformation().is_page_index_reorientation() {
-						standardization_word_pack_option = Some(standardization_word_pack);
-					}
-				}
-
-				if action.camera_start().is_valid() {
-					if let Some((_, mut transform)) = queries.q0_mut().iter_mut().next() {
-						transform.rotation = standardization_word_pack_option.map_or(
-							Quat::IDENTITY,
-							|word_pack: WordPack| -> Quat { *word_pack.quat }
-						) * if self.camera_orientation.is_some() {
-							end_quat
-						} else {
-							transform.rotation
-						};
-					}
-				}
-
-				true
+			} else {
+				break;
 			}
 		}
+
+		completed
 	}
 }
 
@@ -545,7 +741,7 @@ impl InputPlugin {
 
 				Quat::from_axis_angle(
 					Vec3::new(mouse_motion_delta.x, -mouse_motion_delta.y, 0.0_f32).cross(Vec3::Z).normalize(),
-					mouse_motion_delta.length() / PAN_SCALING_FACTOR * preferences.speed.pan_speed as f32
+					mouse_motion_delta.length() / PAN_SCALING_FACTOR * preferences.speed.camera.pan_speed as f32
 				)
 			} else if mouse_wheel_delta.abs() > f32::EPSILON {
 				const ROLL_SCALING_FACTOR: f32 = 5_000.0_f32;
@@ -553,7 +749,7 @@ impl InputPlugin {
 				rolled_or_panned = true;
 
 				Quat::from_rotation_z(
-					mouse_wheel_delta / ROLL_SCALING_FACTOR * preferences.speed.roll_speed as f32
+					mouse_wheel_delta / ROLL_SCALING_FACTOR * preferences.speed.camera.roll_speed as f32
 				)
 			} else {
 				Quat::IDENTITY
@@ -576,9 +772,9 @@ impl InputPlugin {
 						/* If the whole purpose of the current active transformation action is to recenter the camera,
 						which we no longer wish to do, end the active transformation action entirely */
 						input_state.action = None;
-					} else {
+					} else if let Some(current_action) = &mut active_action.current_action {
 						// Cancel active camera movement
-						active_action.camera_orientation = None;
+						current_action.has_camera_orientation = false;
 					}
 				}
 			}
@@ -647,7 +843,8 @@ impl InputPlugin {
 					.invert(),
 				ActionType::Redo => extended_puzzle_state
 					.actions
-					[(extended_puzzle_state.curr_action + 1_i32) as usize]
+					[(extended_puzzle_state.curr_action + 1_i32) as usize],
+				ActionType::Randomize => unreachable!()
 			};
 
 			if !info_expect!(matches!(action_type, ActionType::RecenterCamera)
@@ -663,33 +860,27 @@ impl InputPlugin {
 				return;
 			}
 
-			let actions: VecDeque<Action> = VecDeque::<Action>::from([action]);
-			let start: Instant = Instant::now();
-			let duration: Duration = if matches!(action_type, ActionType::Undo | ActionType::Redo)
-				&& !speed_data.animate_undo_and_redo
+			let (camera_orientation, has_camera_orientation): (Quat, bool) = if recenter_camera
+				|| !input_state.toggles.disable_recentering
 			{
-				Duration::ZERO
+				(*camera_orientation, true)
 			} else {
-				Duration::from_millis(speed_data.rotation_millis as u64)
-					* if speed_data.uniform_transformation_duration || recenter_camera {
-						1_u32
-					} else {
-						max(action.transformation().get_cycles(), 1_u32)
-					}
+				(Quat::IDENTITY, false)
 			};
-			let camera_orientation: Option<Quat> = if recenter_camera || !input_state.toggles.disable_recentering {
-				Some(*camera_orientation)
-			} else {
-				None
-			};
+			let start: Instant = Instant::now();
+			let duration: Duration = action.duration(&speed_data.animation, action_type);
 
 			input_state.action = Some(
 				ActiveAction {
 					action_type,
-					actions,
-					start,
-					duration,
-					camera_orientation
+					current_action: Some(CurrentAction{
+						camera_orientation,
+						start,
+						duration,
+						action,
+						has_camera_orientation
+					}),
+					pending_actions: None
 				}
 			);
 		}
