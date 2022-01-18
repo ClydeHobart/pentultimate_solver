@@ -401,6 +401,12 @@ pub mod inflated {
 
 			self
 		}
+
+		pub fn update_pieces(&self, pieces_query: &mut PieceQuery) -> () {
+			for (piece_component, mut transform) in pieces_query.iter_mut() {
+				transform.rotation = *self.half_addr(piece_component.index).quat().unwrap();
+			}
+		}
 	}
 
 	impl PuzzleStateConsts for PuzzleState {

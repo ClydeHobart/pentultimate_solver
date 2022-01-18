@@ -768,6 +768,10 @@ impl FullAddr {
 	#[inline(always)]
 	pub fn page_index_is_valid(&self) -> bool { Self::is_valid_page_index(unsafe { self.get_page_index_unchecked() }) }
 
+	pub fn quat(self) -> Option<&'static Quat> {
+		self.word_pack().map(|word_pack: WordPack<'static>| -> &'static Quat { word_pack.quat })
+	}
+
 	pub fn set_half_addr(&mut self, half_addr: HalfAddr) -> &mut FullAddr {
 		assert!(self.half_addr_is_valid());
 		self.half_addr = half_addr;

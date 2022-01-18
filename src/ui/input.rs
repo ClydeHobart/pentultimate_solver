@@ -1,5 +1,3 @@
-use crate::puzzle::transformation::Addr;
-
 use {
 	crate::{
 		prelude::*,
@@ -22,6 +20,7 @@ use {
 				self,
 				packs::*,
 				Action,
+				Addr,
 				FullAddr,
 				HalfAddr,
 				RandHalfAddrParams,
@@ -237,6 +236,7 @@ pub enum ActionType {
 	Transformation,
 	Undo,
 	Redo,
+	Reset,
 	Randomize
 }
 
@@ -266,19 +266,21 @@ impl CurrentAction {
 
 pub struct PendingActions {
 	pub puzzle_state:			InflatedPuzzleState,
+	pub camera_orientation:		Quat,
 	pub actions:				VecDeque<Action>,
 	pub animation_speed_data:	AnimationSpeedData,
-	pub set_puzzle_state:		bool
+	pub set_puzzle_state:		bool,
+	pub set_camera_orientation:	bool
 }
 
 impl PendingActions {
-	fn pop_current_action(&mut self, camera_query: &mut CameraQuery, action_type: ActionType) -> Option<CurrentAction> {
+	fn pop_current_action(&mut self, camera_query: &mut CameraQueryMut, action_type: ActionType) -> Option<CurrentAction> {
 		if let (
 			Some(action),
 			Some(camera_orientation)
 		) = (
 			self.actions.pop_front(),
-			CameraQueryNT(camera_query)
+			CameraQueryMutNT(camera_query)
 				.orientation(|camera_orientation: Option<&mut Quat>| -> Option<Quat> { camera_orientation.copied() })
 		) {
 			Some(CurrentAction {
@@ -293,12 +295,30 @@ impl PendingActions {
 		}
 	}
 
-	pub fn scramble(preferences: &Preferences, puzzle_state: &InflatedPuzzleState, mut camera: HalfAddr) -> Self {
+	pub fn reset(camera_orientation: &Quat, animation_speed_data: AnimationSpeedData) -> Self {
+		Self {
+			puzzle_state:			InflatedPuzzleState::SOLVED_STATE,
+			camera_orientation:		(*CameraPlugin::compute_camera_addr(camera_orientation)
+				.as_reorientation()
+				.invert()
+				.quat()
+				.unwrap()
+			) * (*camera_orientation),
+			actions:				VecDeque::<Action>::new(),
+			animation_speed_data,
+			set_puzzle_state:		true,
+			set_camera_orientation:	true
+		}
+	}
+
+	pub fn randomize(preferences: &Preferences, puzzle_state: &InflatedPuzzleState, camera_orientation: &Quat) -> Self {
 		let mut pending_actions: PendingActions = PendingActions {
 			puzzle_state:			InflatedPuzzleState::SOLVED_STATE,
+			camera_orientation:		Quat::IDENTITY,
 			actions:				VecDeque::<Action>::new(),
 			animation_speed_data:	preferences.speed.animation.clone(),
-			set_puzzle_state:		false
+			set_puzzle_state:		false,
+			set_camera_orientation:	false
 		};
 		let (puzzle_state, actions): (InflatedPuzzleState, VecDeque<Action>) = {
 			let random_transformation_count: usize = preferences.file_menu.random_transformation_count as usize;
@@ -318,6 +338,7 @@ impl PendingActions {
 				preferences.file_menu.randomization_type,
 				RandomizationType::FromCurrent
 			) { puzzle_state.clone() } else { InflatedPuzzleState::SOLVED_STATE };
+			let mut camera: HalfAddr = CameraPlugin::compute_camera_addr(camera_orientation);
 			let mut actions: VecDeque<Action> = VecDeque::<Action>::with_capacity(random_transformation_count);
 			let mut thread_rng: ThreadRng = thread_rng();
 
@@ -402,6 +423,7 @@ fn test_size() -> () {
 
 	print_size_and_align!(CurrentAction, Option<CurrentAction>);
 	print_size_and_align!(ActiveAction, Option<ActiveAction>);
+	print_size_and_align!(VecDeque<u8>);
 }
 
 impl ActiveAction {
@@ -415,8 +437,8 @@ impl ActiveAction {
 		&mut self,
 		extended_puzzle_state:	&mut ExtendedPuzzleState,
 		queries:				&mut QuerySet<(
-			CameraQuery,
-			Query<(&PieceComponent, &mut Transform)>
+			CameraQueryMut,
+			PieceQuery
 		)>
 	) -> bool {
 		let mut completed: bool = true;
@@ -433,8 +455,17 @@ impl ActiveAction {
 							puzzle_state: pending_actions.puzzle_state.clone(),
 							.. ExtendedPuzzleState::default()
 						};
-
+						extended_puzzle_state.puzzle_state.update_pieces(queries.q1_mut());
 						pending_actions.set_puzzle_state = false;
+					}
+
+					if pending_actions.set_camera_orientation {
+						CameraQueryMutNT(queries.q0_mut()).orientation(|camera_orientation: Option<&mut Quat>| -> () {
+							if let Some(camera_orientation) = camera_orientation {
+								*camera_orientation = pending_actions.camera_orientation;
+							}
+						});
+						pending_actions.set_camera_orientation = false;
 					}
 
 					self.current_action = pending_actions
@@ -499,7 +530,7 @@ impl ActiveAction {
 						}
 
 						if current_action.has_camera_orientation {
-							CameraQueryNT(queries.q0_mut()).orientation(|camera_orientation: Option<&mut Quat>| -> () {
+							CameraQueryMutNT(queries.q0_mut()).orientation(|camera_orientation: Option<&mut Quat>| -> () {
 								if let (
 									Some(camera_orientation),
 									Some(end_quat)
@@ -527,17 +558,7 @@ impl ActiveAction {
 							*extended_puzzle_state += standardization_word_pack.trfm;
 							warn_expect!(extended_puzzle_state.puzzle_state.is_standardized());
 
-							let puzzle_state: &InflatedPuzzleState = &extended_puzzle_state.puzzle_state;
-
-							for (piece_component, mut transform) in queries
-								.q1_mut()
-								.iter_mut()
-							{
-								transform.rotation = *puzzle_state
-									.half_addr(piece_component.index)
-									.quat()
-									.unwrap();
-							}
+							extended_puzzle_state.puzzle_state.update_pieces(queries.q1_mut());
 
 							if !action.transformation().is_page_index_reorientation() {
 								standardization_word_pack_option = Some(standardization_word_pack);
@@ -545,7 +566,7 @@ impl ActiveAction {
 						}
 
 						if action.camera_start().is_valid() {
-							CameraQueryNT(queries.q0_mut()).orientation(|camera_orientation: Option<&mut Quat>| -> () {
+							CameraQueryMutNT(queries.q0_mut()).orientation(|camera_orientation: Option<&mut Quat>| -> () {
 								if let Some(camera_orientation) = camera_orientation {
 									*camera_orientation = standardization_word_pack_option.map_or(
 										Quat::IDENTITY,
@@ -660,7 +681,7 @@ impl InputPlugin {
 		view:						Res<View>,
 		time:						Res<Time>,
 		preferences:				Res<Preferences>,
-		camera_component_query:		Query<(&CameraComponent, &Transform)>,
+		camera_component_query:		CameraQuery,
 		mut mouse_motion_events:	EventReader<MouseMotion>,
 		mut mouse_wheel_events:		EventReader<MouseWheel>,
 		mut input_state:			ResMut<InputState>
@@ -784,11 +805,11 @@ impl InputPlugin {
 	}
 
 	fn update_action(
-		extended_puzzle_state:		&ExtendedPuzzleState,
-		keyboard_input:				&Input<BevyKeyCode>,
-		preferences:				&Preferences,
-		camera_component_query:		&Query<(&CameraComponent, &Transform)>,
-		input_state:				&mut InputState
+		extended_puzzle_state:	&ExtendedPuzzleState,
+		keyboard_input:			&Input<BevyKeyCode>,
+		preferences:			&Preferences,
+		camera_query:			&CameraQuery,
+		input_state:			&mut InputState
 	) -> () {
 		let input_data:				&InputData			= &preferences.input;
 		let speed_data:				&SpeedData			= &preferences.speed;
@@ -820,8 +841,10 @@ impl InputPlugin {
 		}
 
 		if let Some(action_type) = action_type {
-			let camera_orientation: &Quat = &log_option_none!(camera_component_query.iter().next()).1.rotation;
-			let camera_start: HalfAddr = CameraPlugin::compute_camera_addr(camera_orientation);
+			let camera_orientation: Quat = CameraQueryNT(camera_query)
+				.orientation(|camera_orientation: Option<&Quat>| -> Option<Quat> { camera_orientation.copied() })
+				.unwrap_or_default();
+			let camera_start: HalfAddr = CameraPlugin::compute_camera_addr(&camera_orientation);
 			let recenter_camera: bool = matches!(action_type, ActionType::RecenterCamera);
 			let action: Action = match action_type {
 				ActionType::RecenterCamera => Action::new(
@@ -844,7 +867,7 @@ impl InputPlugin {
 				ActionType::Redo => extended_puzzle_state
 					.actions
 					[(extended_puzzle_state.curr_action + 1_i32) as usize],
-				ActionType::Randomize => unreachable!()
+				_ => unreachable!()
 			};
 
 			if !info_expect!(matches!(action_type, ActionType::RecenterCamera)
@@ -863,7 +886,7 @@ impl InputPlugin {
 			let (camera_orientation, has_camera_orientation): (Quat, bool) = if recenter_camera
 				|| !input_state.toggles.disable_recentering
 			{
-				(*camera_orientation, true)
+				(camera_orientation, true)
 			} else {
 				(Quat::IDENTITY, false)
 			};

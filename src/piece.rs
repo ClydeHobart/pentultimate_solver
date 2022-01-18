@@ -280,6 +280,8 @@ pub struct PieceComponent {
 	pub piece_type:	Type
 }
 
+pub type PieceQuery<'a, 'b, 'c> = Query<'a, (&'b PieceComponent, &'c mut Transform)>;
+
 struct Piece {
 	piece_type:		Type,
 	base_mesh:		Mesh,

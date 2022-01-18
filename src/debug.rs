@@ -130,8 +130,6 @@ impl PartialEq for DebugModeDataBox {
 	}
 }
 
-
-
 #[derive(Clone, Default, Inspectable, PartialEq)]
 struct PuzzleStateData {
 	reorientation:			HalfAddr,

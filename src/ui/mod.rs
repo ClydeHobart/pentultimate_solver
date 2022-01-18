@@ -72,6 +72,38 @@ impl UIPlugin {
 								));
 							}
 
+							if ui.button("Reset").clicked() {
+								world.resource_scope(|world: &mut World, mut input_state: Mut<InputState>| -> () {
+									if input_state.action.is_none() {
+										if let (
+											Some(camera_orientation),
+											Some(preferences)
+										) = (
+											world
+												.query::<(&CameraComponent, &Transform)>()
+												.iter(world)
+												.next()
+												.map(|(_, transform): (&CameraComponent, &Transform)| -> Quat {
+													transform.rotation
+												}
+											),
+											world.get_resource::<Preferences>(),
+										) {
+											input_state.action = Some(ActiveAction {
+												action_type: ActionType::Reset,
+												current_action: None,
+												pending_actions: Some(Box::<PendingActions>::new(
+													PendingActions::reset(
+														&camera_orientation,
+														preferences.speed.animation.clone()
+													)
+												))
+											});
+										}
+									}
+								});
+							}
+
 							if ui.button("Randomize").clicked() {
 								world.resource_scope(|world: &mut World, mut input_state: Mut<InputState>| -> () {
 									if input_state.action.is_none() {
@@ -95,12 +127,10 @@ impl UIPlugin {
 												action_type: ActionType::Randomize,
 												current_action: None,
 												pending_actions: Some(Box::<PendingActions>::new(
-													PendingActions::scramble(
+													PendingActions::randomize(
 														preferences,
 														&extended_puzzle_state.puzzle_state,
-														CameraPlugin::compute_camera_addr(
-															&camera_orientation
-														)
+														&camera_orientation
 													)
 												))
 											});
@@ -135,7 +165,6 @@ impl UIPlugin {
 			.show(egui_context.ctx(), |ui: &mut Ui| -> () {
 				let toggles: &InputToggles = &input_state.toggles;
 
-				// ui.style_mut().visuals.widgets.noninteractive.bg_fill = Color32::TRANSPARENT;
 				egui::Grid::new("ModifierTable").show(ui, |ui: &mut Ui| -> () {
 					let input: &InputData = &preferences.input;
 
@@ -182,7 +211,6 @@ impl UIPlugin {
 		egui::Area::new("ActionStack")
 			.anchor(egui::Align2::RIGHT_BOTTOM, ACTION_STACK_OFFSET)
 			.show(egui_context.ctx(), |ui: &mut Ui| -> () {
-				// ui.label("Action Stack");
 				egui::ScrollArea::auto_sized().show(ui, |ui: &mut Ui| -> () {
 					for (action_index, action) in extended_puzzle_state.actions.iter().enumerate() {
 						ui.visuals_mut().widgets.noninteractive.fg_stroke.color = if action_index as i32 == extended_puzzle_state.curr_action {

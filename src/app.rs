@@ -25,7 +25,8 @@ pub mod prelude {
 		piece::{
 			PieceComponent,
 			PieceLibrary,
-			PiecePlugin
+			PiecePlugin,
+			PieceQuery
 		},
 		preferences::{
 			colors::{
@@ -47,6 +48,8 @@ pub mod prelude {
 				CameraComponent,
 				CameraPlugin,
 				CameraQuery,
+				CameraQueryMut,
+				CameraQueryMutNT,
 				CameraQueryNT
 			},
 			input::{
