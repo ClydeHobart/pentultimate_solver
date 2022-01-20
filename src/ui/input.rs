@@ -76,7 +76,13 @@ pub fn generate_default_positions() -> [usize; HALF_PENTAGON_PIECE_COUNT] {
 	let face_1_norm: Vec3 = icosidodecahedron_data.faces[1_usize].norm;
 
 	for rotation in 3_u32 ..= 7_u32 {
-		positions[rotation as usize - 2] = icosidodecahedron_data.get_closest_face_index(&face_0_data.get_rotation_quat(rotation % PENTAGON_SIDE_COUNT as u32).mul_vec3(face_1_norm), None);
+		positions[rotation as usize - 2] = icosidodecahedron_data
+			.get_closest_face_index(
+				&face_0_data
+					.get_rotation_quat(rotation % PENTAGON_SIDE_COUNT as u32)
+					.mul_vec3(face_1_norm), 
+				None
+			);
 	}
 
 	positions
@@ -274,7 +280,11 @@ pub struct PendingActions {
 }
 
 impl PendingActions {
-	fn pop_current_action(&mut self, camera_query: &mut CameraQueryMut, action_type: ActionType) -> Option<CurrentAction> {
+	fn pop_current_action(
+		&mut self,
+		camera_query: &mut CameraQueryMut,
+		action_type: ActionType
+	) -> Option<CurrentAction> {
 		if let (
 			Some(action),
 			Some(camera_orientation)
