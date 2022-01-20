@@ -663,7 +663,9 @@ impl FullAddr {
 	pub fn get_comprising_simples_string(self) -> String {
 		let mut comprising_simples_string: String = String::new();
 
-		for (comprising_simple_index, comprising_simple) in self.get_comprising_simples().iter().enumerate() {
+		for (comprising_simple_index, comprising_simple)
+			in self.get_comprising_simples().iter().enumerate()
+		{
 			write!(
 				comprising_simples_string,
 				"{0}{1:\t>2$}ha!({3},\t{4}),",
@@ -1343,15 +1345,16 @@ impl Library {
 
 					page_pack_mut.iter_mut(|line_index: usize, mut line_pack_mut: LinePackMut| -> () {
 						line_pack_mut.iter_mut(|word_index: usize, word_pack_mut: WordPackMut| -> () {
-							let reorientation_quat: Quat = orientation_data[line_index][word_index].quat * origin_conj_quat;
+							let reorientation_quat: Quat =
+								orientation_data[line_index][word_index].quat * origin_conj_quat;
 							let (pos_array, rot_array): (&mut PuzzleStateComponent, &mut PuzzleStateComponent) =
 								word_pack_mut.trfm.arrays_mut();
 
 							for piece_index in PIECE_RANGE {
 								let (pos, rot): (usize, usize) = icosidodecahedron_data.get_pos_and_rot(
 									&(reorientation_quat * icosidodecahedron_data.faces[piece_index].quat),
-									None /* We could put a filter in here, but it'd be slower, and the quat math is
-										precise enough that it's unnecessary here */
+									None /* We could put a filter in here, but it'd be slower, and the quat math
+										is precise enough that it's unnecessary here */
 								);
 
 								pos_array[piece_index] = pos as PieceStateComponent;
@@ -1430,7 +1433,9 @@ impl Library {
 						{
 							let mut puzzle_state: PuzzleState = PuzzleState::SOLVED_STATE;
 
-							for comprising_simple in comprising_simples_data.get_word(FullAddr::from((page_index, line_index, word_index)))
+							for comprising_simple 
+								in comprising_simples_data
+									.get_word(FullAddr::from((page_index, line_index, word_index)))
 							{
 								puzzle_state += simple_trfm_page.get_word(*comprising_simple);
 							}
@@ -1771,7 +1776,10 @@ mod tests {
 		page_pack.iter(|line_index: usize, line_pack: LinePack| -> () {
 			line_pack.iter(|word_index: usize, word_pack: WordPack| -> () {
 				let trfm:						&Trfm				= &word_pack.trfm;
-				let inv_trfm:					&Trfm				= &library.book_pack_data.get_word_pack(*word_pack.addr).trfm;
+				let inv_trfm:					&Trfm				= &library
+					.book_pack_data
+					.get_word_pack(*word_pack.addr)
+					.trfm;
 
 				let mut curr_puzzle_state:		PuzzleState			= PuzzleState::SOLVED_STATE;
 				let mut curr_puzzle_state_alt:	PuzzleState			= PuzzleState::SOLVED_STATE;
@@ -1783,14 +1791,24 @@ mod tests {
 					curr_puzzle_state_alt.naive_add_assign(trfm);
 
 					if curr_puzzle_state_alt != curr_puzzle_state {
-						log::error!("curr_puzzle_state_alt != curr_puzzle_state after turn {} with pentagon {} and rotation {}", turn, line_index, word_index);
+						log::error!(
+							"curr_puzzle_state_alt != curr_puzzle_state after turn {} with pentagon {} and rotation {}",
+							turn,
+							line_index,
+							word_index
+						);
 						error_expr!(prev_puzzle_state, trfm, curr_puzzle_state, curr_puzzle_state_alt);
 
 						panic!();
 					}
 
 					if !curr_puzzle_state.is_valid() {
-						log::error!("Puzzle state isn't valid after turn {} with pentagon {} and rotation {}", turn, line_index, word_index);
+						log::error!(
+							"Puzzle state isn't valid after turn {} with pentagon {} and rotation {}",
+							turn,
+							line_index,
+							word_index
+						);
 						error_expr!(prev_puzzle_state, trfm, curr_puzzle_state);
 
 						panic!();
@@ -1801,15 +1819,30 @@ mod tests {
 					prev_puzzle_state_from_inverse_transformation += inv_trfm;
 
 					if prev_puzzle_state_from_inverse_transformation != prev_puzzle_state {
-						log::error!("prev_puzzle_state_from_inverse_transformation != prev_puzzle_state after turn {} with pentagon {} and rotation {}", turn, line_index, word_index);
-						error_expr!(curr_puzzle_state, inv_trfm, prev_puzzle_state_from_inverse_transformation, prev_puzzle_state);
+						log::error!(
+							"prev_puzzle_state_from_inverse_transformation != prev_puzzle_state after turn {} with \
+								pentagon {} and rotation {}",
+							turn,
+							line_index,
+							word_index
+						);
+						error_expr!(
+							curr_puzzle_state,
+							inv_trfm,
+							prev_puzzle_state_from_inverse_transformation,
+							prev_puzzle_state
+						);
 
 						panic!();
 					}
 				}
 
 				if curr_puzzle_state != PuzzleState::SOLVED_STATE {
-					log::error!("curr_puzzle_state != curr_puzzle_state with pentagon {} and rotation {}", line_index, word_index);
+					log::error!(
+						"curr_puzzle_state != curr_puzzle_state with pentagon {} and rotation {}",
+						line_index,
+						word_index
+					);
 					error_expr!(curr_puzzle_state);
 
 					panic!();
@@ -1824,8 +1857,9 @@ mod tests {
 		<Library as StaticDataLibrary>::initialize();
 		test_validity();
 
-		// Though Type::Reorientation is listed before Simple (intentionally: it doesn't actually change the (standardized) state of the puzzle),
-		// Type::Simple needs to be tested first, since the former is dependent on the latter
+		/* Though Type::Reorientation is listed before Simple (intentionally: it doesn't actually change the
+		(standardized) state of the puzzle), Type::Simple needs to be tested first, since the former is dependent on the
+		latter */
 		test_simples();
 		test_reorientations();
 	}
