@@ -753,7 +753,6 @@ impl FullAddr {
 				if page_index_type.is_complex() {
 					*self.get_half_addr()
 				} else {
-
 					HalfAddr::new(
 						Self::mirror_line_index(self.get_line_index()),
 						Self::invert_word_index(self.get_word_index())

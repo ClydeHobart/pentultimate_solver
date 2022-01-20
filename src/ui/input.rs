@@ -409,25 +409,7 @@ pub struct ActiveAction {
 	pub pending_actions:	Option<Box<PendingActions>>
 }
 
-#[test]
-fn test_size() -> () {
-	use std::mem::{align_of, size_of};
-
-	macro_rules! print_size_and_align {
-		($($type:ty),*) => {
-			$(
-				println!("size_of::<{}>() == {}, align_of::<{}>() == {}", stringify!($type), size_of::<$type>(), stringify!($type), align_of::<$type>());
-			)*
-		}
-	}
-
-	print_size_and_align!(CurrentAction, Option<CurrentAction>);
-	print_size_and_align!(ActiveAction, Option<ActiveAction>);
-	print_size_and_align!(VecDeque<u8>);
-}
-
 impl ActiveAction {
-
 	/// # `update()`
 	///
 	/// ## Return value
@@ -530,17 +512,20 @@ impl ActiveAction {
 						}
 
 						if current_action.has_camera_orientation {
-							CameraQueryMutNT(queries.q0_mut()).orientation(|camera_orientation: Option<&mut Quat>| -> () {
-								if let (
-									Some(camera_orientation),
-									Some(end_quat)
-								) = (
-									camera_orientation,
-									end_quat
-								) {
-									*camera_orientation = current_action.camera_orientation.short_slerp(end_quat, s);
-								}
-							});
+							CameraQueryMutNT(queries.q0_mut())
+								.orientation(|camera_orientation: Option<&mut Quat>| -> () {
+									if let (
+										Some(camera_orientation),
+										Some(end_quat)
+									) = (
+										camera_orientation,
+										end_quat
+									) {
+										*camera_orientation = current_action
+											.camera_orientation
+											.short_slerp(end_quat, s);
+									}
+								});
 						}
 
 						completed = false;
@@ -566,18 +551,19 @@ impl ActiveAction {
 						}
 
 						if action.camera_start().is_valid() {
-							CameraQueryMutNT(queries.q0_mut()).orientation(|camera_orientation: Option<&mut Quat>| -> () {
-								if let Some(camera_orientation) = camera_orientation {
-									*camera_orientation = standardization_word_pack_option.map_or(
-										Quat::IDENTITY,
-										|word_pack: WordPack| -> Quat { *word_pack.quat }
-									) * if current_action.has_camera_orientation && end_quat.is_some() {
-										end_quat.unwrap()
-									} else {
-										*camera_orientation
-									};
-								}
-							});
+							CameraQueryMutNT(queries.q0_mut())
+								.orientation(|camera_orientation: Option<&mut Quat>| -> () {
+									if let Some(camera_orientation) = camera_orientation {
+										*camera_orientation = standardization_word_pack_option.map_or(
+											Quat::IDENTITY,
+											|word_pack: WordPack| -> Quat { *word_pack.quat }
+										) * if current_action.has_camera_orientation && end_quat.is_some() {
+											end_quat.unwrap()
+										} else {
+											*camera_orientation
+										};
+									}
+								});
 						}
 
 						match self.action_type {
