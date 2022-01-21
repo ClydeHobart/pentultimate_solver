@@ -18,11 +18,11 @@ use {
 			consts::*,
 			transformation::{
 				self,
-				packs::*,
 				Action,
 				Addr,
 				FullAddr,
 				HalfAddr,
+				Mask,
 				RandHalfAddrParams,
 				Type as TransformationType,
 				TYPE_COUNT
@@ -310,8 +310,8 @@ impl PendingActions {
 			puzzle_state:			InflatedPuzzleState::SOLVED_STATE,
 			camera_orientation:		(*CameraPlugin::compute_camera_addr(camera_orientation)
 				.as_reorientation()
-				.invert()
-				.quat()
+				.inverse()
+				.rotation()
 				.unwrap()
 			) * (*camera_orientation),
 			actions:				VecDeque::<Action>::new(),
@@ -377,7 +377,7 @@ impl PendingActions {
 							TransformationType::Simple,
 							TransformationType::Simple
 						) => transformation.get_line_index() == prev_transformation.get_line_index(),
-						_ => transformation.invert() == prev_transformation
+						_ => transformation.inverse() == prev_transformation
 					} {
 						continue;
 					}
@@ -467,7 +467,7 @@ impl ActiveAction {
 
 			if let Some(current_action) = &self.current_action {
 				let action: Action = current_action.action;
-				let end_quat: Option<Quat> = action.camera_end().quat().copied();
+				let end_quat: Option<Quat> = action.camera_end().orientation().copied();
 
 				match current_action.s_now() {
 					Some(s) => {
@@ -482,10 +482,7 @@ impl ActiveAction {
 							let mut puzzle_state: InflatedPuzzleState = extended_puzzle_state.puzzle_state.clone();
 
 							for comprising_simple in comprising_simples {
-								let comprising_simple: FullAddr = (
-									TransformationType::Simple,
-									*comprising_simple
-								).into();
+								let comprising_simple: FullAddr = comprising_simple.as_simple();
 								let cycles: f32 = comprising_simple.get_cycles() as f32;
 								let s: f32 = s * total_cycles;
 
@@ -495,8 +492,9 @@ impl ActiveAction {
 									puzzle_state += comprising_simple;
 									cycle_count += cycles;
 								} else {
-									let word_pack: WordPack = comprising_simple.word_pack().unwrap();
-									let rotation: Quat = Quat::IDENTITY.short_slerp(*word_pack.quat, 
+									let mask: Mask = *comprising_simple.mask().unwrap();
+									let rotation: Quat = Quat::IDENTITY.short_slerp(
+										*comprising_simple.rotation().unwrap(),
 										(s - cycle_count) / cycles
 									);
 
@@ -506,14 +504,13 @@ impl ActiveAction {
 									{
 										let piece_index: usize = piece_component.index;
 
-										transform.rotation = if word_pack
-											.mask
+										transform.rotation = if mask
 											.affects_piece(puzzle_state.pos[piece_index] as usize)
 										{
 											rotation
 										} else {
 											Quat::IDENTITY
-										} * (*puzzle_state.half_addr(piece_index).quat().unwrap());
+										} * (*puzzle_state.half_addr(piece_index).orientation().unwrap());
 									}
 
 									break;
@@ -543,20 +540,19 @@ impl ActiveAction {
 						break;
 					},
 					None => {
-						let mut standardization_word_pack_option: Option<WordPack> = None;
+						let mut standardization_quat: Option<Quat> = None;
 
 						if action.transformation().is_valid() {
-							let transformation_word_pack: WordPack = action.transformation().word_pack().unwrap();
-							let standardization_word_pack: WordPack = action.standardization().word_pack().unwrap();
+							let standardization_addr: FullAddr = action.standardization();
 
-							*extended_puzzle_state += transformation_word_pack.trfm;
-							*extended_puzzle_state += standardization_word_pack.trfm;
+							extended_puzzle_state.puzzle_state += *action.transformation();
+							extended_puzzle_state.puzzle_state += standardization_addr;
 							warn_expect!(extended_puzzle_state.puzzle_state.is_standardized());
 
 							extended_puzzle_state.puzzle_state.update_pieces(queries.q1_mut());
 
 							if !action.transformation().is_page_index_reorientation() {
-								standardization_word_pack_option = Some(standardization_word_pack);
+								standardization_quat = standardization_addr.rotation().copied();
 							}
 						}
 
@@ -564,10 +560,8 @@ impl ActiveAction {
 							CameraQueryMutNT(queries.q0_mut())
 								.orientation(|camera_orientation: Option<&mut Quat>| -> () {
 									if let Some(camera_orientation) = camera_orientation {
-										*camera_orientation = standardization_word_pack_option.map_or(
-											Quat::IDENTITY,
-											|word_pack: WordPack| -> Quat { *word_pack.quat }
-										) * if current_action.has_camera_orientation && end_quat.is_some() {
+										*camera_orientation = standardization_quat.unwrap_or_default()
+										* if current_action.has_camera_orientation && end_quat.is_some() {
 											end_quat.unwrap()
 										} else {
 											*camera_orientation

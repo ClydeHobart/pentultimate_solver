@@ -383,6 +383,9 @@ impl HalfAddr {
 	#[inline(always)]
 	pub fn as_reorientation(self) -> FullAddr { FullAddr::from((Type::Reorientation, self)) }
 
+	#[inline(always)]
+	pub fn as_simple(self) -> FullAddr { FullAddr::from((Type::Simple, self)) }
+
 	pub fn invalidate(&mut self) -> () {
 		self.0 = Self::INVALID;
 	}
@@ -396,8 +399,8 @@ impl HalfAddr {
 	#[inline(always)]
 	pub fn word_index_is_valid(&self) -> bool { Self::is_valid_word_index(unsafe { self.get_word_index_unchecked() }) }
 
-	pub fn quat(self) -> Option<&'static Quat> {
-		if self.is_valid() { Some(&Library::get().orientation_data.get_word(self).quat) } else { None }
+	pub fn orientation(self) -> Option<&'static Quat> {
+		if self.is_valid() { Some(&Library::get().orientation_long_page.get_word(self)) } else { None }
 	}
 
 	pub const fn default() -> Self { Self(Self::INVALID) }
@@ -452,7 +455,7 @@ impl Add<FullAddr> for HalfAddr {
 	/// the `rhs` transformation.
 	fn add(self, rhs: FullAddr) -> Self::Output {
 		if self.is_valid() && rhs.is_valid() {
-			let mut sum: HalfAddr = rhs.trfm().unwrap().as_ref().half_addr(self.get_line_index());
+			let mut sum: HalfAddr = rhs.transformation().unwrap().as_ref().half_addr(self.get_line_index());
 
 			*sum.set_word_index((sum.get_word_index() + self.get_word_index()) % Library::WORD_COUNT)
 		} else {
@@ -654,7 +657,7 @@ impl FullAddrConsts for FullAddr {
 impl FullAddr {
 	pub fn get_comprising_simples(self) -> &'static [HalfAddr] {
 		if self.is_valid() {
-			Library::get().comprising_simples_data.get_word(self)
+			Library::get().comprising_simples.get_word(self)
 		} else {
 			&[]
 		}
@@ -722,8 +725,8 @@ impl FullAddr {
 		self.half_addr.invalidate();
 	}
 
-	pub fn invert(self) -> Self {
-		self.word_pack().map(|word_pack: WordPack<'static>| -> Self { *word_pack.addr }).unwrap_or_default()
+	pub fn inverse(self) -> Self {
+		if self.is_valid() { *Library::get().book_pack_data.inverse.get_word(self) } else { Self::default() }
 	}
 
 	pub fn is_identity_transformation(self) -> bool {
@@ -745,6 +748,10 @@ impl FullAddr {
 
 	#[inline(always)]
 	pub fn line_index_is_valid(&self) -> bool { self.half_addr.line_index_is_valid() }
+
+	pub fn mask(self) -> Option<&'static Mask> {
+		if self.is_valid() { Some(Library::get().book_pack_data.mask.get_word(self)) } else { None }
+	}
 
 	pub fn mirror(self) -> Self {
 		if self.is_valid() {
@@ -769,8 +776,12 @@ impl FullAddr {
 	#[inline(always)]
 	pub fn page_index_is_valid(&self) -> bool { Self::is_valid_page_index(unsafe { self.get_page_index_unchecked() }) }
 
-	pub fn quat(self) -> Option<&'static Quat> {
-		self.word_pack().map(|word_pack: WordPack<'static>| -> &'static Quat { word_pack.quat })
+	pub fn rotation(self) -> Option<&'static Quat> {
+		if self.is_valid() && !self.get_page_index_type().unwrap().is_complex() {
+			Some(Library::get().rotation_shrt_book.get_word(self))
+		} else {
+			None
+		}
 	}
 
 	pub fn set_half_addr(&mut self, half_addr: HalfAddr) -> &mut FullAddr {
@@ -780,8 +791,8 @@ impl FullAddr {
 		self
 	}
 
-	pub fn trfm(self) -> Option<&'static Transformation> {
-		self.word_pack().map(|word_pack: WordPack<'static>| -> &'static Transformation { word_pack.trfm })
+	pub fn transformation(self) -> Option<&'static Transformation> {
+		if self.is_valid() { Some(Library::get().book_pack_data.transformation.get_word(self)) } else { None }
 	}
 
 	#[inline(always)]
@@ -1037,7 +1048,7 @@ impl Action {
 				let self_standardization: FullAddr = self.standardization();
 
 				Self::new(
-					self.transformation.invert() + *self_standardization.get_half_addr(),
+					self.transformation.inverse() + *self_standardization.get_half_addr(),
 					self.camera_end() + self_standardization
 				)
 			}
@@ -1048,7 +1059,7 @@ impl Action {
 
 	pub fn is_valid(&self) -> bool { self.transformation.is_valid() && self.camera_start.is_valid() }
 	#[inline(always)]
-	pub fn standardization(&self) -> FullAddr { (HalfAddr::ORIGIN + self.transformation).as_reorientation().invert() }
+	pub fn standardization(&self) -> FullAddr { (HalfAddr::ORIGIN + self.transformation).as_reorientation().inverse() }
 }
 
 pub struct OrientationData {
@@ -1116,6 +1127,7 @@ pub trait LibraryConsts {
 	const LINE_COUNT:		usize;
 	const LONG_LINE_COUNT:	usize;
 	const PAGE_COUNT:		usize;
+	const SHRT_PAGE_COUNT:	usize;
 }
 
 pub type Word<T>		= T;
@@ -1123,6 +1135,7 @@ pub type Line<T>		= [Word<T>; Library::WORD_COUNT];
 pub type Page<T>		= [Line<T>; Library::LINE_COUNT];
 pub type LongPage<T>	= [Line<T>; Library::LONG_LINE_COUNT];
 pub type Book<T>		= [Page<T>; Library::PAGE_COUNT];
+pub type ShrtBook<T>	= [Page<T>; Library::SHRT_PAGE_COUNT];
 
 pub trait FindWord<T>
 	where
@@ -1224,12 +1237,23 @@ impl<A : Addr + Sized, T> GetWord<A, T> for Book<T> {
 	}
 }
 
+impl<A : Addr + Sized, T> GetWord<A, T> for ShrtBook<T> {
+	fn get_word(&self, addr: A) -> &Word<T> {
+		&self[addr.get_page_index()][addr.get_line_index()][addr.get_word_index()]
+	}
+
+	fn get_word_mut(&mut self, addr: A) -> &mut Word<T> {
+		&mut self[addr.get_page_index()][addr.get_line_index()][addr.get_word_index()]
+	}
+}
+
 // A multi-tiered collection of transformations and associated data
 // Due to the alignment restrictions on Trfm, it wastes less space to store this as an SoA(oAoA) vs an A(oAoA)oS
 pub struct Library {
-	pub book_pack_data:			BookPackData,
-	pub orientation_data:		LongPage<OrientationData>,
-	comprising_simples_data:	ComprisingSimplesData
+	book_pack_data:			BookPackData,
+	rotation_shrt_book:		ShrtBook<Quat>,
+	orientation_long_page:	LongPage<Quat>,
+	comprising_simples:		ComprisingSimplesData
 }
 
 impl LibraryConsts for Library {
@@ -1237,6 +1261,7 @@ impl LibraryConsts for Library {
 	const LINE_COUNT:		usize = PENTAGON_PIECE_COUNT;
 	const LONG_LINE_COUNT:	usize = PIECE_COUNT;
 	const PAGE_COUNT:		usize = TYPE_COUNT;
+	const SHRT_PAGE_COUNT:	usize = COMPLEX_OFFSET;
 }
 
 impl Library {
@@ -1245,32 +1270,35 @@ impl Library {
 
 		let icosidodecahedron_data: &Data = Data::get(Polyhedron::Icosidodecahedron);
 
-		for (long_line_index, orientation_data_long_line)
-			in self.orientation_data.iter_mut().enumerate()
+		for (long_line_index, orientation_long_line)
+			in self.orientation_long_page.iter_mut().enumerate()
 		{
 			let face_data: &FaceData = &icosidodecahedron_data.faces[long_line_index];
 
-			for (word_index, orientation_data_word)
-				in orientation_data_long_line.iter_mut().enumerate()
+			for (word_index, orientation_word)
+				in orientation_long_line.iter_mut().enumerate()
 			{
-				orientation_data_word.quat = face_data.get_rotated_quat(word_index as u32);
+				*orientation_word = face_data.get_rotated_quat(word_index as u32);
 			}
 		}
 
 		let (
 				book_pack_data,
-				comprising_simples_data,
-				orientation_data
+				rotation_shrt_book,
+				comprising_simples,
+				orientation_long_page
 			):
 			(
 				&mut BookPackData,
+				&mut ShrtBook<Quat>,
 				&mut ComprisingSimplesData,
-				&LongPage<OrientationData>
+				&LongPage<Quat>
 			) =
 			(
 				&mut self.book_pack_data,
-				&mut self.comprising_simples_data,
-				&self.orientation_data
+				&mut self.rotation_shrt_book,
+				&mut self.comprising_simples,
+				&self.orientation_long_page
 			);
 
 		for page_index in 0_usize .. Library::PAGE_COUNT {
@@ -1278,7 +1306,7 @@ impl Library {
 
 			if transformation_type.is_simple() {
 				for (line_index, line)
-					in comprising_simples_data.Simple.iter_mut().enumerate()
+					in comprising_simples.Simple.iter_mut().enumerate()
 				{
 					for (word_index, word) in line.iter_mut().enumerate() {
 						word[0] = HalfAddr::new(line_index, word_index);
@@ -1307,7 +1335,7 @@ impl Library {
 				for line_index in 0_usize .. Library::LINE_COUNT {
 					for word_index in 0_usize .. Library::WORD_COUNT {
 						let half_addr: HalfAddr = HalfAddr::new(line_index, word_index);
-						let comprising_simples: &mut [HalfAddr] = comprising_simples_data
+						let comprising_simples: &mut [HalfAddr] = comprising_simples
 							.get_word_mut(FullAddr::from((transformation_type, half_addr)));
 
 						class_comprising_simples_iter(
@@ -1342,13 +1370,16 @@ impl Library {
 			match transformation_type {
 				Type::Reorientation => {
 					let origin_conj_quat: Quat = icosidodecahedron_data.faces[PENTAGON_INDEX_OFFSET].quat.conjugate();
+					let rotation_page: &mut Page<Quat> = &mut rotation_shrt_book[Type::Reorientation as usize];
 
 					page_pack_mut.iter_mut(|line_index: usize, mut line_pack_mut: LinePackMut| -> () {
+						let orientation_line: &Line<Quat> = &orientation_long_page[line_index];
+						let rotation_line: &mut Line<Quat> = &mut rotation_page[line_index];
+
 						line_pack_mut.iter_mut(|word_index: usize, word_pack_mut: WordPackMut| -> () {
-							let reorientation_quat: Quat =
-								orientation_data[line_index][word_index].quat * origin_conj_quat;
+							let reorientation_quat: Quat = orientation_line[word_index] * origin_conj_quat;
 							let (pos_array, rot_array): (&mut PuzzleStateComponent, &mut PuzzleStateComponent) =
-								word_pack_mut.trfm.arrays_mut();
+								word_pack_mut.transformation.arrays_mut();
 
 							for piece_index in PIECE_RANGE {
 								let (pos, rot): (usize, usize) = icosidodecahedron_data.get_pos_and_rot(
@@ -1361,14 +1392,14 @@ impl Library {
 								rot_array[piece_index] = rot as PieceStateComponent;
 							}
 
-							*word_pack_mut.quat = reorientation_quat;
-							*word_pack_mut.mask = Mask::from(&*word_pack_mut.trfm);
-							*word_pack_mut.addr = FullAddr::default();
+							*word_pack_mut.mask = Mask::from(&*word_pack_mut.transformation);
+							*word_pack_mut.inverse = FullAddr::default();
+							rotation_line[word_index] = reorientation_quat;
 						});
 					});
 
-					let trfm_page:		&Page<Trfm>			= page_pack_mut.trfm;
-					let addr_page_mut:	&mut Page<FullAddr>	= page_pack_mut.addr;
+					let trfm_page:		&Page<Trfm>			= page_pack_mut.transformation;
+					let addr_page_mut:	&mut Page<FullAddr>	= page_pack_mut.inverse;
 
 					for (line_index, addr_line_mut) in addr_page_mut.iter_mut().enumerate() {
 						for (word_index, addr_word_mut) in addr_line_mut.iter_mut().enumerate() {
@@ -1385,13 +1416,15 @@ impl Library {
 					page_pack_mut.iter_mut(|line_index: usize, mut line_pack_mut: LinePackMut| -> () {
 						let face_data: &FaceData = &icosidodecahedron_data.faces[line_index];
 						let mask: Mask = Mask::from_pentagon_index(line_index);
+						let rotation_page: &mut Page<Quat> = &mut rotation_shrt_book[Type::Simple as usize];
 
 						line_pack_mut.iter_mut(|word_index: usize, word_pack_mut: WordPackMut| -> () {
 							let rotation_quat: Quat = face_data.get_rotation_quat(word_index as u32);
 							let mask: Mask = if word_index != 0 { mask } else { Mask::default() };
+							let rotation_line: &mut Line<Quat> = &mut rotation_page[line_index];
 
 							let (pos_array, rot_array): (&mut PuzzleStateComponent, &mut PuzzleStateComponent) =
-								word_pack_mut.trfm.arrays_mut();
+								word_pack_mut.transformation.arrays_mut();
 
 							for piece_index in PIECE_RANGE {
 								let (pos, rot): (usize, usize) = if mask.affects_piece(piece_index) {
@@ -1408,20 +1441,20 @@ impl Library {
 								rot_array[piece_index] = rot as PieceStateComponent;
 							}
 
-							*word_pack_mut.quat = rotation_quat;
 							*word_pack_mut.mask = mask;
-							*word_pack_mut.addr = FullAddr::from((
+							*word_pack_mut.inverse = FullAddr::from((
 								transformation_type.invert() as usize,
 								line_index,
 								FullAddr::invert_word_index(word_index)
 							));
+							rotation_line[word_index] = rotation_quat;
 						});
 					});
 				},
 				_ => {
 					let (non_complex_trfm_pages, complex_trfm_pages):
 						(&mut [Page<Trfm>], &mut [Page<Trfm>]) =
-						book_pack_data.trfm.split_at_mut(COMPLEX_OFFSET);
+						book_pack_data.transformation.split_at_mut(COMPLEX_OFFSET);
 					let simple_trfm_page: &Page<Trfm> = &non_complex_trfm_pages[Type::Simple as usize];
 					let complex_trfm_page: &mut Page<Trfm> = &mut complex_trfm_pages[page_index - COMPLEX_OFFSET];
 
@@ -1434,7 +1467,7 @@ impl Library {
 							let mut puzzle_state: PuzzleState = PuzzleState::SOLVED_STATE;
 
 							for comprising_simple 
-								in comprising_simples_data
+								in comprising_simples
 									.get_word(FullAddr::from((page_index, line_index, word_index)))
 							{
 								puzzle_state += simple_trfm_page.get_word(*comprising_simple);
@@ -1448,9 +1481,8 @@ impl Library {
 
 					page_pack_mut.iter_mut(|line_index: usize, mut line_pack_mut: LinePackMut| -> () {
 						line_pack_mut.iter_mut(|word_index: usize, word_pack_mut: WordPackMut| -> () {
-							*word_pack_mut.quat = Quat::IDENTITY;
-							*word_pack_mut.mask = Mask::from(&*word_pack_mut.trfm);
-							*word_pack_mut.addr = FullAddr::from((
+							*word_pack_mut.mask = Mask::from(&*word_pack_mut.transformation);
+							*word_pack_mut.inverse = FullAddr::from((
 								transformation_type.invert() as usize,
 								line_index,
 								word_index
@@ -1507,27 +1539,27 @@ mod tests {
 		book_pack.iter(|page_index: usize, page_pack: PagePack| -> () {
 			page_pack.iter(|line_index: usize, line_pack: LinePack| -> () {
 				line_pack.iter(|word_index: usize, word_pack: WordPack| -> () {
-					let trfm: &Trfm = word_pack.trfm;
+					let trfm: &Trfm = word_pack.transformation;
 
 					if !trfm.is_valid() {
 						log::error!("Trfm ({}, {}, {}) is invalid", page_index, line_index, word_index);
-						error_expr!(word_pack.trfm);
+						error_expr!(word_pack.transformation);
 
 						panic!();
 					}
 
-					if !word_pack.addr.is_valid() {
+					if !word_pack.inverse.is_valid() {
 						log::error!(
 							"Inverse address for transformation ({}, {}, {}) is invalid",
 							page_index, line_index, word_index
 						);
-						error_expr!(word_pack.addr);
+						error_expr!(word_pack.inverse);
 
 						panic!();
 					}
 
-					let inv_addr: FullAddr = *word_pack.addr;
-					let inv_trfm: &Trfm = book_pack.get_word_pack(inv_addr).trfm;
+					let inv_addr: FullAddr = *word_pack.inverse;
+					let inv_trfm: &Trfm = book_pack.get_word_pack(inv_addr).transformation;
 
 					if *trfm != -inv_trfm || -trfm != *inv_trfm {
 						log::error!(
@@ -1564,7 +1596,7 @@ mod tests {
 		let page_pack: PagePack =
 			library.book_pack_data.get_page_pack(Type::Reorientation as usize);
 		let simple_page: &Page<Trfm> =
-			&library.book_pack_data.trfm[Type::Simple as usize];
+			&library.book_pack_data.transformation[Type::Simple as usize];
 		let reorientation_tests: [Vec<(usize, usize)>; PENTAGON_PIECE_COUNT] =
 			from_ron::<[Vec<(usize, usize)>; PENTAGON_PIECE_COUNT]>(
 				STRING_DATA.tests.reorientation_tests.as_ref()
@@ -1628,7 +1660,7 @@ mod tests {
 					panic!();
 				}
 
-				let trfm:								&Trfm		= &word_pack.trfm;
+				let trfm:								&Trfm		= &word_pack.transformation;
 
 				let standardization_full_addr:			FullAddr	= prev_puzzle_state.standardization_full_addr();
 
@@ -1676,14 +1708,14 @@ mod tests {
 					panic!();
 				}
 
-				if standardization_full_addr != *word_pack.addr {
+				if standardization_full_addr != *word_pack.inverse {
 					log::error!(
 						"Standardization address for current state doesn't match inverse address with pentagon {} \
 							and rotation {}",
 						line_index,
 						word_index
 					);
-					error_expr!(prev_puzzle_state, standardization_full_addr, word_pack.addr);
+					error_expr!(prev_puzzle_state, standardization_full_addr, word_pack.inverse);
 
 					panic!();
 				}
@@ -1694,7 +1726,7 @@ mod tests {
 				let word_pack: WordPack = Library::get()
 					.book_pack_data
 					.get_word_pack(standardization_full_addr);
-				let trfm: &Trfm = word_pack.trfm;
+				let trfm: &Trfm = word_pack.transformation;
 
 				curr_puzzle_state += trfm;
 
@@ -1775,11 +1807,11 @@ mod tests {
 
 		page_pack.iter(|line_index: usize, line_pack: LinePack| -> () {
 			line_pack.iter(|word_index: usize, word_pack: WordPack| -> () {
-				let trfm:						&Trfm				= &word_pack.trfm;
+				let trfm:						&Trfm				= &word_pack.transformation;
 				let inv_trfm:					&Trfm				= &library
 					.book_pack_data
-					.get_word_pack(*word_pack.addr)
-					.trfm;
+					.get_word_pack(*word_pack.inverse)
+					.transformation;
 
 				let mut curr_puzzle_state:		PuzzleState			= PuzzleState::SOLVED_STATE;
 				let mut curr_puzzle_state_alt:	PuzzleState			= PuzzleState::SOLVED_STATE;

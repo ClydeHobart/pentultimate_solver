@@ -393,7 +393,7 @@ pub mod inflated {
 		pub fn standardization_half_addr(&self) -> HalfAddr { *self.standardization_full_addr().get_half_addr() }
 
 		pub fn standardization_full_addr(&self) -> FullAddr {
-			self.full_addr(PENTAGON_INDEX_OFFSET).invert()
+			self.full_addr(PENTAGON_INDEX_OFFSET).inverse()
 		}
 
 		pub fn standardize(&mut self) -> &mut Self {
@@ -404,7 +404,7 @@ pub mod inflated {
 
 		pub fn update_pieces(&self, pieces_query: &mut PieceQuery) -> () {
 			for (piece_component, mut transform) in pieces_query.iter_mut() {
-				transform.rotation = *self.half_addr(piece_component.index).quat().unwrap();
+				transform.rotation = *self.half_addr(piece_component.index).orientation().unwrap();
 			}
 		}
 	}
@@ -436,7 +436,7 @@ pub mod inflated {
 		type Output = PuzzleState;
 
 		fn add(self, rhs: FullAddr) -> Self::Output {
-			if let Some(trfm) = rhs.trfm() { self + trfm } else { self.clone() }
+			if let Some(trfm) = rhs.transformation() { self + trfm } else { self.clone() }
 		}
 	}
 
@@ -456,7 +456,7 @@ pub mod inflated {
 
 	impl AddAssign<FullAddr> for PuzzleState {
 		fn add_assign(&mut self, rhs: FullAddr) -> () {
-			if let Some(trfm) = rhs.trfm() {
+			if let Some(trfm) = rhs.transformation() {
 				*self += trfm;
 			}
 		}
@@ -575,12 +575,6 @@ pub mod inflated {
 
 	impl ExtendedPuzzleState {
 
-	}
-
-	impl<'a> AddAssign<&'a Transformation> for ExtendedPuzzleState {
-		fn add_assign(&mut self, transformation: &'a Transformation) -> () {
-			self.puzzle_state += transformation;
-		}
 	}
 
 	impl Default for ExtendedPuzzleState {

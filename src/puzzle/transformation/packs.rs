@@ -1,28 +1,21 @@
-use super::{
-	*,
-	Addr as AddrTrait,
-	Transformation as Trfm,
-	FullAddr as Addr
-};
+use super::*;
+
 pub struct WordPack<'a> {
-	pub trfm:	&'a Word<Trfm>,
-	pub quat:	&'a Word<Quat>,
-	pub mask:	&'a Word<Mask>,
-	pub addr:	&'a Word<Addr>
+	pub transformation:	&'a Word<Transformation>,
+	pub mask:			&'a Word<Mask>,
+	pub inverse:		&'a Word<FullAddr>,
 }
 
 pub struct WordPackMut<'a> {
-	pub trfm:	&'a mut Word<Trfm>,
-	pub quat:	&'a mut Word<Quat>,
-	pub mask:	&'a mut Word<Mask>,
-	pub addr:	&'a mut Word<Addr>
+	pub transformation:	&'a mut Word<Transformation>,
+	pub mask:			&'a mut Word<Mask>,
+	pub inverse:		&'a mut Word<FullAddr>,
 }
 
 pub struct LinePack<'a> {
-	pub trfm:	&'a Line<Trfm>,
-	pub quat:	&'a Line<Quat>,
-	pub mask:	&'a Line<Mask>,
-	pub addr:	&'a Line<Addr>
+	pub transformation:	&'a Line<Transformation>,
+	pub mask:			&'a Line<Mask>,
+	pub inverse:		&'a Line<FullAddr>,
 }
 
 impl<'a> LinePack<'a> {
@@ -37,10 +30,9 @@ impl<'a> LinePack<'a> {
 }
 
 pub struct LinePackMut<'a> {
-	pub trfm:	&'a mut Line<Trfm>,
-	pub quat:	&'a mut Line<Quat>,
-	pub mask:	&'a mut Line<Mask>,
-	pub addr:	&'a mut Line<Addr>
+	pub transformation:	&'a mut Line<Transformation>,
+	pub mask:			&'a mut Line<Mask>,
+	pub inverse:		&'a mut Line<FullAddr>,
 }
 
 impl<'a> LinePackMut<'a> {
@@ -55,10 +47,9 @@ impl<'a> LinePackMut<'a> {
 }
 
 pub struct PagePack<'a> {
-	pub trfm:	&'a Page<Trfm>,
-	pub quat:	&'a Page<Quat>,
-	pub mask:	&'a Page<Mask>,
-	pub addr:	&'a Page<Addr>
+	pub transformation:	&'a Page<Transformation>,
+	pub mask:			&'a Page<Mask>,
+	pub inverse:		&'a Page<FullAddr>,
 }
 
 impl<'a> PagePack<'a> {
@@ -73,10 +64,9 @@ impl<'a> PagePack<'a> {
 }
 
 pub struct PagePackMut<'a> {
-	pub trfm:	&'a mut Page<Trfm>,
-	pub quat:	&'a mut Page<Quat>,
-	pub mask:	&'a mut Page<Mask>,
-	pub addr:	&'a mut Page<Addr>
+	pub transformation:	&'a mut Page<Transformation>,
+	pub mask:			&'a mut Page<Mask>,
+	pub inverse:		&'a mut Page<FullAddr>,
 }
 
 impl<'a> PagePackMut<'a> {
@@ -91,10 +81,9 @@ impl<'a> PagePackMut<'a> {
 }
 
 pub struct LongPagePack<'a> {
-	pub trfm:	&'a LongPage<Trfm>,
-	pub quat:	&'a LongPage<Quat>,
-	pub mask:	&'a LongPage<Mask>,
-	pub addr:	&'a LongPage<Addr>
+	pub transformation:	&'a LongPage<Transformation>,
+	pub mask:			&'a LongPage<Mask>,
+	pub inverse:		&'a LongPage<FullAddr>,
 }
 
 impl<'a> LongPagePack<'a> {
@@ -109,10 +98,9 @@ impl<'a> LongPagePack<'a> {
 }
 
 pub struct LongPagePackMut<'a> {
-	pub trfm:	&'a mut LongPage<Trfm>,
-	pub quat:	&'a mut LongPage<Quat>,
-	pub mask:	&'a mut LongPage<Mask>,
-	pub addr:	&'a mut LongPage<Addr>
+	pub transformation:	&'a mut LongPage<Transformation>,
+	pub mask:			&'a mut LongPage<Mask>,
+	pub inverse:		&'a mut LongPage<FullAddr>,
 }
 
 impl<'a> LongPagePackMut<'a> {
@@ -127,10 +115,9 @@ impl<'a> LongPagePackMut<'a> {
 }
 
 pub struct BookPack<'a> {
-	pub trfm:	&'a Book<Trfm>,
-	pub quat:	&'a Book<Quat>,
-	pub mask:	&'a Book<Mask>,
-	pub addr:	&'a Book<Addr>
+	pub transformation:	&'a Book<Transformation>,
+	pub mask:			&'a Book<Mask>,
+	pub inverse:		&'a Book<FullAddr>,
 }
 
 impl<'a> BookPack<'a> {
@@ -146,10 +133,9 @@ impl<'a> BookPack<'a> {
 }
 
 pub struct BookPackMut<'a> {
-	pub trfm:	&'a mut Book<Trfm>,
-	pub quat:	&'a mut Book<Quat>,
-	pub mask:	&'a mut Book<Mask>,
-	pub addr:	&'a mut Book<Addr>
+	pub transformation:	&'a mut Book<Transformation>,
+	pub mask:			&'a mut Book<Mask>,
+	pub inverse:		&'a mut Book<FullAddr>,
 }
 
 impl<'a> BookPackMut<'a> {
@@ -165,10 +151,9 @@ impl<'a> BookPackMut<'a> {
 }
 
 pub struct BookPackData {
-	pub trfm:	Book<Trfm>,
-	pub quat:	Book<Quat>,
-	pub mask:	Book<Mask>,
-	pub addr:	Book<Addr>
+	pub transformation:	Book<Transformation>,
+	pub mask:			Book<Mask>,
+	pub inverse:		Book<FullAddr>
 }
 
 pub trait GetWordPack<'b, T> {
@@ -180,23 +165,21 @@ pub trait GetWordPackMut<'b, T> {
 }
 
 impl<'a, 'b> GetWordPack<'b, usize> for LinePack<'a> where 'a: 'b {
-	fn get_word_pack(&'b self, rotation_index: usize) -> WordPack<'b> {
+	fn get_word_pack(&'b self, word_index: usize) -> WordPack<'b> {
 		WordPack {
-			trfm: &self.trfm[rotation_index],
-			quat: &self.quat[rotation_index],
-			mask: &self.mask[rotation_index],
-			addr: &self.addr[rotation_index]
+			transformation:	&self.transformation		[word_index],
+			mask:			&self.mask					[word_index],
+			inverse:		&self.inverse				[word_index]
 		}
 	}
 }
 
 impl<'a, 'b> GetWordPackMut<'b, usize> for LinePackMut<'a> where 'a: 'b {
-	fn get_word_pack_mut(&'b mut self, rotation_index: usize) -> WordPackMut<'b> {
+	fn get_word_pack_mut(&'b mut self, word_index: usize) -> WordPackMut<'b> {
 		WordPackMut {
-			trfm: &mut self.trfm[rotation_index],
-			quat: &mut self.quat[rotation_index],
-			mask: &mut self.mask[rotation_index],
-			addr: &mut self.addr[rotation_index]
+			transformation:	&mut self.transformation	[word_index],
+			mask:			&mut self.mask				[word_index],
+			inverse:		&mut self.inverse			[word_index]
 		}
 	}
 }
@@ -204,10 +187,9 @@ impl<'a, 'b> GetWordPackMut<'b, usize> for LinePackMut<'a> where 'a: 'b {
 impl<'a, 'b> GetWordPack<'b, (usize, usize)> for PagePack<'a> where 'a: 'b {
 	fn get_word_pack(&'b self, (line_index, word_index): (usize, usize)) -> WordPack<'b> {
 		WordPack {
-			trfm: &self.trfm[line_index][word_index],
-			quat: &self.quat[line_index][word_index],
-			mask: &self.mask[line_index][word_index],
-			addr: &self.addr[line_index][word_index]
+			transformation:	&self.transformation		[line_index][word_index],
+			mask:			&self.mask					[line_index][word_index],
+			inverse:		&self.inverse				[line_index][word_index]
 		}
 	}
 }
@@ -215,10 +197,9 @@ impl<'a, 'b> GetWordPack<'b, (usize, usize)> for PagePack<'a> where 'a: 'b {
 impl<'a, 'b> GetWordPackMut<'b, (usize, usize)> for PagePackMut<'a> where 'a: 'b {
 	fn get_word_pack_mut(&'b mut self, (line_index, word_index): (usize, usize)) -> WordPackMut<'b> {
 		WordPackMut {
-			trfm: &mut self.trfm[line_index][word_index],
-			quat: &mut self.quat[line_index][word_index],
-			mask: &mut self.mask[line_index][word_index],
-			addr: &mut self.addr[line_index][word_index]
+			transformation:	&mut self.transformation	[line_index][word_index],
+			mask:			&mut self.mask				[line_index][word_index],
+			inverse:		&mut self.inverse			[line_index][word_index]
 		}
 	}
 }
@@ -226,10 +207,9 @@ impl<'a, 'b> GetWordPackMut<'b, (usize, usize)> for PagePackMut<'a> where 'a: 'b
 impl<'a, 'b> GetWordPack<'b, (usize, usize)> for LongPagePackMut<'a> where 'a: 'b {
 	fn get_word_pack(&'b self, (line_index, word_index): (usize, usize)) -> WordPack<'b> {
 		WordPack {
-			trfm: &self.trfm[line_index][word_index],
-			quat: &self.quat[line_index][word_index],
-			mask: &self.mask[line_index][word_index],
-			addr: &self.addr[line_index][word_index]
+			transformation:	&self.transformation		[line_index][word_index],
+			mask:			&self.mask					[line_index][word_index],
+			inverse:		&self.inverse				[line_index][word_index]
 		}
 	}
 }
@@ -237,10 +217,9 @@ impl<'a, 'b> GetWordPack<'b, (usize, usize)> for LongPagePackMut<'a> where 'a: '
 impl<'a, 'b> GetWordPackMut<'b, (usize, usize)> for LongPagePackMut<'a> where 'a: 'b {
 	fn get_word_pack_mut(&'b mut self, (line_index, word_index): (usize, usize)) -> WordPackMut<'b> {
 		WordPackMut {
-			trfm: &mut self.trfm[line_index][word_index],
-			quat: &mut self.quat[line_index][word_index],
-			mask: &mut self.mask[line_index][word_index],
-			addr: &mut self.addr[line_index][word_index]
+			transformation:	&mut self.transformation	[line_index][word_index],
+			mask:			&mut self.mask				[line_index][word_index],
+			inverse:		&mut self.inverse			[line_index][word_index]
 		}
 	}
 }
@@ -260,10 +239,9 @@ impl<'a, 'b> GetWordPackMut<'b, HalfAddr> for LongPagePackMut<'a> where 'a: 'b {
 impl<'a, 'b> GetWordPack<'b, (usize, usize, usize)> for BookPack<'a> where 'a: 'b {
 	fn get_word_pack(&'b self, (page_index, line_index, word_index): (usize, usize, usize)) -> WordPack<'b> {
 		WordPack {
-			trfm: &self.trfm[page_index][line_index][word_index],
-			quat: &self.quat[page_index][line_index][word_index],
-			mask: &self.mask[page_index][line_index][word_index],
-			addr: &self.addr[page_index][line_index][word_index]
+			transformation:	&self.transformation		[page_index][line_index][word_index],
+			mask:			&self.mask					[page_index][line_index][word_index],
+			inverse:		&self.inverse				[page_index][line_index][word_index]
 		}
 	}
 }
@@ -271,10 +249,9 @@ impl<'a, 'b> GetWordPack<'b, (usize, usize, usize)> for BookPack<'a> where 'a: '
 impl<'a, 'b> GetWordPackMut<'b, (usize, usize, usize)> for BookPackMut<'a> where 'a: 'b {
 	fn get_word_pack_mut(&'b mut self, (page_index, line_index, word_index): (usize, usize, usize)) -> WordPackMut<'b> {
 		WordPackMut {
-			trfm: &mut self.trfm[page_index][line_index][word_index],
-			quat: &mut self.quat[page_index][line_index][word_index],
-			mask: &mut self.mask[page_index][line_index][word_index],
-			addr: &mut self.addr[page_index][line_index][word_index]
+			transformation:	&mut self.transformation	[page_index][line_index][word_index],
+			mask:			&mut self.mask				[page_index][line_index][word_index],
+			inverse:		&mut self.inverse			[page_index][line_index][word_index]
 		}
 	}
 }
@@ -294,10 +271,9 @@ impl<'a, 'b> GetWordPackMut<'b, FullAddr> for BookPackMut<'a> where 'a: 'b {
 impl<'a, 'b> GetWordPack<'b, (usize, usize, usize)> for BookPackData where 'a: 'b {
 	fn get_word_pack(&'b self, (page_index, line_index, word_index): (usize, usize, usize)) -> WordPack<'b> {
 		WordPack {
-			trfm: &self.trfm[page_index][line_index][word_index],
-			quat: &self.quat[page_index][line_index][word_index],
-			mask: &self.mask[page_index][line_index][word_index],
-			addr: &self.addr[page_index][line_index][word_index]
+			transformation:	&self.transformation		[page_index][line_index][word_index],
+			mask:			&self.mask					[page_index][line_index][word_index],
+			inverse:		&self.inverse				[page_index][line_index][word_index]
 		}
 	}
 }
@@ -305,10 +281,9 @@ impl<'a, 'b> GetWordPack<'b, (usize, usize, usize)> for BookPackData where 'a: '
 impl<'a, 'b> GetWordPackMut<'b, (usize, usize, usize)> for BookPackData where 'a: 'b {
 	fn get_word_pack_mut(&'b mut self, (page_index, line_index, word_index): (usize, usize, usize)) -> WordPackMut<'b> {
 		WordPackMut {
-			trfm: &mut self.trfm[page_index][line_index][word_index],
-			quat: &mut self.quat[page_index][line_index][word_index],
-			mask: &mut self.mask[page_index][line_index][word_index],
-			addr: &mut self.addr[page_index][line_index][word_index]
+			transformation:	&mut self.transformation	[page_index][line_index][word_index],
+			mask:			&mut self.mask				[page_index][line_index][word_index],
+			inverse:		&mut self.inverse			[page_index][line_index][word_index]
 		}
 	}
 }
@@ -336,10 +311,9 @@ pub trait GetLinePackMut<'b, T> {
 impl<'a, 'b> GetLinePack<'b, usize> for PagePack<'a> where 'a: 'b {
 	fn get_line_pack(&'b self, line_index: usize) -> LinePack<'b> {
 		LinePack {
-			trfm: &self.trfm[line_index],
-			quat: &self.quat[line_index],
-			mask: &self.mask[line_index],
-			addr: &self.addr[line_index]
+			transformation:	&self.transformation		[line_index],
+			mask:			&self.mask					[line_index],
+			inverse:		&self.inverse				[line_index]
 		}
 	}
 }
@@ -347,10 +321,9 @@ impl<'a, 'b> GetLinePack<'b, usize> for PagePack<'a> where 'a: 'b {
 impl<'a, 'b> GetLinePackMut<'b, usize> for PagePackMut<'a> where 'a: 'b {
 	fn get_line_pack_mut(&'b mut self, line_index: usize) -> LinePackMut<'b> {
 		LinePackMut {
-			trfm: &mut self.trfm[line_index],
-			quat: &mut self.quat[line_index],
-			mask: &mut self.mask[line_index],
-			addr: &mut self.addr[line_index]
+			transformation:	&mut self.transformation	[line_index],
+			mask:			&mut self.mask				[line_index],
+			inverse:		&mut self.inverse			[line_index]
 		}
 	}
 }
@@ -358,10 +331,9 @@ impl<'a, 'b> GetLinePackMut<'b, usize> for PagePackMut<'a> where 'a: 'b {
 impl<'a, 'b> GetLinePack<'b, usize> for LongPagePack<'a> where 'a: 'b {
 	fn get_line_pack(&'b self, line_index: usize) -> LinePack<'b> {
 		LinePack {
-			trfm: &self.trfm[line_index],
-			quat: &self.quat[line_index],
-			mask: &self.mask[line_index],
-			addr: &self.addr[line_index]
+			transformation:	&self.transformation		[line_index],
+			mask:			&self.mask					[line_index],
+			inverse:		&self.inverse				[line_index]
 		}
 	}
 }
@@ -369,10 +341,9 @@ impl<'a, 'b> GetLinePack<'b, usize> for LongPagePack<'a> where 'a: 'b {
 impl<'a, 'b> GetLinePackMut<'b, usize> for LongPagePackMut<'a> where 'a: 'b {
 	fn get_line_pack_mut(&'b mut self, line_index: usize) -> LinePackMut<'b> {
 		LinePackMut {
-			trfm: &mut self.trfm[line_index],
-			quat: &mut self.quat[line_index],
-			mask: &mut self.mask[line_index],
-			addr: &mut self.addr[line_index]
+			transformation:	&mut self.transformation	[line_index],
+			mask:			&mut self.mask				[line_index],
+			inverse:		&mut self.inverse			[line_index]
 		}
 	}
 }
@@ -380,10 +351,9 @@ impl<'a, 'b> GetLinePackMut<'b, usize> for LongPagePackMut<'a> where 'a: 'b {
 impl<'a, 'b> GetLinePack<'b, (usize, usize)> for BookPack<'a> where 'a: 'b {
 	fn get_line_pack(&'b self, (page_index, line_index): (usize, usize)) -> LinePack<'b> {
 		LinePack {
-			trfm: &self.trfm[page_index][line_index],
-			quat: &self.quat[page_index][line_index],
-			mask: &self.mask[page_index][line_index],
-			addr: &self.addr[page_index][line_index]
+			transformation:	&self.transformation		[page_index][line_index],
+			mask:			&self.mask					[page_index][line_index],
+			inverse:		&self.inverse				[page_index][line_index]
 		}
 	}
 }
@@ -391,10 +361,9 @@ impl<'a, 'b> GetLinePack<'b, (usize, usize)> for BookPack<'a> where 'a: 'b {
 impl<'a, 'b> GetLinePackMut<'b, (usize, usize)> for BookPackMut<'a> where 'a: 'b {
 	fn get_line_pack_mut(&'b mut self, (page_index, line_index): (usize, usize)) -> LinePackMut<'b> {
 		LinePackMut {
-			trfm: &mut self.trfm[page_index][line_index],
-			quat: &mut self.quat[page_index][line_index],
-			mask: &mut self.mask[page_index][line_index],
-			addr: &mut self.addr[page_index][line_index]
+			transformation:	&mut self.transformation	[page_index][line_index],
+			mask:			&mut self.mask				[page_index][line_index],
+			inverse:		&mut self.inverse			[page_index][line_index]
 		}
 	}
 }
@@ -402,10 +371,9 @@ impl<'a, 'b> GetLinePackMut<'b, (usize, usize)> for BookPackMut<'a> where 'a: 'b
 impl<'a, 'b> GetLinePack<'b, (usize, usize)> for BookPackData where 'a: 'b {
 	fn get_line_pack(&'b self, (page_index, line_index): (usize, usize)) -> LinePack<'b> {
 		LinePack {
-			trfm: &self.trfm[page_index][line_index],
-			quat: &self.quat[page_index][line_index],
-			mask: &self.mask[page_index][line_index],
-			addr: &self.addr[page_index][line_index]
+			transformation:	&self.transformation		[page_index][line_index],
+			mask:			&self.mask					[page_index][line_index],
+			inverse:		&self.inverse				[page_index][line_index]
 		}
 	}
 }
@@ -413,10 +381,9 @@ impl<'a, 'b> GetLinePack<'b, (usize, usize)> for BookPackData where 'a: 'b {
 impl<'a, 'b> GetLinePackMut<'b, (usize, usize)> for BookPackData where 'a: 'b {
 	fn get_line_pack_mut(&'b mut self, (page_index, line_index): (usize, usize)) -> LinePackMut<'b> {
 		LinePackMut {
-			trfm: &mut self.trfm[page_index][line_index],
-			quat: &mut self.quat[page_index][line_index],
-			mask: &mut self.mask[page_index][line_index],
-			addr: &mut self.addr[page_index][line_index]
+			transformation:	&mut self.transformation	[page_index][line_index],
+			mask:			&mut self.mask				[page_index][line_index],
+			inverse:		&mut self.inverse			[page_index][line_index]
 		}
 	}
 }
@@ -432,10 +399,9 @@ pub trait GetPagePackMut<'b, T> {
 impl<'a, 'b> GetPagePack<'b, usize> for BookPack<'a> where 'a: 'b {
 	fn get_page_pack(&'b self, page_index: usize) -> PagePack<'b> {
 		PagePack {
-			trfm: &self.trfm[page_index],
-			quat: &self.quat[page_index],
-			mask: &self.mask[page_index],
-			addr: &self.addr[page_index]
+			transformation:	&self.transformation		[page_index],
+			mask:			&self.mask					[page_index],
+			inverse:		&self.inverse				[page_index]
 		}
 	}
 }
@@ -443,10 +409,9 @@ impl<'a, 'b> GetPagePack<'b, usize> for BookPack<'a> where 'a: 'b {
 impl<'a, 'b> GetPagePackMut<'b, usize> for BookPackMut<'a> where 'a: 'b {
 	fn get_page_pack_mut(&'b mut self, page_index: usize) -> PagePackMut<'b> {
 		PagePackMut {
-			trfm: &mut self.trfm[page_index],
-			quat: &mut self.quat[page_index],
-			mask: &mut self.mask[page_index],
-			addr: &mut self.addr[page_index]
+			transformation:	&mut self.transformation	[page_index],
+			mask:			&mut self.mask				[page_index],
+			inverse:		&mut self.inverse			[page_index]
 		}
 	}
 }
@@ -454,10 +419,9 @@ impl<'a, 'b> GetPagePackMut<'b, usize> for BookPackMut<'a> where 'a: 'b {
 impl<'a, 'b> GetPagePack<'b, usize> for BookPackData where 'a: 'b {
 	fn get_page_pack(&'b self, page_index: usize) -> PagePack<'b> {
 		PagePack {
-			trfm: &self.trfm[page_index],
-			quat: &self.quat[page_index],
-			mask: &self.mask[page_index],
-			addr: &self.addr[page_index]
+			transformation:	&self.transformation		[page_index],
+			mask:			&self.mask					[page_index],
+			inverse:		&self.inverse				[page_index]
 		}
 	}
 }
@@ -465,10 +429,9 @@ impl<'a, 'b> GetPagePack<'b, usize> for BookPackData where 'a: 'b {
 impl<'a, 'b> GetPagePackMut<'b, usize> for BookPackData where 'a: 'b {
 	fn get_page_pack_mut(&'b mut self, page_index: usize) -> PagePackMut<'b> {
 		PagePackMut {
-			trfm: &mut self.trfm[page_index],
-			quat: &mut self.quat[page_index],
-			mask: &mut self.mask[page_index],
-			addr: &mut self.addr[page_index]
+			transformation:	&mut self.transformation	[page_index],
+			mask:			&mut self.mask				[page_index],
+			inverse:		&mut self.inverse			[page_index]
 		}
 	}
 }
@@ -484,10 +447,9 @@ pub trait GetBookPackMut<'b, T> {
 impl<'b> GetBookPack<'b, ()> for BookPackData {
 	fn get_book_pack(&'b self, _: ()) -> BookPack<'b> {
 		BookPack {
-			trfm: &self.trfm,
-			quat: &self.quat,
-			mask: &self.mask,
-			addr: &self.addr
+			transformation:	&self.transformation,
+			mask:			&self.mask,
+			inverse:		&self.inverse
 		}
 	}
 }
@@ -495,10 +457,9 @@ impl<'b> GetBookPack<'b, ()> for BookPackData {
 impl<'b> GetBookPackMut<'b, ()> for BookPackData {
 	fn get_book_pack_mut(&'b mut self, _: ()) -> BookPackMut<'b> {
 		BookPackMut {
-			trfm: &mut self.trfm,
-			quat: &mut self.quat,
-			mask: &mut self.mask,
-			addr: &mut self.addr
+			transformation:	&mut self.transformation,
+			mask:			&mut self.mask,
+			inverse:		&mut self.inverse
 		}
 	}
 }
