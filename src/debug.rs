@@ -144,7 +144,9 @@ impl DebugModeData for PuzzleStateData {
 
 	fn render(&mut self, egui_context: &EguiContext, ui: &mut Ui, world: &mut World) -> () {
 		world.resource_scope(|world: &mut World, extended_puzzle_state: Mut<ExtendedPuzzleState>| -> () {
-			ui.monospace(format!("{:#?}", extended_puzzle_state.puzzle_state));
+			ui.collapsing("Position & Rotation", |ui: &mut Ui| -> () {
+				ui.monospace(format!("{:#?}", extended_puzzle_state.puzzle_state));
+			});
 			ui.collapsing("Stats", |ui: &mut Ui| -> () {
 				let context: Context = Context::new(egui_context.ctx(), world);
 	
@@ -159,9 +161,7 @@ impl DebugModeData for PuzzleStateData {
 					} else {
 						extended_puzzle_state.puzzle_state.clone()
 					};
-	
-					// let (pos, rot): (&InflatedPuzzleStateComponent, &InflatedPuzzleStateComponent) =
-					// 	extended_puzzle_state.puzzle_state.arrays();
+
 					let mut correct_pent_pos_count: u32 = 0_u32;
 					let mut correct_tri_pos_count: u32 = 0_u32;
 					let mut correct_pent_rot_count: u32 = 0_u32;
