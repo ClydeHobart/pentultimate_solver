@@ -315,7 +315,7 @@ impl DebugModes {
 
 	pub fn should_render(&self) -> bool { !self.debug_mode_data.is_empty() }
 
-	pub fn default() -> Self { from_file_or_default(STRING_DATA.debug.debug_modes.as_str()) }
+	pub fn default() -> Self { Self::from_file_or_default(STRING_DATA.debug.debug_modes.as_str()) }
 }
 
 impl<'de> Deserialize<'de> for DebugModes {

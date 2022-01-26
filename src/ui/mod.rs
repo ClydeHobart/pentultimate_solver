@@ -428,7 +428,7 @@ impl UIPlugin {
 impl Plugin for UIPlugin {
 	fn build(&self, app: &mut AppBuilder) {
 		app
-			.insert_resource(from_file_or_default::<Preferences>(&STRING_DATA.files.preferences))
+			.insert_resource(Preferences::from_file_or_default(&STRING_DATA.files.preferences))
 			.insert_resource(View::Main)
 			.insert_resource(Msaa { samples: 4 })
 			.insert_resource(WindowDescriptor {

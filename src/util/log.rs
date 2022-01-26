@@ -402,7 +402,7 @@ macro_rules! error_expect {
 
 pub fn init_env_logger() -> () {
 	INIT_ENV_LOGGER.call_once(|| -> () {
-		set_env_var(from_file_or_default(&STRING_DATA.files.rust_log));
+		set_env_var(Module::from_file_or_default(&STRING_DATA.files.rust_log));
 	});
 }
 

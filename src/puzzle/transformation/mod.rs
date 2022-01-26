@@ -1601,7 +1601,7 @@ mod tests {
 		let simple_page: &Page<Trfm> =
 			&library.book_pack_data.transformation[Type::Simple as usize];
 		let reorientation_tests: [Vec<(usize, usize)>; PENTAGON_PIECE_COUNT] =
-			from_file::<[Vec<(usize, usize)>; PENTAGON_PIECE_COUNT]>(
+			<[Vec<(usize, usize)>; PENTAGON_PIECE_COUNT]>::from_file(
 				STRING_DATA.tests.reorientation_tests.as_ref()
 			).to_option().unwrap();
 

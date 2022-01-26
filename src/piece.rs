@@ -624,12 +624,6 @@ pub struct PieceLibraryData {
 	designs: Vec<Design>
 }
 
-impl TryFrom<&str> for PieceLibraryData {
-	type Error = Box<dyn std::error::Error>;
-
-	fn try_from(file_name: &str) -> Result<Self, Self::Error> { from_file(file_name) }
-}
-
 pub struct PieceLibrary {
 	pub data: PieceLibraryData,
 	pub pieces: HashMap<Design, PiecePair>
@@ -647,7 +641,7 @@ impl TryFrom<&str> for PieceLibrary {
 	type Error = Box<dyn std::error::Error>;
 
 	fn try_from(file_name: &str) -> Result<Self, Self::Error> {
-		let data: PieceLibraryData = PieceLibraryData::try_from(file_name)?;
+		let data: PieceLibraryData = PieceLibraryData::from_file(file_name)?;
 
 		if !data.designs.contains(&data.default_design) {
 			return Err(Box::new(log_error!(Level::Warn, format!("PieceLibraryData designs didn't contain {:?}", data.default_design))));

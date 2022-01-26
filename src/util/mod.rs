@@ -7,13 +7,13 @@ pub mod prelude {
 	pub use super::{
 		log::prelude::*,
 		FromAlt,
+		FromFile,
+		FromFileOrDefault,
 		IntoAlt,
 		ShortSlerp,
 		StaticDataLibrary,
 		ToOption,
 		ToResult,
-		from_file,
-		from_file_or_default,
 		init_env_logger,
 		red_to_green,
 		untracked_ref,
@@ -324,7 +324,7 @@ pub trait StaticDataLibrary {
 }
 
 #[derive(Clone, Copy)]
-pub enum SerFmt {
+enum SerFmt {
 	Bincode,
 	JSON,
 	JSON5,
@@ -360,71 +360,77 @@ impl TryFrom<&str> for SerFmt {
 	}
 }
 
-pub fn from_file<T>(file_name: &str) -> Result<T, Box<dyn StdError>>
-	where T: for<'de> Deserialize<'de>
-{
-	let function_call = || -> String { format!("from_file::<{}>(\"{}\")", type_name::<T>(), file_name) };
-	let invalid_file_extension = || -> Box<dyn StdError> {
-		Box::new(SimpleError::new(format!("{} doesn't have a valid file extension", function_call())))
-	};
-	let ser_fmt: SerFmt = SerFmt::try_from(
-		Path::new(file_name)
-			.extension()
-			.map_or_else(
-				|| -> Result<&str, Box<dyn StdError>> { Err(invalid_file_extension()) },
-				|os_str: &OsStr| -> Result<&str, Box<dyn StdError>> {
-					if let Some(unicode_str) = os_str.to_str() {
-						Ok(unicode_str)
-					} else {
-						Err(invalid_file_extension())
+pub trait FromFile: for<'de> Deserialize<'de> {
+	fn from_file(file_name: &str) -> Result<Self, Box<dyn StdError>> {
+		let function_call = || -> String {
+			format!("from_file::<{}>(\"{}\")", type_name::<Self>(), file_name)
+		};
+		let invalid_file_extension = || -> Box<dyn StdError> {
+			Box::new(SimpleError::new(format!("{} doesn't have a valid file extension", function_call())))
+		};
+		let ser_fmt: SerFmt = SerFmt::try_from(
+			Path::new(file_name)
+				.extension()
+				.map_or_else(
+					|| -> Result<&str, Box<dyn StdError>> { Err(invalid_file_extension()) },
+					|os_str: &OsStr| -> Result<&str, Box<dyn StdError>> {
+						if let Some(unicode_str) = os_str.to_str() {
+							Ok(unicode_str)
+						} else {
+							Err(invalid_file_extension())
+						}
 					}
-				}
-			)?
-	)
-		.map_err(
-			|_: ()| -> Box<dyn StdError> { invalid_file_extension() },
-		)?;
-	let file: File = File::open(file_name)?;
-	let mmap: Mmap = unsafe { Mmap::map(&file) }?;
-	let bytes: &[u8] = &mmap;
+				)?
+		)
+			.map_err(
+				|_: ()| -> Box<dyn StdError> { invalid_file_extension() },
+			)?;
+		let file: File = File::open(file_name)?;
+		let mmap: Mmap = unsafe { Mmap::map(&file) }?;
+		let bytes: &[u8] = &mmap;
 
-	macro_rules! deserialize {
-		($($ser_fmt:ident, $result_expr:expr, $err_type:ty);*) => {
-			match ser_fmt {
-				$(
-					SerFmt::$ser_fmt => {
-						$result_expr.map_err(
-							|error: $err_type| -> Box<dyn StdError> {
-								Box::new(SimpleError::new(format!("{}: {:#?}", function_call(), error)))
-							}
-						)
-					}
-				)*
+		macro_rules! deserialize {
+			($($ser_fmt:ident, $result_expr:expr, $err_type:ty);*) => {
+				match ser_fmt {
+					$(
+						SerFmt::$ser_fmt => {
+							$result_expr.map_err(
+								|error: $err_type| -> Box<dyn StdError> {
+									Box::new(SimpleError::new(format!("{}: {:#?}", function_call(), error)))
+								}
+							)
+						}
+					)*
+				}
+			}
+		}
+
+		deserialize!(
+			Bincode,	bincode::deserialize::<Self>(bytes),				Box<bincode::ErrorKind>;
+			JSON,		serde_json::from_slice::<Self>(bytes),				serde_json::Error;
+			JSON5,		json5::from_str::<Self>(str::from_utf8(bytes)?),	json5::Error;
+			RON,		ron::de::from_bytes::<Self>(bytes),					ron::Error;
+			TOML,		toml::from_slice::<Self>(bytes),					toml::de::Error
+		)
+	}
+}
+
+impl<T: for<'de> Deserialize<'de>> FromFile for T {}
+
+pub trait FromFileOrDefault: Default + FromFile {
+	fn from_file_or_default(file_name: &str) -> Self {
+		match Self::from_file(file_name) {
+			Ok(value) => { value },
+			Err(err) => {
+				::log::warn!("Error encountered deserializing \"{}\": {:?}", file_name, err);
+
+				Self::default()
 			}
 		}
 	}
-
-	deserialize!(
-		Bincode,	bincode::deserialize::<T>(bytes),				Box<bincode::ErrorKind>;
-		JSON,		serde_json::from_slice::<T>(bytes),				serde_json::Error;
-		JSON5,		json5::from_str::<T>(str::from_utf8(bytes)?),	json5::Error;
-		RON,		ron::de::from_bytes::<T>(bytes),				ron::Error;
-		TOML,		toml::from_slice::<T>(bytes),					toml::de::Error
-	)
 }
 
-pub fn from_file_or_default<T>(file_name: &str) -> T
-	where T: Default + for<'de> Deserialize<'de>
-{
-	match from_file(file_name) {
-		Ok(value) => { value },
-		Err(err) => {
-			::log::warn!("Error encountered deserializing \"{}\": {:?}", file_name, err);
-
-			T::default()
-		}
-	}
-}
+impl<T: Default + FromFile> FromFileOrDefault for T {}
 
 pub fn exit_app(mut exit: EventWriter<AppExit>) -> () {
 	exit.send(AppExit);
