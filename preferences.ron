@@ -23,8 +23,10 @@ Preferences(
 	),
 	file_menu:			FileMenuData(
 		random_transformation_types:	[ Simple ],
-		random_transformation_count:	30,
-		randomization_type:				FromSolved
+		// random_transformation_count:	30,
+		// randomization_type:				FromSolved
+		random_transformation_count:	5,
+		randomization_type:				FromCurrent
 	),
 	input:				InputData(
 		default_positions:				(	0,			5,			10,			1,			8,			4		),
@@ -56,7 +58,8 @@ Preferences(
 			roll_speed:	50,
 		),
 		animation:	AnimationSpeedData(
-			rotation_millis:					250,
+			// rotation_millis:					250,
+			rotation_millis:					50,
 			uniform_transformation_duration:	false,
 			animate_undo_and_redo:				true,
 		)

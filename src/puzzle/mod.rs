@@ -55,7 +55,11 @@ use {
 		c_void,
 		memcmp
 	},
-	rand::prelude::*
+	rand::prelude::*,
+	serde::{
+		Deserialize,
+		Serialize
+	}
 };
 
 pub use {
@@ -216,7 +220,7 @@ pub mod inflated {
 		const ZERO:			PuzzleStateComponent = unsafe { transmute::<[u32; PIECE_COUNT], PuzzleStateComponent>([0_u32; PIECE_COUNT]) };
 	}
 
-	#[derive(Clone)]
+	#[derive(Clone, Deserialize, Serialize)]
 	#[repr(align(32))]
 	pub struct PuzzleState {
 		pub pos: PuzzleStateComponent,	// An array representing the current position of the piece with the given index
@@ -566,6 +570,7 @@ pub mod inflated {
 		}
 	}
 
+	#[derive(Deserialize, Serialize)]
 	#[repr(align(32))]
 	pub struct ExtendedPuzzleState {
 		pub puzzle_state:	PuzzleState,

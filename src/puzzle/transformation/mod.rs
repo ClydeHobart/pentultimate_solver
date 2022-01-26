@@ -35,7 +35,10 @@ use {
 		rngs::ThreadRng,
 		Rng
 	},
-	serde::Deserialize,
+	serde::{
+		Deserialize,
+		Serialize
+	},
 	std::{
 		convert::{
 			AsMut,
@@ -213,7 +216,7 @@ macro_rules! list_type {
 
 macro_rules! define_type {
 	($($variant:ident,)*) => {
-		#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+		#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 		pub enum Type {
 			$(
 				$variant,
@@ -376,7 +379,7 @@ pub trait HalfAddrConsts {
 	const ORIGIN:			HalfAddr;
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Deserialize, PartialEq, Serialize)]
 pub struct HalfAddr(u8);
 
 impl HalfAddr {
@@ -644,7 +647,7 @@ pub trait FullAddrConsts {
 	const INVALID_INDEX: u8;
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Deserialize, PartialEq, Serialize)]
 pub struct FullAddr {
 	page_index:	u8,
 	half_addr:	HalfAddr
@@ -994,7 +997,7 @@ impl From<u16> for FullAddr { fn from(value: u16) -> Self { unsafe { transmute::
 
 impl From<FullAddr> for u16 { fn from(value: FullAddr) -> Self { unsafe { transmute::<FullAddr, Self>(value) } } }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
 pub struct Action {
 	transformation:		FullAddr,
 	camera_start:		HalfAddr
@@ -1598,7 +1601,7 @@ mod tests {
 		let simple_page: &Page<Trfm> =
 			&library.book_pack_data.transformation[Type::Simple as usize];
 		let reorientation_tests: [Vec<(usize, usize)>; PENTAGON_PIECE_COUNT] =
-			from_ron::<[Vec<(usize, usize)>; PENTAGON_PIECE_COUNT]>(
+			from_file::<[Vec<(usize, usize)>; PENTAGON_PIECE_COUNT]>(
 				STRING_DATA.tests.reorientation_tests.as_ref()
 			).to_option().unwrap();
 

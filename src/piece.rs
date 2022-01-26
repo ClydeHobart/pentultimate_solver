@@ -627,9 +627,7 @@ pub struct PieceLibraryData {
 impl TryFrom<&str> for PieceLibraryData {
 	type Error = Box<dyn std::error::Error>;
 
-	fn try_from(file_name: &str) -> Result<Self, Self::Error> {
-		from_ron(file_name)
-	}
+	fn try_from(file_name: &str) -> Result<Self, Self::Error> { from_file(file_name) }
 }
 
 pub struct PieceLibrary {

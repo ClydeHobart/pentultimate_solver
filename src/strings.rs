@@ -43,7 +43,7 @@ pub mod debug {
 	);
 
 	impl Debug {
-		pub fn default() -> Self { from_ron_or_default("debugStringData.ron") }
+		pub fn default() -> Self { from_file_or_default("debugStringData.ron") }
 	}
 }
 
@@ -59,7 +59,7 @@ pub mod test {
 	);
 
 	impl Test {
-		pub fn default() -> Self { from_ron_or_default("testStringData.ron") }
+		pub fn default() -> Self { from_file_or_default("testStringData.ron") }
 	}
 }
 
@@ -79,5 +79,5 @@ pub struct StringData {
 }
 
 lazy_static!{
-	pub static ref STRING_DATA: StringData = from_ron_or_default("stringData.ron");
+	pub static ref STRING_DATA: StringData = from_file_or_default("stringData.ron");
 }

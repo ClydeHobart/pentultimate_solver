@@ -94,10 +94,11 @@ impl Update for LightAndCameraData {
 }
 
 pub struct CameraComponent;
-pub type CameraQueryMut<'a, 'b, 'c> = Query<'a, (&'b CameraComponent, &'c mut Transform)>;
-pub struct CameraQueryMutNT<'a, 'b: 'a, 'c: 'b, 'd: 'b>(pub &'a mut CameraQueryMut<'b, 'c, 'd>);
+pub type CameraTupleMut<'a, 'b> = (&'a CameraComponent, &'b mut Transform);
+pub type CameraQueryMut<'a, 'b, 'c> = Query<'a, CameraTupleMut<'b, 'c>>;
+pub struct CameraQueryNTMut<'a, 'b: 'a, 'c: 'b, 'd: 'b>(pub &'a mut CameraQueryMut<'b, 'c, 'd>);
 
-impl<'a, 'b, 'c,'d> CameraQueryMutNT<'a, 'b, 'c, 'd> {
+impl<'a, 'b, 'c,'d> CameraQueryNTMut<'a, 'b, 'c, 'd> {
 	pub fn orientation<T, F: FnOnce(Option<&mut Quat>) -> T>(&mut self, f: F) -> T {
 		match self.0.iter_mut().next() {
 			Some((_, mut transform)) => {
@@ -110,7 +111,8 @@ impl<'a, 'b, 'c,'d> CameraQueryMutNT<'a, 'b, 'c, 'd> {
 	}
 }
 
-pub type CameraQuery<'a, 'b, 'c> = Query<'a, (&'b CameraComponent, &'c Transform)>;
+pub type CameraTuple<'a, 'b> = (&'a CameraComponent, &'b Transform);
+pub type CameraQuery<'a, 'b, 'c> = Query<'a, CameraTuple<'b, 'c>>;
 pub struct CameraQueryNT<'a, 'b: 'a, 'c: 'b, 'd: 'b>(pub &'a CameraQuery<'b, 'c, 'd>);
 
 impl<'a, 'b, 'c,'d> CameraQueryNT<'a, 'b, 'c, 'd> {

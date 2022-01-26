@@ -1,19 +1,14 @@
 use {
-	crate::{
-		math::polyhedra::data::DataPlugin,
-		piece::PiecePlugin,
-		preferences::colors::ColorsPlugin,
-		puzzle::{
-			PuzzlePlugin,
-			TransformationPlugin
-		},
-		ui::UIPlugin
-	},
+	self::prelude::*,
 	bevy::{
 		prelude::*,
 		app::PluginGroupBuilder
 	},
-	bevy_inspector_egui::bevy_egui::EguiPlugin
+	bevy_inspector_egui::bevy_egui::EguiPlugin,
+	serde::{
+		Deserialize,
+		Serialize
+	}
 };
 
 pub mod prelude {
@@ -37,11 +32,14 @@ pub mod prelude {
 		},
 		puzzle::{
 			transformation::{
+				FullAddr,
+				HalfAddr,
 				Library as TransformationLibrary,
 				Type as TransformationType
 			},
 			ExtendedPuzzleState,
 			PuzzlePlugin,
+			TransformationPlugin
 		},
 		ui::{
 			camera::{
@@ -49,8 +47,10 @@ pub mod prelude {
 				CameraPlugin,
 				CameraQuery,
 				CameraQueryMut,
-				CameraQueryMutNT,
-				CameraQueryNT
+				CameraQueryNTMut,
+				CameraQueryNT,
+				CameraTuple,
+				CameraTupleMut,
 			},
 			input::{
 				InputData,
@@ -60,6 +60,13 @@ pub mod prelude {
 			UIPlugin
 		}
 	};
+}
+
+#[derive(Deserialize, Serialize)]
+struct SaveState {
+	pub extended_puzzle_state:	ExtendedPuzzleState,
+	pub input_state:			InputState,
+	pub camera:					HalfAddr
 }
 
 struct AppPlugin;
@@ -77,7 +84,7 @@ struct AppPluginGroup;
 impl PluginGroup for AppPluginGroup {
 	fn build(&mut self, group: &mut PluginGroupBuilder) -> () {
 		group
-			.add(DataPlugin)
+			.add(PolyhedraDataPlugin)
 			.add(TransformationPlugin)
 			.add(ColorsPlugin)
 			.add(PiecePlugin)

@@ -66,7 +66,10 @@ use {
 		Rng,
 		thread_rng
 	},
-	serde::Deserialize
+	serde::{
+		Deserialize,
+		Serialize
+	}
 };
 
 pub fn generate_default_positions() -> [usize; HALF_PENTAGON_PIECE_COUNT] {
@@ -290,7 +293,7 @@ impl PendingActions {
 			Some(camera_orientation)
 		) = (
 			self.actions.pop_front(),
-			CameraQueryMutNT(camera_query)
+			CameraQueryNTMut(camera_query)
 				.orientation(|camera_orientation: Option<&mut Quat>| -> Option<Quat> { camera_orientation.copied() })
 		) {
 			Some(CurrentAction {
@@ -452,7 +455,7 @@ impl ActiveAction {
 					}
 
 					if pending_actions.set_camera_orientation {
-						CameraQueryMutNT(queries.q0_mut()).orientation(|camera_orientation: Option<&mut Quat>| -> () {
+						CameraQueryNTMut(queries.q0_mut()).orientation(|camera_orientation: Option<&mut Quat>| -> () {
 							if let Some(camera_orientation) = camera_orientation {
 								*camera_orientation = pending_actions.camera_orientation;
 							}
@@ -519,7 +522,7 @@ impl ActiveAction {
 						}
 
 						if current_action.has_camera_orientation {
-							CameraQueryMutNT(queries.q0_mut())
+							CameraQueryNTMut(queries.q0_mut())
 								.orientation(|camera_orientation: Option<&mut Quat>| -> () {
 									if let (
 										Some(camera_orientation),
@@ -557,7 +560,7 @@ impl ActiveAction {
 						}
 
 						if action.camera_start().is_valid() {
-							CameraQueryMutNT(queries.q0_mut())
+							CameraQueryNTMut(queries.q0_mut())
 								.orientation(|camera_orientation: Option<&mut Quat>| -> () {
 									if let Some(camera_orientation) = camera_orientation {
 										*camera_orientation = standardization_quat.unwrap_or_default()
@@ -602,7 +605,7 @@ impl ActiveAction {
 	}
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
 pub struct InputToggles {
 	pub enable_modifiers:		bool,
 	pub rotate_twice:			bool,
@@ -654,9 +657,11 @@ impl Default for InputToggles {
 	}
 }
 
-#[derive(Default)]
+#[derive(Default, Deserialize, Serialize)]
 pub struct InputState {
 	pub toggles:			InputToggles,
+
+	#[serde(skip)]
 	pub action:				Option<ActiveAction>,
 	pub camera_rotation:	Quat,
 }

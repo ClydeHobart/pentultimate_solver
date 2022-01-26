@@ -80,10 +80,10 @@ impl UIPlugin {
 											Some(preferences)
 										) = (
 											world
-												.query::<(&CameraComponent, &Transform)>()
+												.query::<CameraTuple>()
 												.iter(world)
 												.next()
-												.map(|(_, transform): (&CameraComponent, &Transform)| -> Quat {
+												.map(|(_, transform): CameraTuple| -> Quat {
 													transform.rotation
 												}
 											),
@@ -428,7 +428,7 @@ impl UIPlugin {
 impl Plugin for UIPlugin {
 	fn build(&self, app: &mut AppBuilder) {
 		app
-			.insert_resource(from_ron_or_default::<Preferences>(&STRING_DATA.files.preferences))
+			.insert_resource(from_file_or_default::<Preferences>(&STRING_DATA.files.preferences))
 			.insert_resource(View::Main)
 			.insert_resource(Msaa { samples: 4 })
 			.insert_resource(WindowDescriptor {
