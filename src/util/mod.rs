@@ -12,6 +12,7 @@ pub mod prelude {
 		IntoAlt,
 		ShortSlerp,
 		StaticDataLibrary,
+		ToFile,
 		ToOption,
 		ToResult,
 		init_env_logger,
@@ -38,6 +39,10 @@ use {
 			Write
 		},
 		fs::File,
+		io::{
+			BufWriter,
+			Write as IoWrite
+		},
 		mem::transmute,
 		path::Path,
 		str,
@@ -57,7 +62,10 @@ use {
 	egui::color::Color32,
 	::log::Level,
 	memmap::Mmap,
-	serde::Deserialize,
+	serde::{
+		Deserialize,
+		Serialize
+	},
 	simple_error::SimpleError
 };
 
@@ -323,40 +331,59 @@ pub trait StaticDataLibrary {
 	fn get() -> &'static Self;
 }
 
+pub fn to_pretty_string<T: Debug + Sized>(value: T) -> String { format!("{:#?}", value) }
+
 #[derive(Clone, Copy)]
 enum SerFmt {
+	#[cfg(feature = "bincode")]
 	Bincode,
+
+	#[cfg(feature = "serde_json")]
 	JSON,
+
+	#[cfg(feature = "json5")]
 	JSON5,
+
+	#[cfg(feature = "ron")]
 	RON,
+
+	#[cfg(feature = "toml")]
 	TOML
 }
 
 impl SerFmt {
 	const fn file_extension(self) -> &'static str{
 		match self {
+			#[cfg(feature = "bincode")]
 			Self::Bincode	=> "bc",
+			#[cfg(feature = "serde_json")]
 			Self::JSON		=> "json",
+			#[cfg(feature = "json5")]
 			Self::JSON5		=> "json5",
+			#[cfg(feature = "ron")]
 			Self::RON		=> "ron",
+			#[cfg(feature = "toml")]
 			Self::TOML		=> "toml"
 		}
 	}
-}
 
-impl TryFrom<&str> for SerFmt {
-	type Error = ();
+	fn from_file_extension(file_extension: &str) -> Option<Self> {
+		#[cfg(feature = "bincode")]
+		if file_extension == Self::Bincode	.file_extension() { return Some(Self::Bincode	); }
+		#[cfg(feature = "serde_json")]
+		if file_extension == Self::JSON		.file_extension() { return Some(Self::JSON		); }
+		#[cfg(feature = "json5")]
+		if file_extension == Self::JSON5	.file_extension() { return Some(Self::JSON5		); }
+		#[cfg(feature = "ron")]
+		if file_extension == Self::RON		.file_extension() { return Some(Self::RON		); }
+		#[cfg(feature = "toml")]
+		if file_extension == Self::TOML		.file_extension() { return Some(Self::TOML		); }
 
-	fn try_from(value: &str) -> Result<Self, Self::Error> {
-		if value == Self::Bincode	.file_extension() { Ok(Self::Bincode	) } else
-		if value == Self::JSON		.file_extension() { Ok(Self::JSON		) } else
-		if value == Self::JSON5		.file_extension() { Ok(Self::JSON5		) } else
-		if value == Self::RON		.file_extension() { Ok(Self::RON		) } else
-		if value == Self::TOML		.file_extension() { Ok(Self::TOML		) } else
+		None
+	}
 
-		{
-			Err(())
-		}
+	fn from_file_name(file_name: &str) -> Option<Self> {
+		Path::new(file_name).extension().and_then(OsStr::to_str).and_then(Self::from_file_extension)
 	}
 }
 
@@ -365,52 +392,33 @@ pub trait FromFile: for<'de> Deserialize<'de> {
 		let function_call = || -> String {
 			format!("from_file::<{}>(\"{}\")", type_name::<Self>(), file_name)
 		};
-		let invalid_file_extension = || -> Box<dyn StdError> {
+		let ser_fmt: SerFmt = SerFmt::from_file_name(file_name).ok_or(
 			Box::new(SimpleError::new(format!("{} doesn't have a valid file extension", function_call())))
-		};
-		let ser_fmt: SerFmt = SerFmt::try_from(
-			Path::new(file_name)
-				.extension()
-				.map_or_else(
-					|| -> Result<&str, Box<dyn StdError>> { Err(invalid_file_extension()) },
-					|os_str: &OsStr| -> Result<&str, Box<dyn StdError>> {
-						if let Some(unicode_str) = os_str.to_str() {
-							Ok(unicode_str)
-						} else {
-							Err(invalid_file_extension())
-						}
-					}
-				)?
-		)
-			.map_err(
-				|_: ()| -> Box<dyn StdError> { invalid_file_extension() },
-			)?;
+		)?;
 		let file: File = File::open(file_name)?;
 		let mmap: Mmap = unsafe { Mmap::map(&file) }?;
 		let bytes: &[u8] = &mmap;
+		let to_boxed_error = |string: String| -> Box<dyn StdError> {
+			Box::new(SimpleError::new(format!("{}: {}", function_call(), string)))
+		};
 
 		macro_rules! deserialize {
-			($($ser_fmt:ident, $result_expr:expr, $err_type:ty);*) => {
+			($($feature:meta, $ser_fmt:ident, $result_expr:expr);*) => {
 				match ser_fmt {
 					$(
-						SerFmt::$ser_fmt => {
-							$result_expr.map_err(
-								|error: $err_type| -> Box<dyn StdError> {
-									Box::new(SimpleError::new(format!("{}: {:#?}", function_call(), error)))
-								}
-							)
-						}
+						#[$feature]
+						SerFmt::$ser_fmt => $result_expr.map_err(to_pretty_string).map_err(to_boxed_error),
 					)*
 				}
 			}
 		}
 
 		deserialize!(
-			Bincode,	bincode::deserialize::<Self>(bytes),				Box<bincode::ErrorKind>;
-			JSON,		serde_json::from_slice::<Self>(bytes),				serde_json::Error;
-			JSON5,		json5::from_str::<Self>(str::from_utf8(bytes)?),	json5::Error;
-			RON,		ron::de::from_bytes::<Self>(bytes),					ron::Error;
-			TOML,		toml::from_slice::<Self>(bytes),					toml::de::Error
+			cfg(feature = "bincode"),		Bincode,	bincode::deserialize::<Self>(bytes);
+			cfg(feature = "serde_json"),	JSON,		serde_json::from_slice::<Self>(bytes);
+			cfg(feature = "json5"),			JSON5,		json5::from_str::<Self>(str::from_utf8(bytes)?);
+			cfg(feature = "ron"),			RON,		ron::de::from_bytes::<Self>(bytes);
+			cfg(feature = "toml"),			TOML,		toml::from_slice::<Self>(bytes)
 		)
 	}
 }
@@ -431,6 +439,60 @@ pub trait FromFileOrDefault: Default + FromFile {
 }
 
 impl<T: Default + FromFile> FromFileOrDefault for T {}
+
+pub trait ToFile: Serialize {
+	fn to_file(&self, file_name: &str) -> Result<(), Box<dyn StdError>> {
+		#[cfg(feature = "ron")]
+		lazy_static!{
+			static ref PRETTY_CONFIG: ron::ser::PrettyConfig = ron::ser::PrettyConfig::new()
+				.new_line("\n".into())
+				.indentor("\t".into())
+				.separate_tuple_members(true)
+				.enumerate_arrays(true)
+				.decimal_floats(true);
+		}
+		let function_call = || -> String {
+			format!("to_file::<{}>(\"{}\")", type_name::<Self>(), file_name)
+		};
+		let ser_fmt: SerFmt = SerFmt::from_file_name(file_name).ok_or(
+			Box::new(SimpleError::new(format!("{} doesn't have a valid file extension", function_call())))
+		)?;
+		let to_boxed_error = |string: String| -> Box<dyn StdError> {
+			Box::new(SimpleError::new(format!("{}: {}", function_call(), string)))
+		};
+		let mut buf_writer: BufWriter<File> = BufWriter::<File>::new(File::create(file_name)?);
+		let mut write_all =
+			|result: Result<String, Box<dyn StdError>>| -> Result<(), Box<dyn StdError>> {
+				result.and_then(|string: String| -> Result<(), Box<dyn StdError>> {
+					buf_writer
+						.write_all(string.as_bytes())
+						.map_err(to_pretty_string)
+						.map_err(to_boxed_error)
+				})
+			};
+
+		macro_rules! serialize {
+			($($feature:meta, $ser_fmt:ident, $result_expr:expr, $and_then:expr);*) => {
+				match ser_fmt {
+					$(
+						#[$feature]
+						SerFmt::$ser_fmt => ($and_then)($result_expr.map_err(to_pretty_string).map_err(to_boxed_error)),
+					)*
+				}
+			}
+		}
+
+		serialize!(
+			cfg(feature = "bincode"),		Bincode,	bincode::serialize_into(buf_writer, self),								|x| x;
+			cfg(feature = "serde_json"),	JSON,		serde_json::to_writer(buf_writer, self),								|x| x;
+			cfg(feature = "json5"),			JSON5,		json5::to_string(&self),												write_all;
+			cfg(feature = "ron"),			RON,		ron::ser::to_writer_pretty(buf_writer, &self, PRETTY_CONFIG.clone()),	|x| x;
+			cfg(feature = "toml"),			TOML,		toml::ser::to_string_pretty(self),										write_all
+		)
+	}
+}
+
+impl<T: Serialize> ToFile for T {}
 
 pub fn exit_app(mut exit: EventWriter<AppExit>) -> () {
 	exit.send(AppExit);
@@ -685,5 +747,148 @@ mod tests {
 		assert_eq!(String::from_alt(Duration::from_nanos(1_234_567_891_234_567_u64)),	"14d 06:56:07.891234567");
 		assert_eq!(String::from_alt(Duration::from_nanos(12_345_678_912_345_678_u64)),	"142d 21:21:18.912345678");
 		assert_eq!(String::from_alt(Duration::from_nanos(123_456_789_123_456_789_u64)),	"1,428d 21:33:09.123456789");
+	}
+
+	#[cfg(any(feature = "bincode", feature = "json5", feature = "serde_json", feature = "ron", feature = "toml"))]
+	#[test]
+	fn test_serialization_and_deserialization() -> () {
+		use {
+			super::{
+				Deserialize,
+				FromFile,
+				SerFmt,
+				Serialize,
+				StdError,
+				ToFile
+			},
+			std::{
+				collections::HashMap,
+				env::temp_dir,
+				fs::{
+					create_dir_all,
+					remove_dir_all
+				},
+				path::PathBuf
+			},
+			uuid::{
+				adapter::Simple,
+				Uuid
+			}
+		};
+
+		define_struct_with_default!(
+			#[derive(Debug, Deserialize, PartialEq, Serialize)]
+			pub Struct {
+				field_u8:		u8		= u8::MAX,
+				field_u16:		u16		= u16::MAX,
+				field_u32:		u32		= u32::MAX,
+				field_u64:		u64		= u64::MAX,
+				field_usize:	usize	= usize::MAX,
+				field_i8:		i8		= i8::MAX,
+				field_i16:		i16		= i16::MAX,
+				field_i32:		i32		= i32::MAX,
+				field_i64:		i64		= i64::MAX,
+				field_isize:	isize	= isize::MAX,
+			}
+		);
+
+		#[derive(Debug, Deserialize, PartialEq, Serialize)]
+		struct StructNT(Struct);
+		#[derive(Debug, Deserialize, PartialEq, Serialize)]
+		struct StructTuple(Struct, Struct);
+		#[derive(Debug, Deserialize, PartialEq, Serialize)]
+		struct EmptyStruct;
+
+		#[derive(Debug, Deserialize, PartialEq, Serialize)]
+		enum Enum {
+			None,
+			Option(Option<Struct>),
+			StructNT(StructNT),
+			StructTuple(StructTuple),
+			EmptyStruct(EmptyStruct),
+			Tuple(Struct, Struct),
+			#[allow(dead_code)]
+			Struct { a: Struct, b: Struct },
+			Array([Struct; 2_usize]),
+			Vec(Vec<Struct>)
+		}
+
+		let map: HashMap<String, Enum> = HashMap::from([
+			("None".into(), Enum::None),
+			("OptionNone".into(), Enum::Option(None)),
+			("OptionSome".into(), Enum::Option(Some(Struct::default()))),
+			("StructNT".into(), Enum::StructNT(StructNT(Struct::default()))),
+			("StructTuple".into(), Enum::StructTuple(StructTuple(Struct::default(), Struct::default()))),
+			("EmptyStruct".into(), Enum::EmptyStruct(EmptyStruct)),
+			("Tuple".into(), Enum::Tuple(Struct::default(), Struct::default())),
+			("Struct".into(), Enum::Struct{ a: Struct::default(), b: Struct::default() }),
+			("Array".into(), Enum::Array([Struct::default(), Struct::default()])),
+			("Vec".into(), Enum::Vec(vec![Struct::default(), Struct::default()])),
+		]);
+		let mut file_path: PathBuf = temp_dir();
+
+		file_path.push({
+			let mut buf: [u8; Simple::LENGTH] = [b'_'; Simple::LENGTH];
+
+			Uuid::new_v4().to_simple_ref().encode_upper(&mut buf).to_string()
+		});
+		create_dir_all(file_path.clone()).unwrap();
+		file_path.push("tmp");
+
+		macro_rules! test_ser_fmt {
+			($ser_fmt:ident) => {
+				{
+					file_path.set_extension(SerFmt::$ser_fmt.file_extension());
+
+					let file_path_str: &str = file_path.as_path().to_str().unwrap();
+					let serialization_result: Result<(), Box<dyn StdError>> = map.to_file(file_path_str);
+
+					assert!(
+						serialization_result.is_ok(),
+						"Serializing {} yielded error: {:#?}",
+						file_path_str,
+						serialization_result.unwrap_err()
+					);
+
+					let deserialization_result: Result<HashMap<String, Enum>, Box<dyn StdError>> =
+						HashMap::<String, Enum>::from_file(file_path_str);
+
+					assert!(
+						deserialization_result.is_ok(),
+						"Deserializing {} yielded error: {:#?}",
+						file_path_str,
+						deserialization_result.err().unwrap()
+					);
+
+					let new_map: HashMap<String, Enum> = deserialization_result.unwrap();
+					
+					assert_eq!(
+						new_map,
+						map,
+						"New map does not match old map.\n\nNew map: {:#?}\n\nOld map: {:#?}",
+						new_map,
+						map
+					);
+				}
+			}
+		}
+
+		#[cfg(feature = "bincode")]
+		test_ser_fmt!(Bincode);
+
+		#[cfg(feature = "serde_json")]
+		test_ser_fmt!(JSON);
+
+		#[cfg(feature = "json5")]
+		test_ser_fmt!(JSON5);
+
+		#[cfg(feature = "ron")]
+		test_ser_fmt!(RON);
+
+		#[cfg(feature = "toml")]
+		test_ser_fmt!(TOML);
+
+		file_path.pop();
+		remove_dir_all(file_path).unwrap();
 	}
 }
