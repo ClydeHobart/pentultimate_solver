@@ -11,9 +11,9 @@ macro_rules! config { ($file:expr) => { concat!(assets!("config/"), $file) } }
 define_struct_with_default!(
 	#[derive(Deserialize)]
 	pub Files<String> {
-		pub preferences					= "preferences.ron",
-		pub piece_library_data			= "pieceLibraryData.ron",
-		pub rust_log					= "rustLog.ron",
+		pub preferences					= config!("preferences.ron"),
+		pub piece_library_data			= config!("pieceLibraryData.ron"),
+		pub rust_log					= config!("rustLog.ron"),
 	}
 );
 
@@ -43,11 +43,11 @@ pub mod debug {
 	define_struct_with_default!(
 		#[derive(Deserialize)]
 		pub Debug<String> {
-			pub debug_modes				= "debugModes.ron",
+			pub debug_modes				= config!("debugModes.ron"),
 		}
 	);
 
-	impl Debug { pub fn default() -> Self { Self::from_file_or_default("debugStringData.ron") } }
+	impl Debug { pub fn default() -> Self { Self::from_file_or_default(config!("debugStringData.ron")) } }
 }
 
 #[cfg(test)]
@@ -57,11 +57,11 @@ pub mod test {
 	define_struct_with_default!(
 		#[derive(Deserialize)]
 		pub Test<String> {
-			pub reorientation_tests		= "reorientationTests.ron",
+			pub reorientation_tests		= config!("reorientationTests.ron"),
 		}
 	);
 
-	impl Test { pub fn default() -> Self { Self::from_file_or_default("testStringData.ron") } }
+	impl Test { pub fn default() -> Self { Self::from_file_or_default(config!("testStringData.ron")) } }
 }
 
 #[derive(Default, Deserialize)]
@@ -80,5 +80,5 @@ pub struct StringData {
 }
 
 lazy_static!{
-	pub static ref STRING_DATA: StringData = StringData::from_file_or_default("stringData.ron");
+	pub static ref STRING_DATA: StringData = StringData::from_file_or_default(config!("stringData.ron"));
 }

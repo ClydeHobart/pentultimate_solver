@@ -1,8 +1,8 @@
 (
 	files: (
-		preferences:			"preferences.ron",
-		piece_library_data:		"pieceLibraryData.ron",
-		rust_log:				"rustLog.ron",
+		preferences:			"assets/config/preferences.ron",
+		piece_library_data:		"assets/config/pieceLibraryData.ron",
+		rust_log:				"assets/config/rustLog.ron",
 	),
 	labels: (
 		color_data_label:		"ColorData::startup()",
