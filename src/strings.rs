@@ -1,14 +1,19 @@
 use {
 	crate::prelude::*,
-	serde::Deserialize
+	serde::Deserialize,
+	std::concat
 };
+
+macro_rules! assets { ($file:expr) => { concat!("assets/", $file) } }
+
+macro_rules! config { ($file:expr) => { concat!(assets!("config/"), $file) } }
 
 define_struct_with_default!(
 	#[derive(Deserialize)]
 	pub Files<String> {
 		pub preferences					= "preferences.ron",
 		pub piece_library_data			= "pieceLibraryData.ron",
-		pub rust_log					= "RUST_LOG.ron",
+		pub rust_log					= "rustLog.ron",
 	}
 );
 
@@ -42,9 +47,7 @@ pub mod debug {
 		}
 	);
 
-	impl Debug {
-		pub fn default() -> Self { Self::from_file_or_default("debugStringData.ron") }
-	}
+	impl Debug { pub fn default() -> Self { Self::from_file_or_default("debugStringData.ron") } }
 }
 
 #[cfg(test)]
@@ -58,9 +61,7 @@ pub mod test {
 		}
 	);
 
-	impl Test {
-		pub fn default() -> Self { Self::from_file_or_default("testStringData.ron") }
-	}
+	impl Test { pub fn default() -> Self { Self::from_file_or_default("testStringData.ron") } }
 }
 
 #[derive(Default, Deserialize)]

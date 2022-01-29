@@ -2,7 +2,7 @@
 	files: (
 		preferences:			"preferences.ron",
 		piece_library_data:		"pieceLibraryData.ron",
-		rust_log:				"RUST_LOG.ron",
+		rust_log:				"rustLog.ron",
 	),
 	labels: (
 		color_data_label:		"ColorData::startup()",

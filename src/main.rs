@@ -1,10 +1,10 @@
 use pentultimate_solver::{
 	app,
-	util
+	prelude::init_env_logger
 };
 
 fn init() -> () {
-	util::init_env_logger();
+	init_env_logger();
 }
 
 fn main() -> () {

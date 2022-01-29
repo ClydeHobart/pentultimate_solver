@@ -17,10 +17,7 @@ use {
 			// InflatedPuzzleStateComponent,
 			InflatedPuzzleStateConsts
 		},
-		util::{
-			StaticDataLibrary,
-			init_env_logger
-		},
+		util::StaticDataLibrary
 	}
 };
 

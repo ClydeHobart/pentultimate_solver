@@ -15,7 +15,6 @@ pub mod prelude {
 		ToFile,
 		ToOption,
 		ToResult,
-		init_env_logger,
 		red_to_green,
 		untracked_ref,
 		untracked_ref_mut
@@ -24,8 +23,6 @@ pub mod prelude {
 
 pub mod inspectable_bin_map;
 pub mod inspectable_bit_array;
-
-pub use self::log::init_env_logger;
 
 use {
 	crate::prelude::*,

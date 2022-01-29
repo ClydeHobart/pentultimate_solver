@@ -14,7 +14,8 @@ pub mod prelude {
 		},
 		super::{
 			LogError,
-			LogErrorResult
+			LogErrorResult,
+			init_env_logger
 		}
 	};
 }
