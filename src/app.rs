@@ -55,7 +55,8 @@ pub mod prelude {
 			input::{
 				InputData,
 				InputPlugin,
-				InputState
+				InputState,
+				InputToggles
 			},
 			UIPlugin
 		}
@@ -63,9 +64,9 @@ pub mod prelude {
 }
 
 #[derive(Deserialize, Serialize)]
-struct SaveState {
+pub struct SaveState {
 	pub extended_puzzle_state:	ExtendedPuzzleState,
-	pub input_state:			InputState,
+	pub input_toggles:			InputToggles,
 	pub camera:					HalfAddr
 }
 

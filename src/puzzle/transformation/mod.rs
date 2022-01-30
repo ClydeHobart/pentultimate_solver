@@ -10,7 +10,7 @@ use {
 			Polyhedron
 		},
 		preferences::AnimationSpeedData,
-		ui::input::ActionType,
+		ui::input::PuzzleActionType,
 		util::StaticDataLibrary,
 		max
 	},
@@ -1025,8 +1025,8 @@ impl Action {
 		}
 	}
 
-	pub fn duration(&self, animation_speed_data: &AnimationSpeedData, action_type: ActionType) -> Duration {
-		if matches!(action_type, ActionType::Undo | ActionType::Redo)
+	pub fn duration(&self, animation_speed_data: &AnimationSpeedData, action_type: PuzzleActionType) -> Duration {
+		if matches!(action_type, PuzzleActionType::Undo | PuzzleActionType::Redo)
 			&& !animation_speed_data.animate_undo_and_redo
 		{
 			Duration::ZERO

@@ -40,10 +40,7 @@ use {
 			Formatter,
 			Write
 		},
-		mem::{
-			size_of,
-			transmute
-		},
+		mem::size_of,
 		ops::{
 			Add,
 			AddAssign,
@@ -116,6 +113,11 @@ pub mod deflated {
 
 	pub type PieceState = u8;
 
+	pub trait PuzzleStateConsts {
+		const SOLVED_STATE: PuzzleState;
+		const ZERO: PuzzleState;
+	}
+
 	#[derive(Debug, Eq, Hash)]
 	#[repr(align(32))]
 	pub struct PuzzleState {
@@ -142,15 +144,19 @@ pub mod deflated {
 		}
 	}
 
-	impl Default for PuzzleState {
-		fn default() -> Self {
-			assert_eq_size!(PuzzleState, [u8; PIECE_COUNT]);
-
-			unsafe {
-				transmute::<[u8; PIECE_COUNT], Self>([0_u8; PIECE_COUNT])
-			}
-		}
+	impl PuzzleStateConsts for PuzzleState {
+		const SOLVED_STATE: PuzzleState = PuzzleState { pieces: [
+			0x00,	0x01,	0x02,	0x03,	0x04,	0x05,	0x06,	0x07,
+			0x08,	0x09,	0x0A,	0x0B,	0x0C,	0x0D,	0x0E,	0x0F,
+			0x10,	0x11,	0x12,	0x13,	0x14,	0x15,	0x16,	0x17,
+			0x18,	0x19,	0x1A,	0x1B,	0x1C,	0x1D,	0x1E,	0x1F
+		] };
+		const ZERO: PuzzleState = PuzzleState { pieces: [
+			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+		] };
 	}
+
+	impl Default for PuzzleState { fn default() -> Self { Self::SOLVED_STATE } }
 
 	impl From<&inflated::PuzzleState> for PuzzleState {
 		#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
@@ -211,13 +217,15 @@ pub mod inflated {
 	}
 
 	impl PuzzleStateComponentConsts for PuzzleStateComponent {
-		const SOLVED_STATE:	PuzzleStateComponent = unsafe { transmute::<[u32; PIECE_COUNT], PuzzleStateComponent>([
+		const SOLVED_STATE:	PuzzleStateComponent = [
 			0x00,	0x01,	0x02,	0x03,	0x04,	0x05,	0x06,	0x07,
 			0x08,	0x09,	0x0A,	0x0B,	0x0C,	0x0D,	0x0E,	0x0F,
 			0x10,	0x11,	0x12,	0x13,	0x14,	0x15,	0x16,	0x17,
 			0x18,	0x19,	0x1A,	0x1B,	0x1C,	0x1D,	0x1E,	0x1F
-		]) };
-		const ZERO:			PuzzleStateComponent = unsafe { transmute::<[u32; PIECE_COUNT], PuzzleStateComponent>([0_u32; PIECE_COUNT]) };
+		];
+		const ZERO: PuzzleStateComponent = [
+			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+		];
 	}
 
 	#[derive(Clone, Deserialize, Serialize)]
@@ -231,6 +239,7 @@ pub mod inflated {
 
 	pub trait PuzzleStateConsts {
 		const SOLVED_STATE: PuzzleState;
+		const ZERO: PuzzleState;
 	}
 
 	macro_rules! puzzle_state_add {
@@ -414,10 +423,14 @@ pub mod inflated {
 	}
 
 	impl PuzzleStateConsts for PuzzleState {
-		const SOLVED_STATE: PuzzleState = unsafe { std::mem::transmute::<[PuzzleStateComponent; 2], PuzzleState>([
-			PuzzleStateComponent::SOLVED_STATE,
-			PuzzleStateComponent::ZERO
-		]) };
+		const SOLVED_STATE: PuzzleState = PuzzleState {
+			pos: PuzzleStateComponent::SOLVED_STATE,
+			rot: PuzzleStateComponent::ZERO
+		};
+		const ZERO: PuzzleState = PuzzleState {
+			pos: PuzzleStateComponent::ZERO,
+			rot: PuzzleStateComponent::ZERO
+		};
 	}
 
 	impl<'a, 'b> Add<&'b Transformation> for &'a PuzzleState {
@@ -478,15 +491,7 @@ pub mod inflated {
 		}
 	}
 
-	impl Default for PuzzleState {
-		fn default() -> Self {
-			assert_eq_size!(PuzzleState, [u32; 2 * PIECE_COUNT]);
-
-			unsafe {
-				transmute::<[u32; 2 * PIECE_COUNT], Self>([0_u32; 2 * PIECE_COUNT])
-			}
-		}
-	}
+	impl Default for PuzzleState { fn default() -> Self { Self::SOLVED_STATE } }
 
 	impl From<&deflated::PuzzleState> for PuzzleState {
 		#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
@@ -570,7 +575,7 @@ pub mod inflated {
 		}
 	}
 
-	#[derive(Deserialize, Serialize)]
+	#[derive(Clone, Deserialize, Serialize)]
 	#[repr(align(32))]
 	pub struct ExtendedPuzzleState {
 		pub puzzle_state:	PuzzleState,
@@ -658,10 +663,10 @@ impl PuzzlePlugin {
 			Query<(&PieceComponent, &mut Transform)>
 		)>
 	) -> () {
-		if input_state.action.is_some()
-			&& input_state.action.as_mut().unwrap().update(&mut *extended_puzzle_state, &mut queries)
+		if input_state.puzzle_action.is_some()
+			&& input_state.puzzle_action.as_mut().unwrap().update(&mut *extended_puzzle_state, &mut queries)
 		{
-			input_state.action = None;
+			input_state.puzzle_action = None;
 		}
 	}
 }

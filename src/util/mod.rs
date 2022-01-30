@@ -10,6 +10,7 @@ pub mod prelude {
 		FromFile,
 		FromFileOrDefault,
 		IntoAlt,
+		SerFmt,
 		ShortSlerp,
 		StaticDataLibrary,
 		ToFile,
@@ -331,7 +332,7 @@ pub trait StaticDataLibrary {
 pub fn to_pretty_string<T: Debug + Sized>(value: T) -> String { format!("{:#?}", value) }
 
 #[derive(Clone, Copy)]
-enum SerFmt {
+pub enum SerFmt {
 	#[cfg(feature = "bincode")]
 	Bincode,
 
@@ -349,7 +350,7 @@ enum SerFmt {
 }
 
 impl SerFmt {
-	const fn file_extension(self) -> &'static str{
+	pub const fn file_extension(self) -> &'static str {
 		match self {
 			#[cfg(feature = "bincode")]
 			Self::Bincode	=> "bc",
@@ -364,7 +365,24 @@ impl SerFmt {
 		}
 	}
 
-	fn from_file_extension(file_extension: &str) -> Option<Self> {
+	pub const fn file_extensions() -> &'static [&'static str] {
+		const FILE_EXTENSIONS: &[&str] = &[
+			#[cfg(feature = "bincode")]
+			SerFmt::Bincode.file_extension(),
+			#[cfg(feature = "serde_json")]
+			SerFmt::JSON.file_extension(),
+			#[cfg(feature = "json5")]
+			SerFmt::JSON5.file_extension(),
+			#[cfg(feature = "ron")]
+			SerFmt::RON.file_extension(),
+			#[cfg(feature = "toml")]
+			SerFmt::TOML.file_extension(),
+		];
+
+		FILE_EXTENSIONS
+	}
+
+	pub fn from_file_extension(file_extension: &str) -> Option<Self> {
 		#[cfg(feature = "bincode")]
 		if file_extension == Self::Bincode	.file_extension() { return Some(Self::Bincode	); }
 		#[cfg(feature = "serde_json")]
@@ -379,7 +397,7 @@ impl SerFmt {
 		None
 	}
 
-	fn from_file_name(file_name: &str) -> Option<Self> {
+	pub fn from_file_name(file_name: &str) -> Option<Self> {
 		Path::new(file_name).extension().and_then(OsStr::to_str).and_then(Self::from_file_extension)
 	}
 }

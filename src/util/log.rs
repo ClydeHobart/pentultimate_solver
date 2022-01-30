@@ -10,7 +10,17 @@ pub mod prelude {
 			debug_expect,
 			info_expect,
 			warn_expect,
-			error_expect
+			error_expect,
+			trace_expect_some,
+			debug_expect_some,
+			info_expect_some,
+			warn_expect_some,
+			error_expect_some,
+			trace_expect_ok,
+			debug_expect_ok,
+			info_expect_ok,
+			warn_expect_ok,
+			error_expect_ok
 		},
 		super::{
 			LogError,
@@ -398,6 +408,119 @@ macro_rules! warn_expect {
 macro_rules! error_expect {
 	($expr:expr) => {
 		log_expect!(::log::error, $expr)
+	};
+}
+
+#[cfg(debug_assertions)]
+#[macro_export(local_inner_macros)]
+macro_rules! log_expect_some {
+	($level:path, $expr:expr, $closure:expr) => {
+		if let Some(some) = $expr {
+			($closure)(some)
+		} else {
+			$level!("\"{}\" was None", std::stringify!($expr));
+		}
+	};
+}
+
+#[cfg(not(debug_assertions))]
+#[macro_export(local_inner_macros)]
+macro_rules! log_expect_some {
+	($level:path, $expr:expr, $closure:expr) => {
+		if let Some(some) = $expr {
+			($closure)(some)
+		}
+	}
+}
+
+#[macro_export(local_inner_macros)]
+macro_rules! trace_expect_some {
+	($expr:expr, $closure:expr) => {
+		log_expect_some!(::log::trace, $expr, $closure)
+	};
+}
+
+#[macro_export(local_inner_macros)]
+macro_rules! debug_expect_some {
+	($expr:expr, $closure:expr) => {
+		log_expect_some!(::log::debug, $expr, $closure)
+	};
+}
+
+#[macro_export(local_inner_macros)]
+macro_rules! info_expect_some {
+	($expr:expr, $closure:expr) => {
+		log_expect_some!(::log::info, $expr, $closure)
+	};
+}
+
+#[macro_export(local_inner_macros)]
+macro_rules! warn_expect_some {
+	($expr:expr, $closure:expr) => {
+		log_expect_some!(::log::warn, $expr, $closure)
+	};
+}
+
+#[macro_export(local_inner_macros)]
+macro_rules! error_expect_some {
+	($expr:expr, $closure:expr) => {
+		log_expect_some!(::log::error, $expr, $closure)
+	};
+}
+
+#[cfg(debug_assertions)]
+#[macro_export(local_inner_macros)]
+macro_rules! log_expect_ok {
+	($level:path, $expr:expr, $closure:expr) => {
+		match $expr {
+			Ok(ok) => ($closure)(ok),
+			Err(error) => { $level!("\"{}\" was Err: {:#?}", std::stringify!($expr), error); }
+		}
+	};
+}
+
+#[cfg(not(debug_assertions))]
+#[macro_export(local_inner_macros)]
+macro_rules! log_expect_ok {
+	($level:path, $expr:expr, $block:block) => {
+		if let Ok(ok) = $expr {
+			($closure)(ok)
+		}
+	}
+}
+
+#[macro_export(local_inner_macros)]
+macro_rules! trace_expect_ok {
+	($expr:expr, $closure:expr) => {
+		log_expect_ok!(::log::trace, $expr, $closure)
+	};
+}
+
+#[macro_export(local_inner_macros)]
+macro_rules! debug_expect_ok {
+	($expr:expr, $closure:expr) => {
+		log_expect_ok!(::log::debug, $expr, $closure)
+	};
+}
+
+#[macro_export(local_inner_macros)]
+macro_rules! info_expect_ok {
+	($expr:expr, $closure:expr) => {
+		log_expect_ok!(::log::info, $expr, $closure)
+	};
+}
+
+#[macro_export(local_inner_macros)]
+macro_rules! warn_expect_ok {
+	($expr:expr, $closure:expr) => {
+		log_expect_ok!(::log::warn, $expr, $closure)
+	};
+}
+
+#[macro_export(local_inner_macros)]
+macro_rules! error_expect_ok {
+	($expr:expr, $closure:expr) => {
+		log_expect_ok!(::log::error, $expr, $closure)
 	};
 }
 

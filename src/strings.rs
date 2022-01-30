@@ -4,9 +4,11 @@ use {
 	std::concat
 };
 
-macro_rules! assets { ($file:expr) => { concat!("assets/", $file) } }
-
-macro_rules! config { ($file:expr) => { concat!(assets!("config/"), $file) } }
+macro_rules! file_concat { ($first:expr $(, $other:expr)*) => { concat!($first $(, "/", $other)*) } }
+macro_rules! root { ($($file:expr)?) => { file_concat!("." $(, $file)?) } }
+	macro_rules! assets { ($($file:expr)?) => { file_concat!(root!("assets") $(, $file)?) } }
+		macro_rules! config { ($($file:expr),*) => { file_concat!(assets!("config") $(, $file)?) } }
+	macro_rules! saves { ($($file:expr)?) => { file_concat!(root!("saves") $(, $file)?) } }
 
 define_struct_with_default!(
 	#[derive(Deserialize)]
@@ -14,6 +16,7 @@ define_struct_with_default!(
 		pub preferences					= config!("preferences.ron"),
 		pub piece_library_data			= config!("pieceLibraryData.ron"),
 		pub rust_log					= config!("rustLog.ron"),
+		pub saves						= saves!(),
 	}
 );
 

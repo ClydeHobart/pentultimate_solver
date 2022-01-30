@@ -1,7 +1,10 @@
 use {
 	crate::{
 		prelude::*,
-		app::prelude::*,
+		app::{
+			prelude::*,
+			SaveState
+		},
 		math::polyhedra::{
 			data::{
 				Data,
@@ -38,7 +41,23 @@ use {
 	},
 	std::{
 		collections::VecDeque,
-		mem::transmute,
+		mem::take,
+		ops::DerefMut,
+		path::Path,
+		sync::{
+			atomic::{
+				AtomicBool,
+				Ordering
+			},
+			Arc,
+			Mutex
+		},
+		task::{
+			Context as TaskContext,
+			Poll,
+			Wake,
+			Waker
+		},
 		time::{
 			Duration,
 			Instant
@@ -53,7 +72,8 @@ use {
 				MouseMotion,
 				MouseWheel
 			}
-		}
+		},
+		utils::BoxedFuture
 	},
 	bevy_inspector_egui::{
 		egui,
@@ -66,6 +86,7 @@ use {
 		Rng,
 		thread_rng
 	},
+	rfd::FileHandle,
 	serde::{
 		Deserialize,
 		Serialize
@@ -240,13 +261,14 @@ define_struct_with_default!(
 );
 
 #[derive(Clone, Copy, Debug)]
-pub enum ActionType {
+pub enum PuzzleActionType {
 	RecenterCamera,
 	Transformation,
 	Undo,
 	Redo,
 	Reset,
-	Randomize
+	Randomize,
+	Load
 }
 
 pub struct CurrentAction {
@@ -273,20 +295,24 @@ impl CurrentAction {
 	}
 }
 
+#[derive(Default)]
 pub struct PendingActions {
 	pub puzzle_state:			InflatedPuzzleState,
 	pub camera_orientation:		Quat,
 	pub actions:				VecDeque<Action>,
 	pub animation_speed_data:	AnimationSpeedData,
+	pub curr_action:			i32,
 	pub set_puzzle_state:		bool,
-	pub set_camera_orientation:	bool
+	pub set_camera_orientation:	bool,
+	pub set_action_stack:		bool,
+	pub set_curr_action:		bool
 }
 
 impl PendingActions {
 	fn pop_current_action(
 		&mut self,
 		camera_query: &mut CameraQueryMut,
-		action_type: ActionType
+		action_type: PuzzleActionType
 	) -> Option<CurrentAction> {
 		if let (
 			Some(action),
@@ -310,28 +336,23 @@ impl PendingActions {
 
 	pub fn reset(camera_orientation: &Quat, animation_speed_data: AnimationSpeedData) -> Self {
 		Self {
-			puzzle_state:			InflatedPuzzleState::SOLVED_STATE,
 			camera_orientation:		(*CameraPlugin::compute_camera_addr(camera_orientation)
 				.as_reorientation()
 				.inverse()
 				.rotation()
 				.unwrap()
 			) * (*camera_orientation),
-			actions:				VecDeque::<Action>::new(),
 			animation_speed_data,
 			set_puzzle_state:		true,
-			set_camera_orientation:	true
+			set_camera_orientation:	true,
+			.. Self::default()
 		}
 	}
 
 	pub fn randomize(preferences: &Preferences, puzzle_state: &InflatedPuzzleState, camera_orientation: &Quat) -> Self {
 		let mut pending_actions: PendingActions = PendingActions {
-			puzzle_state:			InflatedPuzzleState::SOLVED_STATE,
-			camera_orientation:		Quat::IDENTITY,
-			actions:				VecDeque::<Action>::new(),
-			animation_speed_data:	preferences.speed.animation.clone(),
-			set_puzzle_state:		false,
-			set_camera_orientation:	false
+			animation_speed_data: preferences.speed.animation.clone(),
+			.. Self::default()
 		};
 		let (puzzle_state, actions): (InflatedPuzzleState, VecDeque<Action>) = {
 			let random_transformation_count: usize = preferences.file_menu.random_transformation_count as usize;
@@ -414,15 +435,27 @@ impl PendingActions {
 
 		pending_actions
 	}
+
+	pub fn load(save_state: &SaveState, preferences: &Preferences) -> Self { Self {
+		puzzle_state:			save_state.extended_puzzle_state.puzzle_state.clone(),
+		camera_orientation:		save_state.camera.orientation().copied().unwrap_or_default(),
+		actions:				save_state.extended_puzzle_state.actions.clone().into(),
+		animation_speed_data:	preferences.speed.animation.clone(),
+		curr_action:			save_state.extended_puzzle_state.curr_action,
+		set_puzzle_state:		true,
+		set_camera_orientation:	true,
+		set_action_stack:		true,
+		set_curr_action:		true
+	} }
 }
 
-pub struct ActiveAction {
-	pub action_type:		ActionType,
+pub struct PuzzleAction {
 	pub current_action:		Option<CurrentAction>,
-	pub pending_actions:	Option<Box<PendingActions>>
+	pub pending_actions:	Option<Box<PendingActions>>,
+	pub action_type:		PuzzleActionType
 }
 
-impl ActiveAction {
+impl PuzzleAction {
 	/// # `update()`
 	///
 	/// ## Return value
@@ -447,7 +480,7 @@ impl ActiveAction {
 				{
 					if pending_actions.set_puzzle_state {
 						*extended_puzzle_state = ExtendedPuzzleState {
-							puzzle_state: pending_actions.puzzle_state.clone(),
+							puzzle_state: take(&mut pending_actions.puzzle_state).into(),
 							.. ExtendedPuzzleState::default()
 						};
 						extended_puzzle_state.puzzle_state.update_pieces(queries.q1_mut());
@@ -461,6 +494,16 @@ impl ActiveAction {
 							}
 						});
 						pending_actions.set_camera_orientation = false;
+					}
+
+					if pending_actions.set_action_stack {
+						extended_puzzle_state.actions = take(&mut pending_actions.actions).into();
+						pending_actions.set_action_stack = false;
+					}
+
+					if pending_actions.set_curr_action {
+						extended_puzzle_state.curr_action = pending_actions.curr_action;
+						pending_actions.set_curr_action = false;
 					}
 
 					self.current_action = pending_actions
@@ -574,7 +617,7 @@ impl ActiveAction {
 						}
 
 						match self.action_type {
-							ActionType::Transformation | ActionType::Randomize => {
+							PuzzleActionType::Transformation | PuzzleActionType::Randomize => {
 								if warn_expect!(action.transformation().is_valid()) {
 									extended_puzzle_state.curr_action += 1_i32;
 
@@ -584,10 +627,10 @@ impl ActiveAction {
 									extended_puzzle_state.actions.push(action);
 								}
 							},
-							ActionType::Undo => {
+							PuzzleActionType::Undo => {
 								extended_puzzle_state.curr_action -= 1_i32;
 							},
-							ActionType::Redo => {
+							PuzzleActionType::Redo => {
 								extended_puzzle_state.curr_action += 1_i32;
 							},
 							_ => {}
@@ -603,6 +646,54 @@ impl ActiveAction {
 
 		completed
 	}
+}
+
+pub enum FileActionType {
+	Save,
+	Load
+}
+
+pub struct Ready(AtomicBool);
+
+impl Wake for Ready {
+	fn wake(self: Arc<Self>) -> () { self.0.store(true, Ordering::Relaxed); }
+}
+
+pub struct FileAction {
+	future:			Mutex<BoxedFuture<'static, Option<FileHandle>>>,
+	ready:			Arc<Ready>,
+	action_type:	FileActionType
+}
+
+impl FileAction {
+	pub fn new(future: Mutex<BoxedFuture<'static, Option<FileHandle>>>, action_type: FileActionType) -> Self { Self {
+		future,
+		ready: Arc::<Ready>::new(Ready(true.into())),
+		action_type
+	} }
+
+	fn poll(&mut self) -> Option<Option<FileHandle>> {
+		if self.check_ready() {
+			let waker: Waker = self.ready.clone().into();
+			let mut context: TaskContext = TaskContext::from_waker(&waker);
+
+			if let Poll::Ready(file_handle) = self
+				.future
+				.get_mut()
+				.unwrap()
+				.as_mut()
+				.poll(&mut context)
+			{
+				Some(file_handle)
+			} else {
+				None
+			}
+		} else {
+			None
+		}
+	}
+
+	fn check_ready(&mut self) -> bool { self.ready.0.swap(false, Ordering::Relaxed) }
 }
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
@@ -657,13 +748,20 @@ impl Default for InputToggles {
 	}
 }
 
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Default)]
 pub struct InputState {
-	pub toggles:			InputToggles,
+	// #[serde(skip)]
+	pub puzzle_action:		Option<PuzzleAction>,
 
-	#[serde(skip)]
-	pub action:				Option<ActiveAction>,
+	// #[serde(skip)]
+	pub file_action:		Option<FileAction>,
+
+	pub toggles:			InputToggles,
 	pub camera_rotation:	Quat,
+}
+
+impl InputState {
+	pub fn has_active_action(&self) -> bool { self.puzzle_action.is_some() || self.file_action.is_some() }
 }
 
 pub struct InputPlugin;
@@ -676,11 +774,13 @@ impl InputPlugin {
 		view:						Res<View>,
 		time:						Res<Time>,
 		preferences:				Res<Preferences>,
-		camera_component_query:		CameraQuery,
+		camera_query:				CameraQuery,
 		mut mouse_motion_events:	EventReader<MouseMotion>,
 		mut mouse_wheel_events:		EventReader<MouseWheel>,
 		mut input_state:			ResMut<InputState>
 	) -> () {
+		let input_state: &mut InputState = input_state.deref_mut();
+
 		if !matches!(*view, View::Main) {
 			input_state.camera_rotation = Quat::IDENTITY;
 
@@ -703,25 +803,23 @@ impl InputPlugin {
 		check_toggle!(disable_recentering);
 
 		if keyboard_input.just_pressed(input_data.cycle_transformation_type_up.into()) {
-			let value_to_transmute: u8 = if toggles.transformation_type as u8 == 0_u8 {
-				transformation::TYPE_COUNT as u8
-			} else {
-				toggles.transformation_type as u8
-			} - 1_u8;
-
-			toggles.transformation_type = unsafe { transmute::<u8, TransformationType>(value_to_transmute) };
+			toggles.transformation_type = TransformationType::try_from(
+				if toggles.transformation_type as u8 == 0_u8 {
+					transformation::TYPE_COUNT as u8
+				} else {
+					toggles.transformation_type as u8
+				} - 1_u8
+			).unwrap();
 		}
 
 		if keyboard_input.just_pressed(input_data.cycle_transformation_type_down.into()) {
-			let value_to_transmute: u8 = if toggles.transformation_type as u8
-				== transformation::TYPE_COUNT as u8 - 1_u8
-			{
-				0_u8
-			} else {
-				toggles.transformation_type as u8 + 1_u8
-			};
-
-			toggles.transformation_type = unsafe { transmute::<u8, TransformationType>(value_to_transmute) };
+			toggles.transformation_type = TransformationType::try_from(
+				if toggles.transformation_type as u8 == transformation::TYPE_COUNT as u8 - 1_u8 {
+					0_u8
+				} else {
+					toggles.transformation_type as u8 + 1_u8
+				}
+			).unwrap();
 		}
 
 		let mut rolled_or_panned: bool = false;
@@ -772,28 +870,64 @@ impl InputPlugin {
 			}
 		};
 
-		match &mut input_state.action {
-			None => {
+		match (&mut input_state.puzzle_action, &mut input_state.file_action) {
+			(None, None) => {
 				Self::update_action(
 					&extended_puzzle_state,
 					&keyboard_input,
 					&preferences,
-					&camera_component_query,
-					&mut input_state
+					&camera_query,
+					input_state
 				);
 			},
-			Some(active_action) => {
+			(None, Some(file_action)) => {
+				if let Some(file_handle) = file_action.poll() {
+					if let Some(Some(file_name)) = file_handle
+						.as_ref()
+						.map(FileHandle::path)
+						.map(Path::to_str)
+					{
+						match file_action.action_type {
+							FileActionType::Save => {
+								log_result_err!(SaveState {
+									extended_puzzle_state:	extended_puzzle_state.clone(),
+									input_toggles:			toggles,
+									camera:					CameraQueryNT(&camera_query)
+										.orientation(|camera_orientation: Option<&Quat>| -> HalfAddr {
+											camera_orientation
+												.map_or(HalfAddr::default(), CameraPlugin::compute_camera_addr)
+										})
+								}.to_file(file_name));
+							},
+							FileActionType::Load => {
+								warn_expect_ok!(SaveState::from_file(file_name), |save_state: SaveState| -> () {
+									input_state.puzzle_action = Some(PuzzleAction {
+										current_action: None,
+										pending_actions: Some(Box::new(PendingActions::load(&save_state, &preferences))),
+										action_type: PuzzleActionType::Load
+									});
+									input_state.toggles = save_state.input_toggles;
+								});
+							}
+						}
+					}
+					
+					input_state.file_action = None;
+				}
+			},
+			(Some(active_action), None) => {
 				if rolled_or_panned {
-					if matches!(active_action.action_type, ActionType::RecenterCamera) {
+					if matches!(active_action.action_type, PuzzleActionType::RecenterCamera) {
 						/* If the whole purpose of the current active transformation action is to recenter the camera,
 						which we no longer wish to do, end the active transformation action entirely */
-						input_state.action = None;
+						input_state.puzzle_action = None;
 					} else if let Some(current_action) = &mut active_action.current_action {
 						// Cancel active camera movement
 						current_action.has_camera_orientation = false;
 					}
 				}
-			}
+			},
+			(Some(_), Some(_)) => unreachable!()
 		}
 
 		input_state.toggles = toggles;
@@ -806,47 +940,47 @@ impl InputPlugin {
 		camera_query:			&CameraQuery,
 		input_state:			&mut InputState
 	) -> () {
-		let input_data:				&InputData			= &preferences.input;
-		let speed_data:				&SpeedData			= &preferences.speed;
-		let mut action_type:		Option<ActionType>	= None;
-		let mut default_position:	Option<usize>		= None;
+		let input_data:				&InputData					= &preferences.input;
+		let speed_data:				&SpeedData					= &preferences.speed;
+		let mut puzzle_action_type:	Option<PuzzleActionType>	= None;
+		let mut default_position:	Option<usize>				= None;
 
 		for (index, key_code) in input_data.rotation_keys.iter().enumerate() {
 			if keyboard_input.just_pressed((*key_code).into()) {
-				action_type = Some(ActionType::Transformation);
+				puzzle_action_type = Some(PuzzleActionType::Transformation);
 				default_position = Some(input_data.default_positions[index]);
 
 				break;
 			}
 		}
 
-		if action_type.is_none() {
+		if puzzle_action_type.is_none() {
 			if keyboard_input.just_pressed(input_data.recenter_camera.into()) {
-				action_type = Some(ActionType::RecenterCamera);
+				puzzle_action_type = Some(PuzzleActionType::RecenterCamera);
 			} else if keyboard_input.just_pressed(input_data.undo.into())
 				&& extended_puzzle_state.curr_action >= 0_i32
 			{
-				action_type = Some(ActionType::Undo);
+				puzzle_action_type = Some(PuzzleActionType::Undo);
 			} else if keyboard_input.just_pressed(input_data.redo.into())
 				&& ((extended_puzzle_state.curr_action + 1_i32) as usize)
 				< extended_puzzle_state.actions.len()
 			{
-				action_type = Some(ActionType::Redo);
+				puzzle_action_type = Some(PuzzleActionType::Redo);
 			}
 		}
 
-		if let Some(action_type) = action_type {
+		if let Some(puzzle_action_type) = puzzle_action_type {
 			let camera_orientation: Quat = CameraQueryNT(camera_query)
 				.orientation(|camera_orientation: Option<&Quat>| -> Option<Quat> { camera_orientation.copied() })
 				.unwrap_or_default();
 			let camera_start: HalfAddr = CameraPlugin::compute_camera_addr(&camera_orientation);
-			let recenter_camera: bool = matches!(action_type, ActionType::RecenterCamera);
-			let action: Action = match action_type {
-				ActionType::RecenterCamera => Action::new(
+			let recenter_camera: bool = matches!(puzzle_action_type, PuzzleActionType::RecenterCamera);
+			let action: Action = match puzzle_action_type {
+				PuzzleActionType::RecenterCamera => Action::new(
 					FullAddr::default(),
 					camera_start
 				),
-				ActionType::Transformation => Action::new(
+				PuzzleActionType::Transformation => Action::new(
 					FullAddr::from((
 						input_state.toggles.transformation_type,
 						input_state
@@ -855,17 +989,17 @@ impl InputPlugin {
 					)) + camera_start,
 					camera_start
 				),
-				ActionType::Undo => extended_puzzle_state
+				PuzzleActionType::Undo => extended_puzzle_state
 					.actions
 					[extended_puzzle_state.curr_action as usize]
 					.invert(),
-				ActionType::Redo => extended_puzzle_state
+				PuzzleActionType::Redo => extended_puzzle_state
 					.actions
 					[(extended_puzzle_state.curr_action + 1_i32) as usize],
 				_ => unreachable!()
 			};
 
-			if !info_expect!(matches!(action_type, ActionType::RecenterCamera)
+			if !info_expect!(matches!(puzzle_action_type, PuzzleActionType::RecenterCamera)
 				|| action.is_valid()
 				&& if action.transformation().is_page_index_reorientation() {
 					*action.transformation().get_half_addr() != *action.camera_start()
@@ -873,7 +1007,7 @@ impl InputPlugin {
 					!action.transformation().is_identity_transformation()
 				}
 			) {
-				debug_expr!(action_type, action);
+				debug_expr!(puzzle_action_type, action);
 
 				return;
 			}
@@ -886,11 +1020,10 @@ impl InputPlugin {
 				(Quat::IDENTITY, false)
 			};
 			let start: Instant = Instant::now();
-			let duration: Duration = action.duration(&speed_data.animation, action_type);
+			let duration: Duration = action.duration(&speed_data.animation, puzzle_action_type);
 
-			input_state.action = Some(
-				ActiveAction {
-					action_type,
+			input_state.puzzle_action = Some(
+				PuzzleAction {
 					current_action: Some(CurrentAction{
 						camera_orientation,
 						start,
@@ -898,7 +1031,8 @@ impl InputPlugin {
 						action,
 						has_camera_orientation
 					}),
-					pending_actions: None
+					pending_actions: None,
+					action_type: puzzle_action_type
 				}
 			);
 		}

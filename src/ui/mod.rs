@@ -6,8 +6,10 @@ use {
 		preferences::Update,
 		puzzle::transformation::TYPE_COUNT,
 		ui::input::{
-			ActionType,
-			ActiveAction,
+			FileAction,
+			FileActionType,
+			PuzzleActionType,
+			PuzzleAction,
 			PendingActions
 		}
 	},
@@ -27,6 +29,24 @@ use {
 		Ui,
 		Vec2
 	},
+	std::{
+		boxed::Box,
+		ffi::{
+			OsStr,
+			OsString
+		},
+		fs::{
+			DirEntry,
+			Metadata,
+			ReadDir,
+			create_dir_all,
+			read_dir
+		},
+		io::Result as IoResult,
+		path::Path,
+		sync::Mutex,
+		time::SystemTime
+	}
 };
 
 pub mod camera;
@@ -42,7 +62,8 @@ pub struct UIPlugin;
 
 impl UIPlugin {
 	fn startup(mut windows: ResMut<Windows>) -> () {
-		log_option_none!(windows.get_primary_mut()).set_maximized(true);
+		debug_expect_some!(windows.get_primary_mut(), |window: &mut Window| -> () { window.set_maximized(true); });
+		log_result_err!(create_dir_all(&STRING_DATA.files.saves));
 	}
 
 	fn run(world: &mut World) -> () {
@@ -62,93 +83,184 @@ impl UIPlugin {
 				egui::menu::menu(ui, "File", |ui: &mut egui::Ui| -> () {
 					ui.group(|ui: &mut Ui| -> () {
 						world.resource_scope(|world: &mut World, mut view: Mut<View>| -> () {
-							ui.set_enabled(matches!(*view, View::Main));
-
 							if ui.button("Preferences").clicked() {
-								*view = View::Preferences(
-									Box::new(world
-										.get_resource::<Preferences>()
-										.map_or_else(Preferences::default, Preferences::clone)
-								));
+								Self::on_preferences_clicked(world, &mut *view);
 							}
+						});
+
+						world.resource_scope(|world: &mut World, mut input_state: Mut<InputState>| -> () {
+							let input_state: &mut InputState = &mut *input_state;
+
+							ui.set_enabled(!input_state.has_active_action());
 
 							if ui.button("Reset").clicked() {
-								world.resource_scope(|world: &mut World, mut input_state: Mut<InputState>| -> () {
-									if input_state.action.is_none() {
-										if let (
-											Some(camera_orientation),
-											Some(preferences)
-										) = (
-											world
-												.query::<CameraTuple>()
-												.iter(world)
-												.next()
-												.map(|(_, transform): CameraTuple| -> Quat {
-													transform.rotation
-												}
-											),
-											world.get_resource::<Preferences>(),
-										) {
-											input_state.action = Some(ActiveAction {
-												action_type: ActionType::Reset,
-												current_action: None,
-												pending_actions: Some(Box::<PendingActions>::new(
-													PendingActions::reset(
-														&camera_orientation,
-														preferences.speed.animation.clone()
-													)
-												))
-											});
-										}
-									}
-								});
+								Self::on_reset_clicked(world, input_state);
 							}
 
 							if ui.button("Randomize").clicked() {
-								world.resource_scope(|world: &mut World, mut input_state: Mut<InputState>| -> () {
-									if input_state.action.is_none() {
-										if let (
-											Some(camera_orientation),
-											Some(preferences),
-											Some(extended_puzzle_state)
-										) = (
-											world
-												.query::<(&CameraComponent, &Transform)>()
-												.iter(world)
-												.next()
-												.map(|(_, transform): (&CameraComponent, &Transform)| -> Quat {
-													transform.rotation
-												}
-											),
-											world.get_resource::<Preferences>(),
-											world.get_resource::<ExtendedPuzzleState>()
-										) {
-											input_state.action = Some(ActiveAction {
-												action_type: ActionType::Randomize,
-												current_action: None,
-												pending_actions: Some(Box::<PendingActions>::new(
-													PendingActions::randomize(
-														preferences,
-														&extended_puzzle_state.puzzle_state,
-														&camera_orientation
-													)
-												))
-											});
-										}
-									}
-								});
+								Self::on_randomize_clicked(world, input_state);
 							}
 
-							ui.set_enabled(false);
-
 							if ui.button("Save Puzzle State").clicked() {
-								unreachable!();
+								Self::on_save_clicked(input_state);
+							}
+
+							if ui.button("Load Puzzle State").clicked() {
+								Self::on_load_clicked(input_state);
 							}
 						});
 					});
 				});
 			});
 		});
+	}
+
+	fn on_preferences_clicked(world: &World, view: &mut View) -> () {
+		*view = View::Preferences(
+			Box::new(world
+				.get_resource::<Preferences>()
+				.map_or_else(Preferences::default, Preferences::clone)
+		));
+	}
+
+	fn on_reset_clicked(world: &mut World, input_state: &mut InputState) -> () {
+		if let (
+			Some(camera_orientation),
+			Some(preferences)
+		) = (
+			world
+				.query::<CameraTuple>()
+				.iter(world)
+				.next()
+				.map(|(_, transform): CameraTuple| -> Quat {
+					transform.rotation
+				}
+			),
+			world.get_resource::<Preferences>(),
+		) {
+			input_state.puzzle_action = Some(PuzzleAction {
+				action_type: PuzzleActionType::Reset,
+				current_action: None,
+				pending_actions: Some(Box::<PendingActions>::new(
+					PendingActions::reset(
+						&camera_orientation,
+						preferences.speed.animation.clone()
+					)
+				))
+			});
+		}
+	}
+
+	fn on_randomize_clicked(world: &mut World, input_state: &mut InputState) -> () {
+		if let (
+			Some(camera_orientation),
+			Some(preferences),
+			Some(extended_puzzle_state)
+		) = (
+			world
+				.query::<(&CameraComponent, &Transform)>()
+				.iter(world)
+				.next()
+				.map(|(_, transform): (&CameraComponent, &Transform)| -> Quat {
+					transform.rotation
+				}
+			),
+			world.get_resource::<Preferences>(),
+			world.get_resource::<ExtendedPuzzleState>()
+		) {
+			input_state.puzzle_action = Some(PuzzleAction {
+				action_type: PuzzleActionType::Randomize,
+				current_action: None,
+				pending_actions: Some(Box::<PendingActions>::new(
+					PendingActions::randomize(
+						preferences,
+						&extended_puzzle_state.puzzle_state,
+						&camera_orientation
+					)
+				))
+			});
+		}
+	}
+
+	fn on_save_clicked(input_state: &mut InputState) -> () {
+		input_state.file_action = Some(FileAction::new(
+			Mutex::new(Box::pin(async {
+				rfd::AsyncFileDialog::new()
+					.set_title("Save Puzzle State")
+					.set_directory(
+						Path::new(&STRING_DATA.files.saves)
+							.canonicalize()
+							.unwrap_or_default()
+					)
+					.set_file_name(&format!(
+						"puzzleState{}",
+						read_dir(&STRING_DATA.files.saves)
+							.map_or(0_usize, ReadDir::count)
+							+ 1_usize,
+					))
+					.add_filter(
+						"Serialized Format",
+						SerFmt::file_extensions())
+					.save_file()
+					.await
+			})),
+			FileActionType::Save
+		));
+	}
+
+	fn on_load_clicked(input_state: &mut InputState) -> () {
+		input_state.file_action = Some(FileAction::new(
+			Mutex::new(Box::pin(async {
+				rfd::AsyncFileDialog::new()
+					.set_title("Load Puzzle State")
+					.set_directory(Path::new(&STRING_DATA.files.saves).canonicalize().unwrap_or_default())
+					.set_file_name(&read_dir(&STRING_DATA.files.saves)
+						.map_or(
+							"puzzleState1".into(),
+							|read_dir: ReadDir| -> String {
+								read_dir
+									// Filter to accepted file types
+									.filter(|dir_entry: &IoResult<DirEntry>| -> bool {
+										dir_entry.is_ok()
+											&& SerFmt::file_extensions()
+												.contains(&Path::new(&dir_entry.as_ref().unwrap().file_name())
+													.extension().and_then(OsStr::to_str).unwrap_or("")
+												)
+									})
+									// Find the most recent file
+									.max_by_key(|dir_entry: &IoResult<DirEntry>| -> SystemTime {
+										dir_entry
+											.as_ref()
+											.unwrap()
+											.metadata()
+											.ok()
+											.as_ref()
+											.map(Metadata::created)
+											.map(Result::ok)
+											.unwrap_or_default()
+											.unwrap_or(SystemTime::UNIX_EPOCH)
+									})
+									// Convert to usable type
+									.map(Result::ok)
+									.unwrap_or_default()
+									.as_ref()
+									.map(DirEntry::file_name)
+									.as_ref()
+									.map(OsString::as_os_str)
+									.and_then(OsStr::to_str)
+									.unwrap_or("puzzleState1")
+									.into()
+							}
+						)
+					)
+					.add_filter(
+						"Serialized Format",
+						SerFmt::file_extensions())
+					.pick_file()
+					.await
+			})),
+			FileActionType::Load
+		));
 	}
 
 	fn render_main(egui_context: &EguiContext, world: &mut World) -> () {
