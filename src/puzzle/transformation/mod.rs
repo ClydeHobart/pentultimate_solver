@@ -64,7 +64,9 @@ use {
 			Add,
 			AddAssign,
 			Neg,
-			Range
+			Range,
+			Sub,
+			SubAssign
 		},
 		slice::Iter,
 		sync::{
@@ -643,6 +645,12 @@ impl Inspectable for HalfAddr {
 	}
 }
 
+impl Neg for HalfAddr {
+	type Output = Self;
+
+	fn neg(self) -> Self::Output { *self.as_reorientation().inverse().get_half_addr() }
+}
+
 pub trait FullAddrConsts {
 	const INVALID_INDEX: u8;
 }
@@ -878,6 +886,8 @@ impl Add<HalfAddr> for FullAddr {
 	}
 }
 
+impl AddAssign<HalfAddr> for FullAddr { fn add_assign(&mut self, rhs: HalfAddr) -> () { *self = *self + rhs; } }
+
 impl Addr for FullAddr {
 	fn get_page_index(&self) -> usize {
 		assert!(self.page_index_is_valid());
@@ -996,6 +1006,14 @@ impl From<(Type, HalfAddr)> for FullAddr {
 impl From<u16> for FullAddr { fn from(value: u16) -> Self { unsafe { transmute::<u16, Self>(value) } } }
 
 impl From<FullAddr> for u16 { fn from(value: FullAddr) -> Self { unsafe { transmute::<FullAddr, Self>(value) } } }
+
+impl Sub<HalfAddr> for FullAddr {
+	type Output = Self;
+
+	fn sub(self, rhs: HalfAddr) -> Self::Output { self + (-rhs) }
+}
+
+impl SubAssign<HalfAddr> for FullAddr { fn sub_assign(&mut self, rhs: HalfAddr) -> () { *self = *self - rhs; } }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
 pub struct Action {

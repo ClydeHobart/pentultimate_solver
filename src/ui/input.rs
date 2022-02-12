@@ -242,7 +242,7 @@ macro_rules! bkc {
 
 define_struct_with_default!(
 	#[derive(Clone, Deserialize, Inspectable, PartialEq)]
-	pub InputData {
+	pub struct InputData {
 		#[inspectable(collapse)]
 		pub default_positions:				[usize; HALF_PENTAGON_PIECE_COUNT]		= generate_default_positions(),
 		#[inspectable(collapse)]
@@ -256,7 +256,7 @@ define_struct_with_default!(
 		pub rotate_twice:					KeyCode									= bkc!(D),
 		pub counter_clockwise:				KeyCode									= bkc!(S),
 		pub alt_hemi:						KeyCode									= bkc!(A),
-		pub disable_recentering:			KeyCode									= bkc!(X),
+		pub disable_recentering:			KeyCode									= bkc!(X)
 	}
 );
 

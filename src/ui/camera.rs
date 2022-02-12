@@ -29,11 +29,11 @@ use {
 
 define_struct_with_default!(
 	#[derive(Clone, Deserialize, Inspectable, PartialEq)]
-	pub PerspectiveProjection {
+	pub struct PerspectiveProjection {
 		fov:			f32	= 0.5_f32,
 		aspect_ratio:	f32	= 1.0_f32,
 		near:			f32	= 1.0_f32,
-		far:			f32	= 1000.0_f32,
+		far:			f32	= 1000.0_f32
 	}
 );
 
@@ -61,11 +61,11 @@ impl From<BevyPerspectiveProjection> for PerspectiveProjection {
 
 define_struct_with_default!(
 	#[derive(Clone, Deserialize, Inspectable, PartialEq)]
-	pub LightAndCameraData {
+	pub struct LightAndCameraData {
 		pub light_pos:	[f32; 3]				= [0.0_f32, 0.0_f32, 10.0_f32],
 		pub camera_pos:	[f32; 3]				= [0.0_f32, 0.0_f32, 10.0_f32],
 		#[inspectable(collapse)]
-		pub persp_proj:	PerspectiveProjection	= PerspectiveProjection::default(),
+		pub persp_proj:	PerspectiveProjection	= PerspectiveProjection::default()
 	}
 );
 

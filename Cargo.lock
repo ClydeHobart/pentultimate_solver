@@ -3133,6 +3133,7 @@ dependencies = [
  "log",
  "memmap",
  "num-format",
+ "num-traits",
  "pentultimate_solver",
  "rand",
  "rfd",

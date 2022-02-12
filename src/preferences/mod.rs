@@ -97,24 +97,24 @@ impl Default for FileMenuData {
 
 define_struct_with_default!(
 	#[derive(Clone, Deserialize, Inspectable, PartialEq)]
-	pub AnimationSpeedData {
+	pub struct AnimationSpeedData {
 		#[inspectable(min = 0, max = 2000)]
 		pub rotation_millis:					u32		= 250_u32,
 
 		pub uniform_transformation_duration:	bool	= false,
 
-		pub animate_undo_and_redo:				bool	= false,
+		pub animate_undo_and_redo:				bool	= false
 	}
 );
 
 define_struct_with_default!(
 	#[derive(Clone, Deserialize, Inspectable, PartialEq)]
-	pub CameraSpeedData {
+	pub struct CameraSpeedData {
 		#[inspectable(min = 1, max = 100)]
 		pub pan_speed:							u32		= 50_u32,
 
 		#[inspectable(min = 1, max = 100)]
-		pub roll_speed:							u32		= 50_u32,
+		pub roll_speed:							u32		= 50_u32
 	}
 );
 

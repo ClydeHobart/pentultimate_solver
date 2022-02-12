@@ -576,7 +576,6 @@ pub mod inflated {
 	}
 
 	#[derive(Clone, Deserialize, Serialize)]
-	#[repr(align(32))]
 	pub struct ExtendedPuzzleState {
 		pub puzzle_state:	PuzzleState,
 		pub actions:		Vec<Action>,

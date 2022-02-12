@@ -12,30 +12,30 @@ macro_rules! root { ($($file:expr)?) => { file_concat!("." $(, $file)?) } }
 
 define_struct_with_default!(
 	#[derive(Deserialize)]
-	pub Files<String> {
+	pub struct Files<String> {
 		pub preferences					= config!("preferences.ron"),
 		pub piece_library_data			= config!("pieceLibraryData.ron"),
 		pub rust_log					= config!("rustLog.ron"),
-		pub saves						= saves!(),
+		pub saves						= saves!()
 	}
 );
 
 define_struct_with_default!(
 	#[derive(Deserialize)]
-	pub Labels<String> {
+	pub struct Labels<String> {
 		pub camera_run					= "CameraPlugin::run()",
 		pub color_data_startup			= "ColorData::startup()",
 		pub input_run					= "InputPlugin::run()",
 		pub piece_library_startup		= "PieceLibrary::startup()",
 		pub puzzle_run					= "PuzzlePlugin::run()",
-		pub puzzle_startup				= "PuzzlePlugin::startup()",
+		pub puzzle_startup				= "PuzzlePlugin::startup()"
 	}
 );
 
 define_struct_with_default!(
 	#[derive(Deserialize)]
-	pub Misc<String> {
-		pub app_title					= "Pentultimate Solver",
+	pub struct Misc<String> {
+		pub app_title					= "Pentultimate Solver"
 	}
 );
 
@@ -45,8 +45,8 @@ pub mod debug {
 
 	define_struct_with_default!(
 		#[derive(Deserialize)]
-		pub Debug<String> {
-			pub debug_modes				= config!("debugModes.ron"),
+		pub struct Debug<String> {
+			pub debug_modes				= config!("debugModes.ron")
 		}
 	);
 
@@ -59,8 +59,8 @@ pub mod test {
 
 	define_struct_with_default!(
 		#[derive(Deserialize)]
-		pub Test<String> {
-			pub reorientation_tests		= config!("reorientationTests.ron"),
+		pub struct Test<String> {
+			pub reorientation_tests		= config!("reorientationTests.ron")
 		}
 	);
 

@@ -4,7 +4,11 @@ use {
 		prelude::*,
 		app::prelude::*,
 		preferences::Update,
-		puzzle::transformation::TYPE_COUNT,
+		puzzle::transformation::{
+			Addr,
+			Type,
+			TYPE_COUNT
+		},
 		ui::input::{
 			FileAction,
 			FileActionType,
@@ -324,157 +328,132 @@ impl UIPlugin {
 			.anchor(egui::Align2::RIGHT_BOTTOM, ACTION_STACK_OFFSET)
 			.show(egui_context.ctx(), |ui: &mut Ui| -> () {
 				egui::ScrollArea::auto_sized().show(ui, |ui: &mut Ui| -> () {
-					for (action_index, action) in extended_puzzle_state.actions.iter().enumerate() {
-						ui.visuals_mut().widgets.noninteractive.fg_stroke.color = if action_index as i32 == extended_puzzle_state.curr_action {
-							Color32::WHITE
-						} else {
-							Color32::GRAY
-						};
-						ui.label(format!("{:?}", action.transformation()));
-					}
+					egui::Grid::new("ActionStackGrid")
+						.min_col_width(0.0_f32)
+						.spacing(ui.spacing().item_spacing * Vec2::Y)
+						.show(ui, |ui: &mut Ui| -> () {
+							for (action_index, action)
+								in extended_puzzle_state.actions.iter().enumerate()
+							{
+								let camera_half_addr: HalfAddr = *action.camera_start();
+								let transformation: FullAddr = *action.transformation() - camera_half_addr;
+								let transformation_half_addr: HalfAddr = *transformation.get_half_addr();
+
+								ui.visuals_mut().widgets.noninteractive.fg_stroke.color =
+									if action_index as i32 == extended_puzzle_state.curr_action {
+										Color32::WHITE
+									} else {
+										Color32::GRAY
+									};
+								ui.label(transformation
+									.get_page_index_type()
+									.map_or_else(
+										|| -> String { "[INVALID]".into() },
+										|transformation_type: Type| -> String {
+											format!("{:?} ", transformation_type)
+										}
+									));
+								ui.label(format!("({}, ", transformation_half_addr.get_line_index()));
+								ui.label(format!("{}) ", transformation_half_addr.get_word_index()));
+								ui.label(format!("@ ({}, ", camera_half_addr.get_line_index()));
+								ui.label(format!("{})", camera_half_addr.get_word_index()));
+								ui.end_row();
+							}
+						});
 				});
 			});
 
 		#[cfg(debug_assertions)]
 		{
 			world.resource_scope(|world: &mut World, mut preferences: Mut<Preferences>| -> () {
-				if preferences.debug_modes.should_render() {
-					enum Fill {
-						WidgetsNoninteractiveBg,
-						WidgetsInactiveBg,
-						WidgetsHoveredBg,
-						WidgetsActiveBg,
-						WidgetsOpenBg,
-						FaintBgColor,
-						ExtremeBgColor,
-						CodeBgColor
-					}
-					enum Stroke {
-						NoninteractiveBg,
-						NoninteractiveFg,
-						InactiveBg,
-						InactiveFg,
-						HoveredBg,
-						HoveredFg,
-						ActiveBg,
-						ActiveFg,
-						OpenBg,
-						OpenFg,
-					}
-
-					const FILL_COUNT: usize = 8_usize;
-					const FILL_GRAYS: [u8; FILL_COUNT] = [
-						27_u8,	// WidgetsNoninteractiveBg
-						48_u8,	// WidgetsInactive
-						70_u8,	// WidgetsHovered
-						55_u8,	// WidgetsActive
-						27_u8,	// WidgetsOpenBg
-						24_u8,	// FaintBgColor
-						10_u8,	// ExtremeBgColor
-						64_u8	// CodeBgColor
-					];
-					const fn color32_from_gray_and_alpha(gray: u8, alpha: u8) -> Color32 {
-						let premultiplied_gray: u8 = (gray as f32 * alpha as f32 / u8::MAX as f32) as u8;
-
-						Color32::from_rgba_premultiplied(
-							premultiplied_gray,
-							premultiplied_gray,
-							premultiplied_gray,
-							alpha
-						)
-					}
-					const FILL_ALPHA: u8 = 0xC0_u8;
-					const FILL_COLORS: [Color32; FILL_COUNT] = [
-						color32_from_gray_and_alpha(FILL_GRAYS[Fill::WidgetsNoninteractiveBg	as usize], FILL_ALPHA),
-						color32_from_gray_and_alpha(FILL_GRAYS[Fill::WidgetsInactiveBg			as usize], FILL_ALPHA),
-						color32_from_gray_and_alpha(FILL_GRAYS[Fill::WidgetsHoveredBg			as usize], FILL_ALPHA),
-						color32_from_gray_and_alpha(FILL_GRAYS[Fill::WidgetsActiveBg			as usize], FILL_ALPHA),
-						color32_from_gray_and_alpha(FILL_GRAYS[Fill::WidgetsOpenBg				as usize], FILL_ALPHA),
-						color32_from_gray_and_alpha(FILL_GRAYS[Fill::FaintBgColor				as usize], FILL_ALPHA),
-						color32_from_gray_and_alpha(FILL_GRAYS[Fill::ExtremeBgColor				as usize], FILL_ALPHA),
-						color32_from_gray_and_alpha(FILL_GRAYS[Fill::CodeBgColor				as usize], FILL_ALPHA)
-					];
-					const STROKE_COUNT: usize = 10_usize;
-					const STROKE_GRAYS: [u8; STROKE_COUNT] = [
-						60_u8,	// NoninteractiveBg
-						140_u8,	// NoninteractiveFg
-						0_u8,	// InactiveBg
-						180_u8,	// InactiveFg
-						150_u8,	// HoveredBg
-						240_u8,	// HoveredFg
-						255_u8,	// ActiveBg
-						255_u8,	// ActiveFg
-						60_u8,	// OpenBg
-						210_u8	// OpenFg
-					];
-					const STROKE_COLORS: [Color32; STROKE_COUNT] = [
-						Color32::from_gray(STROKE_GRAYS[Stroke::NoninteractiveBg	as usize]),
-						Color32::from_gray(STROKE_GRAYS[Stroke::NoninteractiveFg	as usize]),
-						Color32::from_gray(STROKE_GRAYS[Stroke::InactiveBg			as usize]),
-						Color32::from_gray(STROKE_GRAYS[Stroke::InactiveFg			as usize]),
-						Color32::from_gray(STROKE_GRAYS[Stroke::HoveredBg			as usize]),
-						Color32::from_gray(STROKE_GRAYS[Stroke::HoveredFg			as usize]),
-						Color32::from_gray(STROKE_GRAYS[Stroke::ActiveBg			as usize]),
-						Color32::from_gray(STROKE_GRAYS[Stroke::ActiveFg			as usize]),
-						Color32::from_gray(STROKE_GRAYS[Stroke::OpenBg				as usize]),
-						Color32::from_gray(STROKE_GRAYS[Stroke::OpenFg				as usize])
-					];
-					const WINDOW_SHADOW: epaint::Shadow = epaint::Shadow {
-						extrusion: 0.0_f32,
-						color: Color32::TRANSPARENT
-					};
-					const DEBUG_MODES_OFFSET: Vec2 = Vec2::new(OFFSET, OFFSET);
-
-					let prev_style: egui::Style = (*egui_context.ctx().style()).clone();
-					let mut curr_style: egui::Style = prev_style.clone();
-
-					macro_rules! modify_curr_style {
-						(
-							$($fill_field:expr => $fill_variant:ident),*;
-							$($stroke_field:expr => $stroke_variant:ident),*
-						) => {
-							$(
-								$fill_field = FILL_COLORS[Fill::$fill_variant as usize];
-							)*
-							$(
-								$stroke_field = STROKE_COLORS[Stroke::$stroke_variant as usize];
-							)*
-						}
-					}
-
-					modify_curr_style!(
-						curr_style.visuals.widgets.noninteractive.bg_fill			=> WidgetsNoninteractiveBg,
-						curr_style.visuals.widgets.inactive.bg_fill					=> WidgetsInactiveBg,
-						curr_style.visuals.widgets.hovered.bg_fill					=> WidgetsHoveredBg,
-						curr_style.visuals.widgets.active.bg_fill					=> WidgetsActiveBg,
-						curr_style.visuals.widgets.open.bg_fill						=> WidgetsOpenBg,
-						curr_style.visuals.faint_bg_color							=> FaintBgColor,
-						curr_style.visuals.extreme_bg_color							=> ExtremeBgColor,
-						curr_style.visuals.code_bg_color							=> CodeBgColor;
-
-						curr_style.visuals.widgets.noninteractive.bg_stroke.color	=> NoninteractiveBg,
-						curr_style.visuals.widgets.noninteractive.fg_stroke.color	=> NoninteractiveFg,
-						curr_style.visuals.widgets.inactive.bg_stroke.color			=> InactiveBg,
-						curr_style.visuals.widgets.inactive.fg_stroke.color			=> InactiveFg,
-						curr_style.visuals.widgets.hovered.bg_stroke.color			=> HoveredBg,
-						curr_style.visuals.widgets.hovered.fg_stroke.color			=> HoveredFg,
-						curr_style.visuals.widgets.active.bg_stroke.color			=> ActiveBg,
-						curr_style.visuals.widgets.active.fg_stroke.color			=> ActiveFg,
-						curr_style.visuals.widgets.open.bg_stroke.color				=> OpenBg,
-						curr_style.visuals.widgets.open.fg_stroke.color				=> OpenFg
-					);
-
-					curr_style.visuals.window_shadow = WINDOW_SHADOW;
-					curr_style.wrap = Some(false);
-					egui_context.ctx().set_style(curr_style);
-					egui::Window::new("DebugModes")
-						.anchor(egui::Align2::LEFT_TOP, DEBUG_MODES_OFFSET)
-						.title_bar(false)
-						.show(egui_context.ctx(), |ui: &mut Ui| -> () {
-							preferences.debug_modes.render(egui_context, ui, world);
-						});
-					egui_context.ctx().set_style(prev_style);
+				if !preferences.debug_modes.should_render() {
+					return;
 				}
+
+				const DEBUG_MODES_OFFSET: Vec2 = Vec2::new(OFFSET, OFFSET);
+				const FILL_ALPHA: u8 = 0xC0_u8;
+
+				const fn color32_from_gray_and_alpha<const A: u8>(gray: u8) -> Color32 {
+					let premultiplied_gray: u8 = (gray as f32 * A as f32 / u8::MAX as f32) as u8;
+
+					Color32::from_rgba_premultiplied(
+						premultiplied_gray,
+						premultiplied_gray,
+						premultiplied_gray,
+						A
+					)
+				}
+
+				let prev_style: egui::Style = (*egui_context.ctx().style()).clone();
+				let mut curr_style: egui::Style = prev_style.clone();
+
+				macro_rules! style {
+					($($color_type:ident, $color32_func:path =>
+						$($color_sub_type:ident, $gray:expr, $field:expr),*);*) => {
+						$(
+							{
+								enum $color_type {
+									$($color_sub_type),*
+								}
+
+								const COUNT: usize = {
+									let mut count: usize = 0_usize;
+
+									$(
+										count += 1_usize;
+										$gray;
+									)*
+
+									count
+								};
+
+								const COLORS: [Color32; COUNT] = [
+									$(
+										($color32_func)($gray),
+									)*
+								];
+
+								$(
+									$field = COLORS[$color_type::$color_sub_type as usize];
+								)*
+							}
+						)*
+					}
+				}
+
+				style!(
+					Fill, color32_from_gray_and_alpha::<FILL_ALPHA> =>
+						WidgetsNoninteractiveBg,	27_u8,	curr_style.visuals.widgets.noninteractive.bg_fill,
+						WidgetsInactiveBg,			48_u8,	curr_style.visuals.widgets.inactive.bg_fill,
+						WidgetsHoveredBg,			70_u8,	curr_style.visuals.widgets.hovered.bg_fill,
+						WidgetsActiveBg,			55_u8,	curr_style.visuals.widgets.active.bg_fill,
+						WidgetsOpenBg,				27_u8,	curr_style.visuals.widgets.open.bg_fill,
+						FaintBgColor,				24_u8,	curr_style.visuals.faint_bg_color,
+						ExtremeBgColor,				10_u8,	curr_style.visuals.extreme_bg_color,
+						CodeBgColor,				64_u8,	curr_style.visuals.code_bg_color;
+					Stroke, Color32::from_gray =>
+						NoninteractiveBg,			060_u8,	curr_style.visuals.widgets.noninteractive.bg_stroke.color,
+						NoninteractiveFg,			140_u8,	curr_style.visuals.widgets.noninteractive.fg_stroke.color,
+						InactiveBg,					000_u8,	curr_style.visuals.widgets.inactive.bg_stroke.color,
+						InactiveFg,					180_u8,	curr_style.visuals.widgets.inactive.fg_stroke.color,
+						HoveredBg,					150_u8,	curr_style.visuals.widgets.hovered.bg_stroke.color,
+						HoveredFg,					240_u8,	curr_style.visuals.widgets.hovered.fg_stroke.color,
+						ActiveBg,					255_u8,	curr_style.visuals.widgets.active.bg_stroke.color,
+						ActiveFg,					255_u8,	curr_style.visuals.widgets.active.fg_stroke.color,
+						OpenBg,						060_u8,	curr_style.visuals.widgets.open.bg_stroke.color,
+						OpenFg,						210_u8,	curr_style.visuals.widgets.open.fg_stroke.color
+				);
+
+				curr_style.visuals.window_shadow = epaint::Shadow::default();
+				curr_style.wrap = Some(false);
+				egui_context.ctx().set_style(curr_style);
+				egui::Window::new("DebugModes")
+					.anchor(egui::Align2::LEFT_TOP, DEBUG_MODES_OFFSET)
+					.title_bar(false)
+					.show(egui_context.ctx(), |ui: &mut Ui| -> () {
+						preferences.debug_modes.render(egui_context, ui, world);
+					});
+				egui_context.ctx().set_style(prev_style);
 			});
 		}
 	}

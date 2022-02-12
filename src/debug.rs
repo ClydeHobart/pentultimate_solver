@@ -8,11 +8,15 @@ use {
 			InflatedPuzzleState,
 			InflatedPieceStateComponent
 		},
-		util::inspectable_bit_array::InspectableBitArray
+		util::{
+			inspectable_bit_array::InspectableBitArray,
+			inspectable_num::InspectableNum
+		}
 	},
 	bevy::prelude::*,
 	bevy_egui::EguiContext,
 	bevy_inspector_egui::{
+		options::NumberAttributes,
 		Context,
 		Inspectable
 	},
@@ -88,12 +92,24 @@ macro_rules! define_debug_mode {
 				false
 			}
 		}
+
+		impl DebugMode {
+			fn as_str(self) -> &'static str { debug_mode_str(self as usize) }
+
+			fn new_data(self) -> DebugModeDataBox {
+				match self {
+					$(
+						Self::$debug_mode => Box::new(<$debug_mode_data>::default()) as DebugModeDataBox,
+					)*
+				}
+			}
+		}
 	};
 }
 
 define_debug_mode!(
 	PuzzleState: PuzzleStateData,
-	_Unused: ()
+	Stack: StackData
 );
 
 const DEBUG_MODE_COUNT: usize = debug_mode_count();
@@ -248,24 +264,71 @@ impl DebugModeData for PuzzleStateData {
 	fn as_any(&self) -> &dyn Any { self }
 }
 
-impl DebugModeData for () {
-	fn debug_mode(&self) -> DebugMode { DebugMode::_Unused }
+define_struct_with_default!(
+	#[derive(Clone, PartialEq)]
+	struct StackData {
+		min_simplification_index:	InspectableNum<i32>	= InspectableNum(-1_i32),
+		max_simplification_index:	InspectableNum<i32>	= InspectableNum(-1_i32)
+	}
+);
 
-	fn clone_impl(&self) -> DebugModeDataBox { Box::new(()) as DebugModeDataBox }
+impl DebugModeData for StackData {
+	fn debug_mode(&self) -> DebugMode { DebugMode::Stack }
+
+	fn render(&mut self, egui_context: &EguiContext, ui: &mut Ui, world: &mut World) -> () {
+		ui.collapsing("StackData", |ui: &mut Ui| -> () {
+			let context: Context = Context::new(egui_context.ctx(), world);
+
+			self.ui(ui, (), &context);
+		});
+	}
+
+	fn clone_impl(&self) -> DebugModeDataBox { Box::new(self.clone()) as DebugModeDataBox }
 
 	fn as_debug_mode_data(&self) -> &dyn DebugModeData { self }
 
 	fn as_any(&self) -> &dyn Any { self }
 }
 
-impl DebugMode {
-	fn as_str(self) -> &'static str { debug_mode_str(self as usize) }
+impl Inspectable for StackData {
+	type Attributes = ();
 
-	fn new_data(self) -> DebugModeDataBox {
-		match self {
-			Self::PuzzleState => Box::new(PuzzleStateData::default()) as DebugModeDataBox,
-			_ => Box::new(()) as DebugModeDataBox
-		}
+	fn ui(&mut self, ui: &mut egui::Ui, _: (), context: &Context) -> bool {
+		let mut changed: bool = false;
+
+		ui.collapsing("simplification_indicies", |ui: &mut Ui| -> () {
+			egui::Grid::new(context.id()).show(ui, |ui: &mut Ui| -> () {
+				ui.label("min");
+				ui.separator();
+				changed = self.min_simplification_index.ui(
+					ui,
+					NumberAttributes::<i32>::between(-1_i32, self.max_simplification_index.0),
+					context
+				);
+				ui.end_row();
+				ui.label("max");
+				ui.separator();
+				changed |= self.max_simplification_index.ui(
+					ui,
+					NumberAttributes::<i32>::between(
+						self.min_simplification_index.0,
+						unsafe { context.world() }
+							.and_then(|world: &mut World| -> Option<i32> {
+								world
+									.get_resource::<ExtendedPuzzleState>()
+									.map(|extended_puzzle_state: &ExtendedPuzzleState| -> i32 {
+										extended_puzzle_state.actions.len() as i32 - 1_i32
+									})
+							})
+							.unwrap_or(self.max_simplification_index.0)
+					),
+					context
+				);
+				ui.end_row();
+			});
+		});
+
+		false
 	}
 }
 

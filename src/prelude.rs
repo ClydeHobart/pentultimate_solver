@@ -3,6 +3,7 @@ pub use {
 		strings::STRING_DATA,
 		util::prelude::*,
 		define_struct_with_default,
+		define_super_trait,
 		option_to_result,
 		log_concat,
 		log_dyn_error,

@@ -24,6 +24,7 @@ pub mod prelude {
 
 pub mod inspectable_bin_map;
 pub mod inspectable_bit_array;
+pub mod inspectable_num;
 
 use {
 	crate::prelude::*,
@@ -542,15 +543,15 @@ pub fn red_to_green(s: f32) -> Color {
 }
 
 // Macro adapted from https://stackoverflow.com/questions/66291962/how-do-i-use-macro-rules-to-define-a-struct-with-optional-cfg
-#[macro_export(local_inner_macros)]
+#[macro_export]
 macro_rules! define_struct_with_default {
 	(
 		$(#[$struct_attr:meta])*
-		$struct_vis:vis $struct_name:ident {
+		$struct_vis:vis struct $struct_name:ident {
 			$(
 				$(#[$field_attr:meta])?
-				$field_vis:vis $field:ident : $field_type:ty = $value:expr,
-			)*
+				$field_vis:vis $field:ident : $field_type:ty = $value:expr
+			),* $(,)?
 		}
 	) => {
 		$(#[$struct_attr])*
@@ -574,11 +575,11 @@ macro_rules! define_struct_with_default {
 
 	(
 		$(#[$struct_attr:meta])*
-		$struct_vis:vis $struct_name:ident <$field_type:ty> {
+		$struct_vis:vis struct $struct_name:ident <$field_type:ty> {
 			$(
 				$(#[$field_attr:meta])?
-				$field_vis:vis $field:ident = $value:expr,
-			)*
+				$field_vis:vis $field:ident = $value:expr
+			),* $(,)?
 		}
 	) => {
 		$(#[$struct_attr])*
@@ -599,6 +600,15 @@ macro_rules! define_struct_with_default {
 			}
 		}
 	};
+}
+
+#[macro_export]
+macro_rules! define_super_trait {
+	($vis:vis trait $super_trait:ident : $sub_trait:path $(, $other_sub_trait:path)*) => {
+		$vis trait $super_trait: $sub_trait $(+ $other_sub_trait)* {}
+
+		impl<T: $sub_trait $(+ $other_sub_trait)*> $super_trait for T {}
+	}
 }
 
 /// Returns a copy of an immutable reference that is no longer tracked by the borrow checker
@@ -793,7 +803,7 @@ mod tests {
 
 		define_struct_with_default!(
 			#[derive(Debug, Deserialize, PartialEq, Serialize)]
-			pub Struct {
+			pub struct Struct {
 				field_u8:		u8		= u8::MAX,
 				field_u16:		u16		= u16::MAX,
 				field_u32:		u32		= u32::MAX,
@@ -803,7 +813,7 @@ mod tests {
 				field_i16:		i16		= i16::MAX,
 				field_i32:		i32		= i32::MAX,
 				field_i64:		i64		= i64::MAX,
-				field_isize:	isize	= isize::MAX,
+				field_isize:	isize	= isize::MAX
 			}
 		);
 
