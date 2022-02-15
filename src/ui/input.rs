@@ -750,18 +750,17 @@ impl Default for InputToggles {
 
 #[derive(Default)]
 pub struct InputState {
-	// #[serde(skip)]
-	pub puzzle_action:		Option<PuzzleAction>,
-
-	// #[serde(skip)]
-	pub file_action:		Option<FileAction>,
-
-	pub toggles:			InputToggles,
-	pub camera_rotation:	Quat,
+	pub puzzle_action:			Option<PuzzleAction>,
+	pub file_action:			Option<FileAction>,
+	pub camera_rotation:		Quat,
+	pub has_camera_rotation:	bool,
+	pub toggles:				InputToggles,
 }
 
 impl InputState {
 	pub fn has_active_action(&self) -> bool { self.puzzle_action.is_some() || self.file_action.is_some() }
+
+	fn reset_update_data(&mut self) -> () { self.has_camera_rotation = false; }
 }
 
 pub struct InputPlugin;
@@ -781,9 +780,9 @@ impl InputPlugin {
 	) -> () {
 		let input_state: &mut InputState = input_state.deref_mut();
 
-		if !matches!(*view, View::Main) {
-			input_state.camera_rotation = Quat::IDENTITY;
+		input_state.reset_update_data();
 
+		if !matches!(*view, View::Main) {
 			return;
 		}
 
@@ -822,53 +821,49 @@ impl InputPlugin {
 			).unwrap();
 		}
 
-		let mut rolled_or_panned: bool = false;
+		let (camera_rotation, has_camera_rotation): (Quat, bool) = {
+			const PAN_SCALING_FACTOR: f32 = 500_000.0_f32;
+			const ROLL_SCALING_FACTOR: f32 = 5_000.0_f32;
 
-		let (mouse_motion_delta, mouse_wheel_delta): (Vec2, f32) = {
-			let time_delta: f32 = time.delta_seconds();
+			let (mouse_motion_delta, mouse_wheel_delta): (Vec2, f32) = {
+				let time_delta: f32 = time.delta_seconds();
 
-			(
-				if mouse_button_input.pressed(MouseButton::Middle) {
-					mouse_motion_events
+				(
+					if mouse_button_input.pressed(MouseButton::Middle) {
+						mouse_motion_events
+							.iter()
+							.map(|mouse_motion: &MouseMotion| -> &Vec2 {
+								&mouse_motion.delta
+							})
+							.sum::<Vec2>() / time_delta
+					} else {
+						Vec2::ZERO
+					},
+					mouse_wheel_events
 						.iter()
-						.map(|mouse_motion: &MouseMotion| -> &Vec2 {
-							&mouse_motion.delta
+						.map(|mouse_wheel: &MouseWheel| -> f32 {
+							mouse_wheel.y
 						})
-						.sum::<Vec2>() / time_delta
-				} else {
-					Vec2::ZERO
-				},
-				mouse_wheel_events
-					.iter()
-					.map(|mouse_wheel: &MouseWheel| -> f32 {
-						mouse_wheel.y
-					})
-					.sum::<f32>() / time_delta
-			)
-		};
+						.sum::<f32>() / time_delta
+				)
+			};
 
-		input_state.camera_rotation = {
-			if !mouse_motion_delta.abs_diff_eq(Vec2::ZERO, f32::EPSILON) {
-				const PAN_SCALING_FACTOR: f32 = 500_000.0_f32;
-
-				rolled_or_panned = true;
-
+			if !mouse_motion_delta.abs_diff_eq(Vec2::ZERO, f32::EPSILON) { (
 				Quat::from_axis_angle(
 					Vec3::new(mouse_motion_delta.x, -mouse_motion_delta.y, 0.0_f32).cross(Vec3::Z).normalize(),
 					mouse_motion_delta.length() / PAN_SCALING_FACTOR * preferences.speed.camera.pan_speed as f32
-				)
-			} else if mouse_wheel_delta.abs() > f32::EPSILON {
-				const ROLL_SCALING_FACTOR: f32 = 5_000.0_f32;
-
-				rolled_or_panned = true;
-
+				),
+				true
+			) } else if mouse_wheel_delta.abs() > f32::EPSILON { (
 				Quat::from_rotation_z(
 					mouse_wheel_delta / ROLL_SCALING_FACTOR * preferences.speed.camera.roll_speed as f32
-				)
-			} else {
-				Quat::IDENTITY
-			}
+				),
+				true
+			) } else { (Quat::IDENTITY, false) }
 		};
+
+		input_state.camera_rotation = camera_rotation;
+		input_state.has_camera_rotation = has_camera_rotation;
 
 		match (&mut input_state.puzzle_action, &mut input_state.file_action) {
 			(None, None) => {
@@ -916,7 +911,7 @@ impl InputPlugin {
 				}
 			},
 			(Some(active_action), None) => {
-				if rolled_or_panned {
+				if input_state.has_camera_rotation {
 					if matches!(active_action.action_type, PuzzleActionType::RecenterCamera) {
 						/* If the whole purpose of the current active transformation action is to recenter the camera,
 						which we no longer wish to do, end the active transformation action entirely */

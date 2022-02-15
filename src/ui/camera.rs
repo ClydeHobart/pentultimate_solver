@@ -62,20 +62,23 @@ impl From<BevyPerspectiveProjection> for PerspectiveProjection {
 define_struct_with_default!(
 	#[derive(Clone, Deserialize, Inspectable, PartialEq)]
 	pub struct LightAndCameraData {
-		pub light_pos:	[f32; 3]				= [0.0_f32, 0.0_f32, 10.0_f32],
-		pub camera_pos:	[f32; 3]				= [0.0_f32, 0.0_f32, 10.0_f32],
+		pub light_pos:			[f32; 3]				= [0.0_f32, 0.0_f32, 10.0_f32],
+		pub camera_pos:			[f32; 3]				= [0.0_f32, 0.0_f32, 10.0_f32],
 		#[inspectable(collapse)]
-		pub persp_proj:	PerspectiveProjection	= PerspectiveProjection::default()
+		pub persp_proj:			PerspectiveProjection	= PerspectiveProjection::default(),
+		#[inspectable(min = Some(-5.0_f32), max = Some(5.0_f32))]
+		pub light_illuminance:	f32						= 4.0_f32
 	}
 );
 
 impl Update for LightAndCameraData {
 	fn update(&self, world: &mut World) -> () {
-		if let Some((_, mut transform)) = world
-			.query::<(&bevy::pbr::PointLight, &mut Transform)>()
+		if let Some((mut directional_light, mut transform)) = world
+			.query::<(&mut bevy::pbr::DirectionalLight, &mut Transform)>()
 			.iter_mut(world)
 			.next()
 		{
+			directional_light.illuminance = 10.0_f32.powf(self.light_illuminance);
 			transform.translation = Vec3::from(self.light_pos);
 		}
 
@@ -148,14 +151,20 @@ impl CameraPlugin {
 			.with_children(|child_builder: &mut ChildBuilder| -> () {
 				let light_and_camera_data: &LightAndCameraData = &preferences.light_and_camera;
 
-				child_builder.spawn_bundle(PointLightBundle {
-					transform: Transform::from_translation(Vec3::from(light_and_camera_data.light_pos)),
-					.. Default::default()
+				child_builder.spawn_bundle(DirectionalLightBundle {
+					directional_light: DirectionalLight {
+						illuminance: 10.0_f32.powf(light_and_camera_data.light_illuminance),
+						.. DirectionalLight::default()
+					},
+					transform: Transform::from_translation(Vec3::from(light_and_camera_data.light_pos))
+						.looking_at(Vec3::ZERO, Vec3::Y),
+					.. DirectionalLightBundle::default()
 				});
 				child_builder.spawn_bundle(PerspectiveCameraBundle {
-					transform: Transform::from_translation(Vec3::from(light_and_camera_data.camera_pos)).looking_at(Vec3::ZERO, Vec3::Y),
 					perspective_projection: light_and_camera_data.persp_proj.clone().into(),
-					.. Default::default()
+					transform: Transform::from_translation(Vec3::from(light_and_camera_data.camera_pos))
+						.looking_at(Vec3::ZERO, Vec3::Y),
+					.. PerspectiveCameraBundle::default()
 				});
 			});
 	}
@@ -164,26 +173,13 @@ impl CameraPlugin {
 		input_state: Res<InputState>,
 		mut camera_query: CameraQueryMut
 	) -> () {
-		CameraQueryNTMut(&mut camera_query).orientation(|rotation: Option<&mut Quat>| -> () {
-			if let Some(rotation) = rotation {
-				if input_state.camera_rotation != Quat::IDENTITY {
-					let mut rotation_2: Quat = *rotation;
-					let mut rotation_3: Quat = *rotation;
-					let mut rotation_4: Quat = *rotation;
-	
-					rotation_2 *= input_state.camera_rotation;
-					rotation_3 = rotation_3 * input_state.camera_rotation;
-					rotation_4 = input_state.camera_rotation * rotation_4;
-	
-					debug_expr!(
-						rotation_2,
-						rotation_3,
-						rotation_4
-					);
+		if input_state.has_camera_rotation {
+			CameraQueryNTMut(&mut camera_query).orientation(|rotation: Option<&mut Quat>| -> () {
+				if let Some(rotation) = rotation {
+					*rotation *= input_state.camera_rotation;
 				}
-			}
-		});
-		log_option_none!(camera_query.iter_mut().next()).1.rotate(input_state.camera_rotation);
+			});
+		}
 	}
 
 	pub fn compute_camera_addr(quat: &Quat) -> HalfAddr {

@@ -25,8 +25,8 @@ pub mod prelude {
 		super::{
 			LogError,
 			LogErrorResult,
-			LogPlugin,
-			init_env_logger
+			init_env_logger,
+			set_env_var
 		}
 	};
 }
@@ -58,6 +58,367 @@ use {
 	serde::Deserialize
 };
 
+pub mod macros {
+	#[macro_export]
+	macro_rules! log_concat {
+		($part_1:expr, $part_2:expr) => {
+			format!("{}::{}", $part_1, $part_2).as_str()
+		};
+	}
+
+	#[macro_export]
+	macro_rules! log_path {
+		() => {
+			std::module_path!()
+		};
+
+		($item:expr) => {
+			crate::log_concat!(std::module_path!(), $item)
+		};
+	}
+
+	#[macro_export(local_inner_macros)]
+	macro_rules! __log_error_set_message {
+		($log_error:ident, $level:expr, $message:expr) => {
+			$log_error[$level] = $message;
+		};
+
+		($log_error:ident, $level:expr, $message:expr, $($other_levels:expr, $other_messages:expr),+) => {
+			__log_error_set_message!($log_error, $level, $message);
+			__log_error_set_message!($log_error, $($other_levels, $other_messages),+);
+		}
+	}
+
+	#[macro_export(local_inner_macros)]
+	macro_rules! log_error {
+		(target: $target:expr, $($levels:expr, $messages:expr),+) => {{
+			let mut log_error = LogError {
+				target: $target.to_string(),
+				..Default::default()
+			};
+
+			__log_error_set_message!(log_error, $($levels, $messages),+);
+
+			log_error
+		}};
+
+		($($levels:expr, $messages:expr),+) => {
+			log_error!(target: log_path!(), $($levels, $messages),+)
+		};
+	}
+
+	#[macro_export(local_inner_macros)]
+	macro_rules! log_dyn_error {
+		($error:expr) => {
+			match (&$error as &dyn std::any::Any).downcast_ref::<LogError>() {
+				Some(log_error) => {
+					log_error.log();
+				},
+				None => {
+					::log::warn!("{:?}", $error);
+				}
+			}
+		};
+	}
+
+	#[macro_export(local_inner_macros)]
+	macro_rules! log_result_err {
+		($result:expr) => {
+			match $result {
+				Ok(value) => value,
+				Err(error) => {
+					log_dyn_error!(error);
+
+					return;
+				}
+			}
+		};
+
+		($result:expr, $default:expr) => {
+			match $result {
+				Ok(value) => value,
+				Err(error) => {
+					log_dyn_error!(error);
+
+					$default
+				}
+			}
+		};
+	}
+
+	#[macro_export(local_inner_macros)]
+	macro_rules! log_option_none {
+		($option:expr) => {
+			match $option {
+				Some(value) => value,
+				None => {
+					::log::warn!("\"{}\" was None", std::stringify!($option));
+
+					return;
+				}
+			}
+		};
+
+		($option:expr, $default:expr) => {
+			match $option {
+				Some(value) => value,
+				None => {
+					::log::warn!("\"{}\" was None", std::stringify!($option));
+
+					$default
+				}
+			}
+		};
+	}
+
+	#[macro_export(local_inner_macros)]
+	macro_rules! __log_expr_literals {
+		($fmt:literal, $_:expr) => {
+			std::concat!("{}: {", $fmt, "}")
+		};
+
+		($fmt:literal, $expr:expr, $($exprs:expr),+) => {
+			std::concat!(__log_expr_literals!($fmt, $expr), "\n", __log_expr_literals!($fmt, $($exprs),+))
+		};
+	}
+
+	#[macro_export(local_inner_macros)]
+	macro_rules! log_expr {
+		($level:path, $fmt:literal, $($expr:expr),+) => {
+			$level!(__log_expr_literals!($fmt, $($expr),+),
+				$(
+					std::stringify!($expr), $expr
+				),+
+			);
+		};
+	}
+
+	#[macro_export(local_inner_macros)]
+	macro_rules! trace_expr {
+		(fmt: $fmt:literal, $($expr:expr),+) => {
+			log_expr!(::log::trace, $fmt, $($expr),+);
+		};
+
+		($($expr:expr),+) => {
+			trace_expr!(fmt: ":#?", $($expr),+)
+		};
+	}
+
+	#[macro_export(local_inner_macros)]
+	macro_rules! debug_expr {
+		(fmt: $fmt:literal, $($expr:expr),+) => {
+			log_expr!(::log::debug, $fmt, $($expr),+);
+		};
+
+		($($expr:expr),+) => {
+			debug_expr!(fmt: ":#?", $($expr),+)
+		};
+	}
+
+	#[macro_export(local_inner_macros)]
+	macro_rules! info_expr {
+		(fmt: $fmt:literal, $($expr:expr),+) => {
+			log_expr!(::log::info, $fmt, $($expr),+);
+		};
+
+		($($expr:expr),+) => {
+			info_expr!(fmt: ":#?", $($expr),+)
+		};
+	}
+
+	#[macro_export(local_inner_macros)]
+	macro_rules! warn_expr {
+		(fmt: $fmt:literal, $($expr:expr),+) => {
+			log_expr!(::log::warn, $fmt, $($expr),+);
+		};
+
+		($($expr:expr),+) => {
+			warn_expr!(fmt: ":#?", $($expr),+)
+		};
+	}
+
+	#[macro_export(local_inner_macros)]
+	macro_rules! error_expr {
+		(fmt: $fmt:literal, $($expr:expr),+) => {
+			log_expr!(::log::error, $fmt, $($expr),+);
+		};
+
+		($($expr:expr),+) => {
+			error_expr!(fmt: ":#?", $($expr),+)
+		};
+	}
+
+	#[cfg(debug_assertions)]
+	#[macro_export(local_inner_macros)]
+	macro_rules! log_expect {
+		($level:path, $expr:expr) => {
+			if $expr {
+				true
+			} else {
+				$level!("\"{}\" was false", std::stringify!($expr));
+
+				false
+			}
+		};
+	}
+
+	#[cfg(not(debug_assertions))]
+	#[macro_export(local_inner_macros)]
+	macro_rules! log_expect {
+		($_:path, $expr:expr) => {
+			$expr
+		}
+	}
+
+	#[macro_export(local_inner_macros)]
+	macro_rules! trace_expect {
+		($expr:expr) => {
+			log_expect!(::log::trace, $expr)
+		};
+	}
+
+	#[macro_export(local_inner_macros)]
+	macro_rules! debug_expect {
+		($expr:expr) => {
+			log_expect!(::log::debug, $expr)
+		};
+	}
+
+	#[macro_export(local_inner_macros)]
+	macro_rules! info_expect {
+		($expr:expr) => {
+			log_expect!(::log::info, $expr)
+		};
+	}
+
+	#[macro_export(local_inner_macros)]
+	macro_rules! warn_expect {
+		($expr:expr) => {
+			log_expect!(::log::warn, $expr)
+		};
+	}
+
+	#[macro_export(local_inner_macros)]
+	macro_rules! error_expect {
+		($expr:expr) => {
+			log_expect!(::log::error, $expr)
+		};
+	}
+
+	#[cfg(debug_assertions)]
+	#[macro_export(local_inner_macros)]
+	macro_rules! log_expect_some {
+		($level:path, $expr:expr, $closure:expr) => {
+			if let Some(some) = $expr {
+				($closure)(some)
+			} else {
+				$level!("\"{}\" was None", std::stringify!($expr));
+			}
+		};
+	}
+
+	#[cfg(not(debug_assertions))]
+	#[macro_export(local_inner_macros)]
+	macro_rules! log_expect_some {
+		($level:path, $expr:expr, $closure:expr) => {
+			if let Some(some) = $expr {
+				($closure)(some)
+			}
+		}
+	}
+
+	#[macro_export(local_inner_macros)]
+	macro_rules! trace_expect_some {
+		($expr:expr, $closure:expr) => {
+			log_expect_some!(::log::trace, $expr, $closure)
+		};
+	}
+
+	#[macro_export(local_inner_macros)]
+	macro_rules! debug_expect_some {
+		($expr:expr, $closure:expr) => {
+			log_expect_some!(::log::debug, $expr, $closure)
+		};
+	}
+
+	#[macro_export(local_inner_macros)]
+	macro_rules! info_expect_some {
+		($expr:expr, $closure:expr) => {
+			log_expect_some!(::log::info, $expr, $closure)
+		};
+	}
+
+	#[macro_export(local_inner_macros)]
+	macro_rules! warn_expect_some {
+		($expr:expr, $closure:expr) => {
+			log_expect_some!(::log::warn, $expr, $closure)
+		};
+	}
+
+	#[macro_export(local_inner_macros)]
+	macro_rules! error_expect_some {
+		($expr:expr, $closure:expr) => {
+			log_expect_some!(::log::error, $expr, $closure)
+		};
+	}
+
+	#[cfg(debug_assertions)]
+	#[macro_export(local_inner_macros)]
+	macro_rules! log_expect_ok {
+		($level:path, $expr:expr, $closure:expr) => {
+			match $expr {
+				Ok(ok) => ($closure)(ok),
+				Err(error) => { $level!("\"{}\" was Err: {:#?}", std::stringify!($expr), error); }
+			}
+		};
+	}
+
+	#[cfg(not(debug_assertions))]
+	#[macro_export(local_inner_macros)]
+	macro_rules! log_expect_ok {
+		($level:path, $expr:expr, $block:block) => {
+			if let Ok(ok) = $expr {
+				($closure)(ok)
+			}
+		}
+	}
+
+	#[macro_export(local_inner_macros)]
+	macro_rules! trace_expect_ok {
+		($expr:expr, $closure:expr) => {
+			log_expect_ok!(::log::trace, $expr, $closure)
+		};
+	}
+
+	#[macro_export(local_inner_macros)]
+	macro_rules! debug_expect_ok {
+		($expr:expr, $closure:expr) => {
+			log_expect_ok!(::log::debug, $expr, $closure)
+		};
+	}
+
+	#[macro_export(local_inner_macros)]
+	macro_rules! info_expect_ok {
+		($expr:expr, $closure:expr) => {
+			log_expect_ok!(::log::info, $expr, $closure)
+		};
+	}
+
+	#[macro_export(local_inner_macros)]
+	macro_rules! warn_expect_ok {
+		($expr:expr, $closure:expr) => {
+			log_expect_ok!(::log::warn, $expr, $closure)
+		};
+	}
+
+	#[macro_export(local_inner_macros)]
+	macro_rules! error_expect_ok {
+		($expr:expr, $closure:expr) => {
+			log_expect_ok!(::log::error, $expr, $closure)
+		};
+	}
+}
+
 fn usize_to_level(val: usize) -> Level {
 	unsafe { std::mem::transmute(crate::clamp!(val, Level::Error as usize, Level::Trace as usize)) }
 }
@@ -82,24 +443,6 @@ impl Default for Module {
 			m: HashMap::<String, Module>::default()
 		}
 	}
-}
-
-#[macro_export]
-macro_rules! log_concat {
-	($part_1:expr, $part_2:expr) => {
-		format!("{}::{}", $part_1, $part_2).as_str()
-	};
-}
-
-#[macro_export]
-macro_rules! log_path {
-	() => {
-		std::module_path!()
-	};
-
-	($item:expr) => {
-		crate::log_concat!(std::module_path!(), $item)
-	};
 }
 
 #[derive(Clone, Default)]
@@ -129,7 +472,12 @@ impl LogError {
 	fn get_message(&self) -> String {
 		for level_as_usize in Level::Error as usize ..= Level::Trace as usize {
 			if !self[usize_to_level(level_as_usize)].is_empty() {
-				let mut message: String = format!("[{:?} {}]: {}", usize_to_level(level_as_usize), self.target, self[usize_to_level(level_as_usize)]);
+				let mut message: String = format!(
+					"[{:?} {}]: {}",
+					usize_to_level(level_as_usize),
+					self.target,
+					self[usize_to_level(level_as_usize)]
+				);
 				let mut other_messages: String = String::new();
 
 				for other_level_as_usize in level_as_usize + 1 ..= Level::Trace as usize {
@@ -197,347 +545,6 @@ impl std::error::Error for LogError {
 	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> { None }
 }
 
-#[macro_export(local_inner_macros)]
-macro_rules! __log_error_set_message {
-	($log_error:ident, $level:expr, $message:expr) => {
-		$log_error[$level] = $message;
-	};
-
-	($log_error:ident, $level:expr, $message:expr, $($other_levels:expr, $other_messages:expr),+) => {
-		__log_error_set_message!($log_error, $level, $message);
-		__log_error_set_message!($log_error, $($other_levels, $other_messages),+);
-	}
-}
-
-#[macro_export(local_inner_macros)]
-macro_rules! log_error {
-	(target: $target:expr, $($levels:expr, $messages:expr),+) => {{
-		let mut log_error = LogError {
-			target: $target.to_string(),
-			..Default::default()
-		};
-
-		__log_error_set_message!(log_error, $($levels, $messages),+);
-
-		log_error
-	}};
-
-	($($levels:expr, $messages:expr),+) => {
-		log_error!(target: log_path!(), $($levels, $messages),+)
-	};
-}
-
-#[macro_export(local_inner_macros)]
-macro_rules! log_dyn_error {
-	($error:expr) => {
-		match (&$error as &dyn std::any::Any).downcast_ref::<LogError>() {
-			Some(log_error) => {
-				log_error.log();
-			},
-			None => {
-				::log::warn!("{:?}", $error);
-			}
-		}
-	};
-}
-
-#[macro_export(local_inner_macros)]
-macro_rules! log_result_err {
-	($result:expr) => {
-		match $result {
-			Ok(value) => value,
-			Err(error) => {
-				log_dyn_error!(error);
-
-				return;
-			}
-		}
-	};
-
-	($result:expr, $default:expr) => {
-		match $result {
-			Ok(value) => value,
-			Err(error) => {
-				log_dyn_error!(error);
-
-				$default
-			}
-		}
-	};
-}
-
-#[macro_export(local_inner_macros)]
-macro_rules! log_option_none {
-	($option:expr) => {
-		match $option {
-			Some(value) => value,
-			None => {
-				::log::warn!("\"{}\" was None", std::stringify!($option));
-
-				return;
-			}
-		}
-	};
-
-	($option:expr, $default:expr) => {
-		match $option {
-			Some(value) => value,
-			None => {
-				::log::warn!("\"{}\" was None", std::stringify!($option));
-
-				$default
-			}
-		}
-	};
-}
-
-#[macro_export(local_inner_macros)]
-macro_rules! __log_expr_literals {
-	($fmt:literal, $_:expr) => {
-		std::concat!("{}: {", $fmt, "}")
-	};
-
-	($fmt:literal, $expr:expr, $($exprs:expr),+) => {
-		std::concat!(__log_expr_literals!($fmt, $expr), "\n", __log_expr_literals!($fmt, $($exprs),+))
-	};
-}
-
-#[macro_export(local_inner_macros)]
-macro_rules! log_expr {
-	($level:path, $fmt:literal, $($expr:expr),+) => {
-		$level!(__log_expr_literals!($fmt, $($expr),+),
-			$(
-				std::stringify!($expr), $expr
-			),+
-		);
-	};
-}
-
-#[macro_export(local_inner_macros)]
-macro_rules! trace_expr {
-	(fmt: $fmt:literal, $($expr:expr),+) => {
-		log_expr!(::log::trace, $fmt, $($expr),+);
-	};
-
-	($($expr:expr),+) => {
-		trace_expr!(fmt: ":#?", $($expr),+)
-	};
-}
-
-#[macro_export(local_inner_macros)]
-macro_rules! debug_expr {
-	(fmt: $fmt:literal, $($expr:expr),+) => {
-		log_expr!(::log::debug, $fmt, $($expr),+);
-	};
-
-	($($expr:expr),+) => {
-		debug_expr!(fmt: ":#?", $($expr),+)
-	};
-}
-
-#[macro_export(local_inner_macros)]
-macro_rules! info_expr {
-	(fmt: $fmt:literal, $($expr:expr),+) => {
-		log_expr!(::log::info, $fmt, $($expr),+);
-	};
-
-	($($expr:expr),+) => {
-		info_expr!(fmt: ":#?", $($expr),+)
-	};
-}
-
-#[macro_export(local_inner_macros)]
-macro_rules! warn_expr {
-	(fmt: $fmt:literal, $($expr:expr),+) => {
-		log_expr!(::log::warn, $fmt, $($expr),+);
-	};
-
-	($($expr:expr),+) => {
-		warn_expr!(fmt: ":#?", $($expr),+)
-	};
-}
-
-#[macro_export(local_inner_macros)]
-macro_rules! error_expr {
-	(fmt: $fmt:literal, $($expr:expr),+) => {
-		log_expr!(::log::error, $fmt, $($expr),+);
-	};
-
-	($($expr:expr),+) => {
-		error_expr!(fmt: ":#?", $($expr),+)
-	};
-}
-
-#[cfg(debug_assertions)]
-#[macro_export(local_inner_macros)]
-macro_rules! log_expect {
-	($level:path, $expr:expr) => {
-		if $expr {
-			true
-		} else {
-			$level!("\"{}\" was false", std::stringify!($expr));
-
-			false
-		}
-	};
-}
-
-#[cfg(not(debug_assertions))]
-#[macro_export(local_inner_macros)]
-macro_rules! log_expect {
-	($_:path, $expr:expr) => {
-		$expr
-	}
-}
-
-#[macro_export(local_inner_macros)]
-macro_rules! trace_expect {
-	($expr:expr) => {
-		log_expect!(::log::trace, $expr)
-	};
-}
-
-#[macro_export(local_inner_macros)]
-macro_rules! debug_expect {
-	($expr:expr) => {
-		log_expect!(::log::debug, $expr)
-	};
-}
-
-#[macro_export(local_inner_macros)]
-macro_rules! info_expect {
-	($expr:expr) => {
-		log_expect!(::log::info, $expr)
-	};
-}
-
-#[macro_export(local_inner_macros)]
-macro_rules! warn_expect {
-	($expr:expr) => {
-		log_expect!(::log::warn, $expr)
-	};
-}
-
-#[macro_export(local_inner_macros)]
-macro_rules! error_expect {
-	($expr:expr) => {
-		log_expect!(::log::error, $expr)
-	};
-}
-
-#[cfg(debug_assertions)]
-#[macro_export(local_inner_macros)]
-macro_rules! log_expect_some {
-	($level:path, $expr:expr, $closure:expr) => {
-		if let Some(some) = $expr {
-			($closure)(some)
-		} else {
-			$level!("\"{}\" was None", std::stringify!($expr));
-		}
-	};
-}
-
-#[cfg(not(debug_assertions))]
-#[macro_export(local_inner_macros)]
-macro_rules! log_expect_some {
-	($level:path, $expr:expr, $closure:expr) => {
-		if let Some(some) = $expr {
-			($closure)(some)
-		}
-	}
-}
-
-#[macro_export(local_inner_macros)]
-macro_rules! trace_expect_some {
-	($expr:expr, $closure:expr) => {
-		log_expect_some!(::log::trace, $expr, $closure)
-	};
-}
-
-#[macro_export(local_inner_macros)]
-macro_rules! debug_expect_some {
-	($expr:expr, $closure:expr) => {
-		log_expect_some!(::log::debug, $expr, $closure)
-	};
-}
-
-#[macro_export(local_inner_macros)]
-macro_rules! info_expect_some {
-	($expr:expr, $closure:expr) => {
-		log_expect_some!(::log::info, $expr, $closure)
-	};
-}
-
-#[macro_export(local_inner_macros)]
-macro_rules! warn_expect_some {
-	($expr:expr, $closure:expr) => {
-		log_expect_some!(::log::warn, $expr, $closure)
-	};
-}
-
-#[macro_export(local_inner_macros)]
-macro_rules! error_expect_some {
-	($expr:expr, $closure:expr) => {
-		log_expect_some!(::log::error, $expr, $closure)
-	};
-}
-
-#[cfg(debug_assertions)]
-#[macro_export(local_inner_macros)]
-macro_rules! log_expect_ok {
-	($level:path, $expr:expr, $closure:expr) => {
-		match $expr {
-			Ok(ok) => ($closure)(ok),
-			Err(error) => { $level!("\"{}\" was Err: {:#?}", std::stringify!($expr), error); }
-		}
-	};
-}
-
-#[cfg(not(debug_assertions))]
-#[macro_export(local_inner_macros)]
-macro_rules! log_expect_ok {
-	($level:path, $expr:expr, $block:block) => {
-		if let Ok(ok) = $expr {
-			($closure)(ok)
-		}
-	}
-}
-
-#[macro_export(local_inner_macros)]
-macro_rules! trace_expect_ok {
-	($expr:expr, $closure:expr) => {
-		log_expect_ok!(::log::trace, $expr, $closure)
-	};
-}
-
-#[macro_export(local_inner_macros)]
-macro_rules! debug_expect_ok {
-	($expr:expr, $closure:expr) => {
-		log_expect_ok!(::log::debug, $expr, $closure)
-	};
-}
-
-#[macro_export(local_inner_macros)]
-macro_rules! info_expect_ok {
-	($expr:expr, $closure:expr) => {
-		log_expect_ok!(::log::info, $expr, $closure)
-	};
-}
-
-#[macro_export(local_inner_macros)]
-macro_rules! warn_expect_ok {
-	($expr:expr, $closure:expr) => {
-		log_expect_ok!(::log::warn, $expr, $closure)
-	};
-}
-
-#[macro_export(local_inner_macros)]
-macro_rules! error_expect_ok {
-	($expr:expr, $closure:expr) => {
-		log_expect_ok!(::log::error, $expr, $closure)
-	};
-}
-
 pub fn init_env_logger() -> () {
 	INIT_ENV_LOGGER.call_once(|| -> () {
 		set_env_var();
@@ -550,15 +557,15 @@ pub fn set_env_var() -> () {
 		type Iter<'a> = StdIter<'a, String, Module>;
 		type Item<'a> = <Iter<'a> as Iterator>::Item;
 		type PeekableIter<'a> = Peekable<Iter<'a>>;
-	
+
 		let module: Module = Module::from_file_or_default(&STRING_DATA.files.rust_log);
 		let mut module_path: String = String::new();
 		let mut iter_stack: Vec<PeekableIter> = Vec::new();
 		let mut env_var_val: String = module.f.to_string();
-	
+
 		if !module.m.is_empty() {
 			iter_stack.push(module.m.iter().peekable());
-	
+
 			while !iter_stack.is_empty() {
 				fn process_iter_stack<'b, 'a: 'b>(
 					iter_stack:		&'b mut Vec<PeekableIter<'a>>,
@@ -567,33 +574,33 @@ pub fn set_env_var() -> () {
 				) -> Option<PeekableIter<'a>> {
 					let insert_colons: bool = iter_stack.len() > 1;
 					let iter_option = iter_stack.last_mut().unwrap().peek();
-	
+
 					if iter_option.is_some() {
 						let (sub_module_path, sub_module): &Item<'a> = iter_option.unwrap();
-	
+
 						module_path.push_str(format!("{}{}",
 							if insert_colons { "::" } else { "" },
 							sub_module_path
 						).as_str());
 						env_var_val.push_str(format!(",{}={}", module_path, sub_module.f).as_str());
-	
+
 						Some(sub_module.m.iter().peekable())
 					} else {
 						None
 					}
 				}
-	
+
 				let iter_option: Option<PeekableIter> = process_iter_stack(
 					&mut iter_stack,
 					&mut module_path,
 					&mut env_var_val
 				);
-	
+
 				if iter_option.is_some() {
 					iter_stack.push(iter_option.unwrap());
 				} else {
 					iter_stack.pop();
-	
+
 					if !iter_stack.is_empty() {
 						let remove_colons: bool = iter_stack.len() > 1;
 						let iter = iter_stack.last_mut().unwrap();
@@ -602,14 +609,14 @@ pub fn set_env_var() -> () {
 							iter.peek().unwrap().0.len() + (if remove_colons { 2 } else { 0 }),
 							module_path_len
 						);
-	
+
 						module_path.truncate(module_path_len - bytes_to_cut);
 						iter.next();
 					}
 				}
 			}
 		}
-	
+
 		#[cfg(debug_assertions)]
 		println!("RUSG_LOG={}", env_var_val
 			.split(',')
@@ -622,7 +629,7 @@ pub fn set_env_var() -> () {
 			)
 			.collect::<String>()
 		);
-	
+
 		std::env::set_var("RUST_LOG", env_var_val);
 	});
 }

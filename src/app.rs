@@ -1,4 +1,5 @@
 use {
+	crate::prelude::set_env_var,
 	self::prelude::*,
 	bevy::{
 		prelude::*,
@@ -32,7 +33,6 @@ pub mod prelude {
 			},
 			Preferences
 		},
-		prelude::LogPlugin,
 		puzzle::{
 			transformation::{
 				FullAddr,
@@ -90,7 +90,6 @@ struct AppPluginGroup;
 impl PluginGroup for AppPluginGroup {
 	fn build(&mut self, group: &mut PluginGroupBuilder) -> () {
 		group
-			.add(LogPlugin)
 			.add(PolyhedraDataPlugin)
 			.add(TransformationPlugin)
 			.add(ColorsPlugin)
@@ -102,5 +101,6 @@ impl PluginGroup for AppPluginGroup {
 }
 
 pub fn main() -> () {
+	set_env_var();
 	App::new().add_plugins(AppPluginGroup).run();
 }

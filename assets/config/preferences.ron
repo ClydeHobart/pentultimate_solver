@@ -43,14 +43,15 @@ Preferences(
 		disable_recentering:			X,
 	),
 	light_and_camera:	LightAndCameraData(
-		light_pos:	( 0.0, 0.0, 10.0 ),
-		camera_pos:	( 0.0, 0.0, 10.0 ),
-		persp_proj:	(
+		light_pos:			( 0.0, 0.0, 10.0 ),
+		camera_pos:			( 0.0, 0.0, 10.0 ),
+		persp_proj:			(
 			fov:			0.5,
 			aspect_ratio:	1.0,
 			near:			1.0,
 			far:			1000.0,
-		)
+		),
+		light_illuminance:	4.0
 	),
 	speed:				SpeedData(
 		camera:		CameraSpeedData(
