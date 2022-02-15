@@ -35,7 +35,7 @@ pub struct InspectableNum<T: InspectableNumTrait>(pub T);
 impl<T: InspectableNumTrait> Inspectable for InspectableNum<T> {
 type Attributes = NumberAttributes<T>;
 
-fn ui(&mut self, ui: &mut Ui, options: NumberAttributes<T>, context: &Context) -> bool {
+fn ui(&mut self, ui: &mut Ui, options: NumberAttributes<T>, context: &mut Context) -> bool {
 	let options: NumberAttributes<T> = NumberAttributes::<T> {
 		min: options.min.or(Some(T::min_value())),
 		max: options.max.or(Some(T::max_value())),
@@ -55,7 +55,7 @@ fn ui(&mut self, ui: &mut Ui, options: NumberAttributes<T>, context: &Context) -
 	ui.group(|ui: &mut Ui| -> () {
 		ui.set_enabled(self.0 > *options.min.as_ref().unwrap());
 
-		if ui.small_button('-').clicked() {
+		if ui.small_button("-").clicked() {
 			self.0 -= T::one();
 			changed = true;
 		}
@@ -64,7 +64,7 @@ fn ui(&mut self, ui: &mut Ui, options: NumberAttributes<T>, context: &Context) -
 	ui.group(|ui: &mut Ui| -> () {
 		ui.set_enabled(self.0 < *options.max.as_ref().unwrap());
 
-		if ui.small_button('+').clicked() {
+		if ui.small_button("+").clicked() {
 			self.0 += T::one();
 			changed = true;
 		}

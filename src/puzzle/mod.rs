@@ -40,7 +40,10 @@ use {
 			Formatter,
 			Write
 		},
-		mem::size_of,
+		mem::{
+			size_of,
+			transmute
+		},
 		ops::{
 			Add,
 			AddAssign,
@@ -145,15 +148,11 @@ pub mod deflated {
 	}
 
 	impl PuzzleStateConsts for PuzzleState {
-		const SOLVED_STATE: PuzzleState = PuzzleState { pieces: [
-			0x00,	0x01,	0x02,	0x03,	0x04,	0x05,	0x06,	0x07,
-			0x08,	0x09,	0x0A,	0x0B,	0x0C,	0x0D,	0x0E,	0x0F,
-			0x10,	0x11,	0x12,	0x13,	0x14,	0x15,	0x16,	0x17,
-			0x18,	0x19,	0x1A,	0x1B,	0x1C,	0x1D,	0x1E,	0x1F
-		] };
-		const ZERO: PuzzleState = PuzzleState { pieces: [
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-		] };
+		const SOLVED_STATE: PuzzleState = unsafe { transmute::<[u128; 2_usize], PuzzleState>([
+			0x0F_0E_0D_0C_0B_0A_09_08_07_06_05_04_03_02_01_00_u128 << ROTATION_BIT_COUNT,
+			0x1F_1E_1D_1C_1B_1A_19_18_17_16_15_14_13_12_11_10_u128 << ROTATION_BIT_COUNT
+		]) };
+		const ZERO: PuzzleState = PuzzleState { pieces: [0_u8 as PieceState; PIECE_COUNT] };
 	}
 
 	impl Default for PuzzleState { fn default() -> Self { Self::SOLVED_STATE } }
@@ -658,8 +657,8 @@ impl PuzzlePlugin {
 		mut extended_puzzle_state: ResMut<ExtendedPuzzleState>,
 		mut input_state: ResMut<InputState>,
 		mut queries: QuerySet<(
-			Query<(&CameraComponent, &mut Transform)>,
-			Query<(&PieceComponent, &mut Transform)>
+			CameraQueryStateMut,
+			PieceQueryState
 		)>
 	) -> () {
 		if input_state.puzzle_action.is_some()
@@ -671,7 +670,7 @@ impl PuzzlePlugin {
 }
 
 impl Plugin for PuzzlePlugin {
-	fn build(&self, app: &mut AppBuilder) -> () {
+	fn build(&self, app: &mut App) -> () {
 		app
 			.insert_resource(ExtendedPuzzleState::default())
 			.add_startup_system(Self::startup

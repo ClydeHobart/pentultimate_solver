@@ -14,7 +14,6 @@ use {
 		}
 	},
 	bevy::prelude::*,
-	bevy_egui::EguiContext,
 	bevy_inspector_egui::{
 		options::NumberAttributes,
 		Context,
@@ -119,7 +118,7 @@ const_assert!(DEBUG_MODE_COUNT <= DebugModeInner::MAX as usize);
 trait DebugModeData {
 	fn debug_mode(&self) -> DebugMode;
 
-	fn render(&mut self, egui_context: &EguiContext, ui: &mut Ui, world: &mut World) -> () {
+	fn render(&mut self, ui: &mut Ui, context: &mut Context) -> () {
 		#![allow(unused_variables)]
 	}
 
@@ -158,102 +157,112 @@ struct PuzzleStateData {
 impl DebugModeData for PuzzleStateData {
 	fn debug_mode(&self) -> DebugMode { DebugMode::PuzzleState }
 
-	fn render(&mut self, egui_context: &EguiContext, ui: &mut Ui, world: &mut World) -> () {
-		world.resource_scope(|world: &mut World, extended_puzzle_state: Mut<ExtendedPuzzleState>| -> () {
-			ui.collapsing("Position & Rotation", |ui: &mut Ui| -> () {
-				ui.monospace(format!("{:#?}", extended_puzzle_state.puzzle_state));
-			});
-			ui.collapsing("Stats", |ui: &mut Ui| -> () {
-				let context: Context = Context::new(egui_context.ctx(), world);
-	
-				self.ui(ui, (), &context);
-	
-				egui::Grid::new("StatsTable").show(ui, |ui: &mut Ui| -> () {
-					let InflatedPuzzleState {
-						pos,
-						rot
-					} = if self.reorientation.is_valid() {
-						&extended_puzzle_state.puzzle_state + self.reorientation.as_reorientation()
-					} else {
-						extended_puzzle_state.puzzle_state.clone()
-					};
+	fn render(&mut self, ui: &mut Ui, context: &mut Context) -> () {
+		if context.world().is_none() {
+			return;
+		}
 
-					let mut correct_pent_pos_count: u32 = 0_u32;
-					let mut correct_tri_pos_count: u32 = 0_u32;
-					let mut correct_pent_rot_count: u32 = 0_u32;
-					let mut correct_tri_rot_count: u32 = 0_u32;
-					let mut pent_rot_sum: InflatedPieceStateComponent = ZERO_IPSC;
-					let mut tri_rot_sum: InflatedPieceStateComponent = ZERO_IPSC;
-	
-					for pent_index in PENTAGON_PIECE_RANGE {
-						correct_pent_pos_count += (pos[pent_index] as usize == pent_index) as u32;
-						correct_pent_rot_count += (rot[pent_index] == ZERO_IPSC) as u32;
-						pent_rot_sum += rot[pent_index];
-					}
-	
-					pent_rot_sum %= PENTAGON_SIDE_COUNT_IPSC;
-	
-					for tri_index in TRIANGLE_PIECE_RANGE {
-						correct_tri_pos_count += (pos[tri_index] as usize == tri_index) as u32;
-						correct_tri_rot_count += (rot[tri_index] == ZERO_IPSC) as u32;
-						tri_rot_sum += rot[tri_index];
-					}
-	
-					tri_rot_sum %= TRIANGLE_SIDE_COUNT_IPSC;
-	
-					let desired_pent_rot_sum: bool = self.desired_pent_rot_sums.0.get_bit(pent_rot_sum as usize);
-					let desired_tri_rot_sum: bool = self.desired_tri_rot_sums.0.get_bit(tri_rot_sum as usize);
-					let desired_rot_sum: bool = desired_pent_rot_sum && desired_tri_rot_sum;
-	
-					macro_rules! colored_label {
-						($count:expr, $max:ident) => {
-							let count: InflatedPieceStateComponent = $count;
-	
-							ui.colored_label(
-								Color32::from_alt(red_to_green(count as f32 / $max)),
-								format!("{}", count)
-							);
-						}
-					}
-	
-					ui.label("");
-					ui.label("Pents").on_hover_text("Pentagon Pieces");
-					ui.label("Tris").on_hover_text("Triangle Pieces");
-					ui.label("Total").on_hover_text("All Pieces");
-					ui.end_row();
-	
-					ui.label("Correct Pos").on_hover_text("Correct Position Count");
-					colored_label!(correct_pent_pos_count, PENTAGON_PIECE_COUNT_F32);
-					colored_label!(correct_tri_pos_count, TRIANGLE_PIECE_COUNT_F32);
-					colored_label!(correct_pent_pos_count + correct_tri_pos_count, PIECE_COUNT_F32);
-					ui.end_row();
-	
-					ui.label("Correct Rot").on_hover_text("Correct Rotation Count");
-					colored_label!(correct_pent_rot_count, PENTAGON_PIECE_COUNT_F32);
-					colored_label!(correct_tri_rot_count, TRIANGLE_PIECE_COUNT_F32);
-					colored_label!(correct_pent_rot_count + correct_tri_rot_count, PIECE_COUNT_F32);
-					ui.end_row();
-	
-					ui.label("Rot Sum").on_hover_text("Rotation Sum (% Piece Side Count)");
-					ui.colored_label(
-						Color32::from_alt(red_to_green(desired_pent_rot_sum as u8 as f32)),
-						format!("{}", pent_rot_sum)
-					);
-					ui.colored_label(
-						Color32::from_alt(red_to_green(desired_tri_rot_sum as u8 as f32)),
-						format!("{}", tri_rot_sum)
-					);
-					ui.colored_label(
-						Color32::from_alt(red_to_green(desired_rot_sum as u8 as f32)),
-						format!("{}", if desired_rot_sum {
-							"✔"
-						} else {
-							"❌"
-						})
-					);
-					ui.end_row();
+		context.world_scope(ui, "", |world: &mut World, ui: &mut Ui, context: &mut Context| -> bool {
+			if let Some(extended_puzzle_state) = world.get_resource::<ExtendedPuzzleState>() {
+				let mut changed: bool = false;
+
+				ui.collapsing("Position & Rotation", |ui: &mut Ui| -> () {
+					ui.monospace(format!("{:#?}", extended_puzzle_state.puzzle_state));
 				});
-			});
+				ui.collapsing("Stats", |ui: &mut Ui| -> () {
+					changed |= self.ui(ui, (), context);
+		
+					egui::Grid::new("StatsTable").show(ui, |ui: &mut Ui| -> () {
+						let InflatedPuzzleState {
+							pos,
+							rot
+						} = if self.reorientation.is_valid() {
+							&extended_puzzle_state.puzzle_state + self.reorientation.as_reorientation()
+						} else {
+							extended_puzzle_state.puzzle_state.clone()
+						};
+	
+						let mut correct_pent_pos_count: u32 = 0_u32;
+						let mut correct_tri_pos_count: u32 = 0_u32;
+						let mut correct_pent_rot_count: u32 = 0_u32;
+						let mut correct_tri_rot_count: u32 = 0_u32;
+						let mut pent_rot_sum: InflatedPieceStateComponent = ZERO_IPSC;
+						let mut tri_rot_sum: InflatedPieceStateComponent = ZERO_IPSC;
+		
+						for pent_index in PENTAGON_PIECE_RANGE {
+							correct_pent_pos_count += (pos[pent_index] as usize == pent_index) as u32;
+							correct_pent_rot_count += (rot[pent_index] == ZERO_IPSC) as u32;
+							pent_rot_sum += rot[pent_index];
+						}
+		
+						pent_rot_sum %= PENTAGON_SIDE_COUNT_IPSC;
+		
+						for tri_index in TRIANGLE_PIECE_RANGE {
+							correct_tri_pos_count += (pos[tri_index] as usize == tri_index) as u32;
+							correct_tri_rot_count += (rot[tri_index] == ZERO_IPSC) as u32;
+							tri_rot_sum += rot[tri_index];
+						}
+		
+						tri_rot_sum %= TRIANGLE_SIDE_COUNT_IPSC;
+		
+						let desired_pent_rot_sum: bool = self.desired_pent_rot_sums.0.get_bit(pent_rot_sum as usize);
+						let desired_tri_rot_sum: bool = self.desired_tri_rot_sums.0.get_bit(tri_rot_sum as usize);
+						let desired_rot_sum: bool = desired_pent_rot_sum && desired_tri_rot_sum;
+		
+						macro_rules! colored_label {
+							($count:expr, $max:ident) => {
+								let count: InflatedPieceStateComponent = $count;
+		
+								ui.colored_label(
+									Color32::from_alt(red_to_green(count as f32 / $max)),
+									format!("{}", count)
+								);
+							}
+						}
+		
+						ui.label("");
+						ui.label("Pents").on_hover_text("Pentagon Pieces");
+						ui.label("Tris").on_hover_text("Triangle Pieces");
+						ui.label("Total").on_hover_text("All Pieces");
+						ui.end_row();
+		
+						ui.label("Correct Pos").on_hover_text("Correct Position Count");
+						colored_label!(correct_pent_pos_count, PENTAGON_PIECE_COUNT_F32);
+						colored_label!(correct_tri_pos_count, TRIANGLE_PIECE_COUNT_F32);
+						colored_label!(correct_pent_pos_count + correct_tri_pos_count, PIECE_COUNT_F32);
+						ui.end_row();
+		
+						ui.label("Correct Rot").on_hover_text("Correct Rotation Count");
+						colored_label!(correct_pent_rot_count, PENTAGON_PIECE_COUNT_F32);
+						colored_label!(correct_tri_rot_count, TRIANGLE_PIECE_COUNT_F32);
+						colored_label!(correct_pent_rot_count + correct_tri_rot_count, PIECE_COUNT_F32);
+						ui.end_row();
+		
+						ui.label("Rot Sum").on_hover_text("Rotation Sum (% Piece Side Count)");
+						ui.colored_label(
+							Color32::from_alt(red_to_green(desired_pent_rot_sum as u8 as f32)),
+							format!("{}", pent_rot_sum)
+						);
+						ui.colored_label(
+							Color32::from_alt(red_to_green(desired_tri_rot_sum as u8 as f32)),
+							format!("{}", tri_rot_sum)
+						);
+						ui.colored_label(
+							Color32::from_alt(red_to_green(desired_rot_sum as u8 as f32)),
+							format!("{}", if desired_rot_sum {
+								"✔"
+							} else {
+								"❌"
+							})
+						);
+						ui.end_row();
+					});
+				});
+
+				changed
+			} else {
+				false
+			}
 		});
 	}
 
@@ -275,12 +284,8 @@ define_struct_with_default!(
 impl DebugModeData for StackData {
 	fn debug_mode(&self) -> DebugMode { DebugMode::Stack }
 
-	fn render(&mut self, egui_context: &EguiContext, ui: &mut Ui, world: &mut World) -> () {
-		ui.collapsing("StackData", |ui: &mut Ui| -> () {
-			let context: Context = Context::new(egui_context.ctx(), world);
-
-			self.ui(ui, (), &context);
-		});
+	fn render(&mut self, ui: &mut Ui, context: &mut Context) -> () {
+		ui.collapsing("StackData", |ui: &mut Ui| -> () { self.ui(ui, (), context); });
 	}
 
 	fn clone_impl(&self) -> DebugModeDataBox { Box::new(self.clone()) as DebugModeDataBox }
@@ -293,7 +298,7 @@ impl DebugModeData for StackData {
 impl Inspectable for StackData {
 	type Attributes = ();
 
-	fn ui(&mut self, ui: &mut egui::Ui, _: (), context: &Context) -> bool {
+	fn ui(&mut self, ui: &mut egui::Ui, _: (), context: &mut Context) -> bool {
 		let mut changed: bool = false;
 
 		ui.collapsing("simplification_indicies", |ui: &mut Ui| -> () {
@@ -312,8 +317,9 @@ impl Inspectable for StackData {
 					ui,
 					NumberAttributes::<i32>::between(
 						self.min_simplification_index.0,
-						unsafe { context.world() }
-							.and_then(|world: &mut World| -> Option<i32> {
+						context
+							.world()
+							.and_then(|world: &World| -> Option<i32> {
 								world
 									.get_resource::<ExtendedPuzzleState>()
 									.map(|extended_puzzle_state: &ExtendedPuzzleState| -> i32 {
@@ -356,7 +362,7 @@ pub struct DebugModes {
 const_assert!(DEBUG_MODE_COUNT <= DebugModesInner::BITS as usize);
 
 impl DebugModes {
-	pub fn render(&mut self, egui_context: &EguiContext, ui: &mut Ui, world: &mut World) -> () {
+	pub fn render(&mut self, ui: &mut Ui, context: &mut Context) -> () {
 		egui::CollapsingHeader::new("Debug Modes")
 			.default_open(true)
 			.show(ui, |ui: &mut Ui| -> () {
@@ -367,7 +373,10 @@ impl DebugModes {
 						ui.collapsing(
 							DebugMode::try_from(debug_mode_index).unwrap().as_str(),
 							|ui: &mut Ui| -> () {
-								self.debug_mode_data[debug_mode_data_index].render(egui_context, ui, world);
+								self
+									.debug_mode_data
+									[debug_mode_data_index]
+									.render(ui, &mut context.with_id(debug_mode_index as u64));
 							}
 						);
 						debug_mode_data_index += 1_usize;
@@ -402,7 +411,7 @@ impl<'de> Deserialize<'de> for DebugModes {
 impl Inspectable for DebugModes {
 	type Attributes = ();
 
-	fn ui(&mut self, ui: &mut Ui, _: (), _: &Context) -> bool {
+	fn ui(&mut self, ui: &mut Ui, _: (), _: &mut Context) -> bool {
 		let mut changed: bool = false;
 		let mut debug_mode_data_index: usize = 0_usize;
 

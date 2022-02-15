@@ -21,7 +21,9 @@ pub mod prelude {
 			PieceComponent,
 			PieceLibrary,
 			PiecePlugin,
-			PieceQuery
+			PieceQuery,
+			PieceQueryState,
+			PieceTuple
 		},
 		preferences::{
 			colors::{
@@ -30,6 +32,7 @@ pub mod prelude {
 			},
 			Preferences
 		},
+		prelude::LogPlugin,
 		puzzle::{
 			transformation::{
 				FullAddr,
@@ -47,8 +50,10 @@ pub mod prelude {
 				CameraPlugin,
 				CameraQuery,
 				CameraQueryMut,
-				CameraQueryNTMut,
 				CameraQueryNT,
+				CameraQueryNTMut,
+				CameraQueryState,
+				CameraQueryStateMut,
 				CameraTuple,
 				CameraTupleMut,
 			},
@@ -73,7 +78,7 @@ pub struct SaveState {
 struct AppPlugin;
 
 impl Plugin for AppPlugin {
-	fn build(&self, app: &mut AppBuilder) {
+	fn build(&self, app: &mut App) {
 		app
 			.add_plugins(DefaultPlugins)
 			.add_plugin(EguiPlugin);
@@ -85,6 +90,7 @@ struct AppPluginGroup;
 impl PluginGroup for AppPluginGroup {
 	fn build(&mut self, group: &mut PluginGroupBuilder) -> () {
 		group
+			.add(LogPlugin)
 			.add(PolyhedraDataPlugin)
 			.add(TransformationPlugin)
 			.add(ColorsPlugin)
@@ -96,5 +102,5 @@ impl PluginGroup for AppPluginGroup {
 }
 
 pub fn main() -> () {
-	App::build().add_plugins(AppPluginGroup).run();
+	App::new().add_plugins(AppPluginGroup).run();
 }

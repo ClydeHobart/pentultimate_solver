@@ -106,7 +106,7 @@ impl Clone for InspectableBitArrayAttrs {
 impl<T: InstpectableBitArraySuperTrait, const N: usize> Inspectable for InspectableBitArray<T, N> {
 	type Attributes = InspectableBitArrayAttrs;
 
-	fn ui(&mut self, ui: &mut Ui, options: Self::Attributes, _: &Context) -> bool {
+	fn ui(&mut self, ui: &mut Ui, options: Self::Attributes, _: &mut Context) -> bool {
 		let length: usize = min(
 			options.length.map_or(usize::MAX, |length: usize| -> usize { length }),
 			self.0.bit_length()
@@ -170,7 +170,7 @@ macro_rules! impl_deserialize_and_inspectable_for_inspectable_bit_array_wrapper 
 		impl Inspectable for $outer {
 			type Attributes = <$inner as Inspectable>::Attributes;
 
-			fn ui(&mut self, ui: &mut Ui, options: Self::Attributes, context: &Context) -> bool {
+			fn ui(&mut self, ui: &mut Ui, options: Self::Attributes, context: &mut Context) -> bool {
 				self.0.ui(ui, options, context)
 			}
 		}

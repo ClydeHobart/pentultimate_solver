@@ -571,7 +571,7 @@ pub struct HalfAddrAttrs {
 impl Inspectable for HalfAddr {
 	type Attributes = HalfAddrAttrs;
 
-	fn ui(&mut self, ui: &mut Ui, options: Self::Attributes, context: &Context) -> bool {
+	fn ui(&mut self, ui: &mut Ui, options: Self::Attributes, context: &mut Context) -> bool {
 		let mut changed: bool = false;
 
 		ui.vertical_centered(|ui: &mut Ui| -> () {
@@ -603,7 +603,7 @@ impl Inspectable for HalfAddr {
 								Library::LINE_COUNT
 							}
 						),
-						&context.with_id(0_u64)
+						&mut context.with_id(0_u64)
 					) {
 						self.set_long_line_index(line_index);
 						changed = true;
@@ -620,7 +620,7 @@ impl Inspectable for HalfAddr {
 							0_usize,
 							Library::WORD_COUNT
 						),
-						&context.with_id(1_u64)
+						&mut context.with_id(1_u64)
 					) {
 						self.set_word_index(word_index);
 						changed = true;
@@ -632,10 +632,10 @@ impl Inspectable for HalfAddr {
 
 					ui.set_enabled(false);
 					ui.label("line_index");
-					filler_index.ui(ui, NumberAttributes::<i32>::default(), &context.with_id(0_u64));
+					filler_index.ui(ui, NumberAttributes::<i32>::default(), &mut context.with_id(0_u64));
 					ui.end_row();
 					ui.label("word_index");
-					filler_index.ui(ui, NumberAttributes::<i32>::default(), &context.with_id(1_u64));
+					filler_index.ui(ui, NumberAttributes::<i32>::default(), &mut context.with_id(1_u64));
 					ui.end_row();
 				}
 			});
@@ -1543,7 +1543,7 @@ impl StaticDataLibrary for Library {
 pub struct TransformationPlugin;
 
 impl Plugin for TransformationPlugin {
-	fn build(&self, _: &mut AppBuilder) -> () { <Library as StaticDataLibrary>::initialize(); }
+	fn build(&self, _: &mut App) -> () { <Library as StaticDataLibrary>::initialize(); }
 }
 
 #[cfg(test)]

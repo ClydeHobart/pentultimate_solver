@@ -72,7 +72,7 @@ define_struct_with_default!(
 impl Update for LightAndCameraData {
 	fn update(&self, world: &mut World) -> () {
 		if let Some((_, mut transform)) = world
-			.query::<(&bevy::pbr::Light, &mut Transform)>()
+			.query::<(&bevy::pbr::PointLight, &mut Transform)>()
 			.iter_mut(world)
 			.next()
 		{
@@ -93,16 +93,19 @@ impl Update for LightAndCameraData {
 	}
 }
 
+#[derive(Component)]
 pub struct CameraComponent;
-pub type CameraTupleMut<'a, 'b> = (&'a CameraComponent, &'b mut Transform);
-pub type CameraQueryMut<'a, 'b, 'c> = Query<'a, CameraTupleMut<'b, 'c>>;
-pub struct CameraQueryNTMut<'a, 'b: 'a, 'c: 'b, 'd: 'b>(pub &'a mut CameraQueryMut<'b, 'c, 'd>);
 
-impl<'a, 'b, 'c,'d> CameraQueryNTMut<'a, 'b, 'c, 'd> {
-	pub fn orientation<T, F: FnOnce(Option<&mut Quat>) -> T>(&mut self, f: F) -> T {
-		match self.0.iter_mut().next() {
-			Some((_, mut transform)) => {
-				f(Some(&mut transform.rotation))
+pub type CameraTuple<'cc, 't> = (&'cc CameraComponent, &'t Transform);
+pub type CameraQueryState<'cc, 't> = QueryState<CameraTuple<'cc, 't>>;
+pub type CameraQuery<'world, 'state, 'cc, 't> = Query<'world, 'state, CameraTuple<'cc, 't>>;
+pub struct CameraQueryNT<'field, 'world, 'state, 'cc, 't>(pub &'field CameraQuery<'world, 'state, 'cc, 't>);
+
+impl<'field, 'world, 'state, 'cc, 't> CameraQueryNT<'field, 'world, 'state, 'cc, 't> {
+	pub fn orientation<T, F: FnOnce(Option<&Quat>) -> T>(&self, f: F) -> T {
+		match self.0.iter().next() {
+			Some((_, transform)) => {
+				f(Some(&transform.rotation))
 			},
 			None => {
 				f(None)
@@ -111,15 +114,16 @@ impl<'a, 'b, 'c,'d> CameraQueryNTMut<'a, 'b, 'c, 'd> {
 	}
 }
 
-pub type CameraTuple<'a, 'b> = (&'a CameraComponent, &'b Transform);
-pub type CameraQuery<'a, 'b, 'c> = Query<'a, CameraTuple<'b, 'c>>;
-pub struct CameraQueryNT<'a, 'b: 'a, 'c: 'b, 'd: 'b>(pub &'a CameraQuery<'b, 'c, 'd>);
+pub type CameraTupleMut<'cc, 't> = (&'cc CameraComponent, &'t mut Transform);
+pub type CameraQueryStateMut<'cc, 't> = QueryState<CameraTupleMut<'cc, 't>>;
+pub type CameraQueryMut<'world, 'state, 'cc, 't> = Query<'world, 'state, CameraTupleMut<'cc, 't>>;
+pub struct CameraQueryNTMut<'field, 'world, 'state, 'cc, 't>(pub &'field mut CameraQueryMut<'world, 'state, 'cc, 't>);
 
-impl<'a, 'b, 'c,'d> CameraQueryNT<'a, 'b, 'c, 'd> {
-	pub fn orientation<T, F: FnOnce(Option<&Quat>) -> T>(&self, f: F) -> T {
-		match self.0.iter().next() {
-			Some((_, transform)) => {
-				f(Some(&transform.rotation))
+impl<'field, 'world, 'state, 'cc, 't> CameraQueryNTMut<'field, 'world, 'state, 'cc, 't> {
+	pub fn orientation<T, F: FnOnce(Option<&mut Quat>) -> T>(&mut self, f: F) -> T {
+		match self.0.iter_mut().next() {
+			Some((_, mut transform)) => {
+				f(Some(&mut transform.rotation))
 			},
 			None => {
 				f(None)
@@ -144,7 +148,7 @@ impl CameraPlugin {
 			.with_children(|child_builder: &mut ChildBuilder| -> () {
 				let light_and_camera_data: &LightAndCameraData = &preferences.light_and_camera;
 
-				child_builder.spawn_bundle(LightBundle {
+				child_builder.spawn_bundle(PointLightBundle {
 					transform: Transform::from_translation(Vec3::from(light_and_camera_data.light_pos)),
 					.. Default::default()
 				});
@@ -160,6 +164,25 @@ impl CameraPlugin {
 		input_state: Res<InputState>,
 		mut camera_query: CameraQueryMut
 	) -> () {
+		CameraQueryNTMut(&mut camera_query).orientation(|rotation: Option<&mut Quat>| -> () {
+			if let Some(rotation) = rotation {
+				if input_state.camera_rotation != Quat::IDENTITY {
+					let mut rotation_2: Quat = *rotation;
+					let mut rotation_3: Quat = *rotation;
+					let mut rotation_4: Quat = *rotation;
+	
+					rotation_2 *= input_state.camera_rotation;
+					rotation_3 = rotation_3 * input_state.camera_rotation;
+					rotation_4 = input_state.camera_rotation * rotation_4;
+	
+					debug_expr!(
+						rotation_2,
+						rotation_3,
+						rotation_4
+					);
+				}
+			}
+		});
 		log_option_none!(camera_query.iter_mut().next()).1.rotate(input_state.camera_rotation);
 	}
 
@@ -174,7 +197,7 @@ impl CameraPlugin {
 }
 
 impl Plugin for CameraPlugin {
-	fn build(&self, app: &mut AppBuilder) -> () {
+	fn build(&self, app: &mut App) -> () {
 		app
 			.add_startup_system(Self::startup.system())
 			.add_system(Self::run

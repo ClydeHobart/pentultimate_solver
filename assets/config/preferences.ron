@@ -58,8 +58,8 @@ Preferences(
 			roll_speed:	50,
 		),
 		animation:	AnimationSpeedData(
-			// rotation_millis:					250,
-			rotation_millis:					50,
+			rotation_millis:					250,
+			// rotation_millis:					50,
 			uniform_transformation_duration:	false,
 			animate_undo_and_redo:				true,
 		)

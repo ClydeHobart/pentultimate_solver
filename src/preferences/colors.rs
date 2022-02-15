@@ -95,7 +95,7 @@ impl From<Color> for u32 {
 impl Inspectable for Color {
 	type Attributes = ();
 
-	fn ui(&mut self, ui: &mut Ui, _: Self::Attributes, _: &Context) -> bool {
+	fn ui(&mut self, ui: &mut Ui, _: Self::Attributes, _: &mut Context) -> bool {
 		let mut rgba_u8s: [u8; 4] = self.as_rgba_u8s();
 		let changed: bool = ui.color_edit_button_srgba_unmultiplied(&mut rgba_u8s).changed();
 
@@ -122,7 +122,7 @@ impl ColAndMat {
 	fn set_hdl(&mut self, materials: &mut Assets<StandardMaterial>) -> () {
 		self.mat = materials.add(StandardMaterial {
 			base_color: self.col.0,
-			roughness: 0.5_f32,
+			perceptual_roughness: 0.5_f32,
 			reflectance: 0.35_f32,
 			.. StandardMaterial::default()
 		});
@@ -152,7 +152,7 @@ impl From<Color> for ColAndMat {
 impl Inspectable for ColAndMat {
 	type Attributes = <Color as Inspectable>::Attributes;
 
-	fn ui(&mut self, ui: &mut egui::Ui, options: Self::Attributes, context: &Context) -> bool {
+	fn ui(&mut self, ui: &mut egui::Ui, options: Self::Attributes, context: &mut Context) -> bool {
 		self.col.ui(ui, options, context)
 	}
 }
@@ -199,7 +199,7 @@ impl Default for ColorDataWithMat {
 impl Inspectable for ColorDataWithMat {
 	type Attributes = ();
 
-	fn ui(&mut self, ui: &mut Ui, _: Self::Attributes, context: &Context) -> bool {
+	fn ui(&mut self, ui: &mut Ui, _: Self::Attributes, context: &mut Context) -> bool {
 		let mut changed: bool = false;
 
 		ui.vertical_centered(|ui: &mut Ui| -> () {
@@ -209,14 +209,14 @@ impl Inspectable for ColorDataWithMat {
 				let mut inspectable_bin_map: InspectableBinMapMut<(Polyhedron, Vec<ColAndMat>)> =
 					self.polyhedron_to_colors.as_inspectable_bin_map_mut();
 
-				inspectable_bin_map.ui(ui, Default::default(), &context.with_id(0_u64));
+				inspectable_bin_map.ui(ui, Default::default(), &mut context.with_id(0_u64));
 				ui.end_row();
 				ui.label("base_color");
 				changed |= <ColAndMat as Inspectable>::ui(
 					&mut self.base_color,
 					ui,
 					Default::default(),
-					&context.with_id(1_u64)
+					&mut context.with_id(1_u64)
 				);
 				ui.end_row();
 			});
@@ -280,7 +280,7 @@ impl Update for ColorData {
 pub struct ColorsPlugin;
 
 impl Plugin for ColorsPlugin {
-	fn build(&self, app: &mut AppBuilder) -> () {
+	fn build(&self, app: &mut App) -> () {
 		app
 			.add_startup_system(ColorData::startup_app.system().label(STRING_DATA.labels.color_data_startup.as_ref()));
 	}

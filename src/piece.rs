@@ -27,7 +27,7 @@ use {
 				Indices,
 				Mesh as BevyMesh
 			},
-			pipeline::PrimitiveTopology
+			render_resource::PrimitiveTopology
 		}
 	},
 	serde::Deserialize
@@ -275,12 +275,15 @@ impl From<&Mesh> for BevyMesh {
 	}
 }
 
+#[derive(Component)]
 pub struct PieceComponent {
 	pub index:		usize,
 	pub piece_type:	Type
 }
 
-pub type PieceQuery<'a, 'b, 'c> = Query<'a, (&'b PieceComponent, &'c mut Transform)>;
+pub type PieceTuple<'pc, 't> = (&'pc PieceComponent, &'t mut Transform);
+pub type PieceQueryState<'pc, 't> = QueryState<PieceTuple<'pc, 't>>;
+pub type PieceQuery<'world, 'state, 'pc, 't> = Query<'world, 'state, PieceTuple<'pc, 't>>;
 
 struct Piece {
 	piece_type:		Type,
@@ -684,7 +687,7 @@ impl PiecePlugin {
 }
 
 impl Plugin for PiecePlugin {
-	fn build(&self, app: &mut AppBuilder) -> () {
+	fn build(&self, app: &mut App) -> () {
 		app
 			.insert_resource(log_result_err!(PieceLibrary::try_from(STRING_DATA.files.piece_library_data.as_ref())))
 			.add_startup_system(Self::startup_app.system().label(STRING_DATA.labels.piece_library_startup.as_ref()));

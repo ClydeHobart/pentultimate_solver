@@ -29,7 +29,7 @@ use {
 				Indices,
 				Mesh
 			},
-			pipeline::PrimitiveTopology
+			render_resource::PrimitiveTopology
 		}
 	},
 	log::Level
@@ -795,7 +795,7 @@ impl<'a> DataBuilder<'a> {
 					})
 					.sum::<Vec3>() / face_slice.len() as f32);
 
-				Quat::from_rotation_mat4(&Mat4::look_at_rh(
+				Quat::from_mat4(&Mat4::look_at_rh(
 					Vec3::ZERO,
 					negative_face_average,
 					(first_vert + negative_face_average).normalize()
@@ -1055,7 +1055,7 @@ impl StaticDataLibrary for DataLibrary {
 pub struct DataPlugin;
 
 impl Plugin for DataPlugin {
-	fn build(&self, _app: &mut AppBuilder) -> () {
+	fn build(&self, _app: &mut App) -> () {
 		DataLibrary::initialize();
 	}
 }

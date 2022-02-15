@@ -1,8 +1,9 @@
 use bevy_inspector_egui::{
 	egui::{
-		self,
+		Button,
 		CollapsingHeader,
 		Color32,
+		RichText,
 		Ui
 	},
 	Context,
@@ -41,7 +42,7 @@ pub struct InspectableBinMapMut<'a, T: Default + KVP> {
 
 impl<'a, T: Default + KVP> InspectableBinMapMut<'a, T> {
 	fn label_button(ui: &mut Ui, text: &str, text_color: Color32) -> bool {
-		ui.add(egui::Button::new(text).text_color(text_color).frame(false)).clicked()
+		ui.add(Button::new(RichText::new(text).color(text_color)).frame(false)).clicked()
 	}
 
 	pub fn get(&mut self, k: &<T as KVP>::Key) -> Option<&mut <T as KVP>::Value> {
@@ -55,7 +56,7 @@ impl<'a, T: Default + KVP> InspectableBinMapMut<'a, T> {
 impl<'a, T: Default + KVP> Inspectable for InspectableBinMapMut<'a, T> {
 	type Attributes = (<<T as KVP>::Key as Inspectable>::Attributes, <<T as KVP>::Value as Inspectable>::Attributes);
 
-	fn ui(&mut self, ui: &mut Ui, options: Self::Attributes, context: &Context) -> bool {
+	fn ui(&mut self, ui: &mut Ui, options: Self::Attributes, context: &mut Context) -> bool {
 		let mut changed: bool = false;
 		let mut key_changed: bool = false;
 
@@ -72,7 +73,7 @@ impl<'a, T: Default + KVP> Inspectable for InspectableBinMapMut<'a, T> {
 					key_changed |= kvp.key_mut().ui(
 						ui,
 						options.0.clone(),
-						&context.with_id((2usize * i) as u64)
+						&mut context.with_id((2usize * i) as u64)
 					);
 					ui.label(":");
 					CollapsingHeader::new(format!("value {}", i))
@@ -81,7 +82,7 @@ impl<'a, T: Default + KVP> Inspectable for InspectableBinMapMut<'a, T> {
 							changed |= kvp.value_mut().ui(
 								ui,
 								options.1.clone(),
-								&context.with_id((2_usize * i + 1_usize) as u64)
+								&mut context.with_id((2_usize * i + 1_usize) as u64)
 							);
 						});
 				});

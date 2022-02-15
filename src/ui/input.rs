@@ -122,7 +122,7 @@ impl From<KeyCode> for BevyKeyCode { fn from(key_code: KeyCode) -> Self { key_co
 impl Inspectable for KeyCode {
 	type Attributes = ();
 
-	fn ui(&mut self, ui: &mut egui::Ui, _: Self::Attributes, context: &Context) -> bool {
+	fn ui(&mut self, ui: &mut egui::Ui, _: Self::Attributes, context: &mut Context) -> bool {
 		let mut changed: bool = false;
 
 		egui::ComboBox::from_id_source(context.id())
@@ -465,8 +465,8 @@ impl PuzzleAction {
 		&mut self,
 		extended_puzzle_state:	&mut ExtendedPuzzleState,
 		queries:				&mut QuerySet<(
-			CameraQueryMut,
-			PieceQuery
+			CameraQueryStateMut,
+			PieceQueryState
 		)>
 	) -> bool {
 		let mut completed: bool = true;
@@ -483,12 +483,12 @@ impl PuzzleAction {
 							puzzle_state: take(&mut pending_actions.puzzle_state).into(),
 							.. ExtendedPuzzleState::default()
 						};
-						extended_puzzle_state.puzzle_state.update_pieces(queries.q1_mut());
+						extended_puzzle_state.puzzle_state.update_pieces(&mut queries.q1());
 						pending_actions.set_puzzle_state = false;
 					}
 
 					if pending_actions.set_camera_orientation {
-						CameraQueryNTMut(queries.q0_mut()).orientation(|camera_orientation: Option<&mut Quat>| -> () {
+						CameraQueryNTMut(&mut queries.q0()).orientation(|camera_orientation: Option<&mut Quat>| -> () {
 							if let Some(camera_orientation) = camera_orientation {
 								*camera_orientation = pending_actions.camera_orientation;
 							}
@@ -507,7 +507,7 @@ impl PuzzleAction {
 					}
 
 					self.current_action = pending_actions
-						.pop_current_action(&mut queries.q0_mut(), self.action_type);
+						.pop_current_action(&mut queries.q0(), self.action_type);
 				}
 			}
 
@@ -545,7 +545,7 @@ impl PuzzleAction {
 									);
 
 									for (piece_component, mut transform) in queries
-										.q1_mut()
+										.q1()
 										.iter_mut()
 									{
 										let piece_index: usize = piece_component.index;
@@ -565,7 +565,7 @@ impl PuzzleAction {
 						}
 
 						if current_action.has_camera_orientation {
-							CameraQueryNTMut(queries.q0_mut())
+							CameraQueryNTMut(&mut queries.q0())
 								.orientation(|camera_orientation: Option<&mut Quat>| -> () {
 									if let (
 										Some(camera_orientation),
@@ -595,7 +595,7 @@ impl PuzzleAction {
 							extended_puzzle_state.puzzle_state += standardization_addr;
 							warn_expect!(extended_puzzle_state.puzzle_state.is_standardized());
 
-							extended_puzzle_state.puzzle_state.update_pieces(queries.q1_mut());
+							extended_puzzle_state.puzzle_state.update_pieces(&mut queries.q1());
 
 							if !action.transformation().is_page_index_reorientation() {
 								standardization_quat = standardization_addr.rotation().copied();
@@ -603,7 +603,7 @@ impl PuzzleAction {
 						}
 
 						if action.camera_start().is_valid() {
-							CameraQueryNTMut(queries.q0_mut())
+							CameraQueryNTMut(&mut queries.q0())
 								.orientation(|camera_orientation: Option<&mut Quat>| -> () {
 									if let Some(camera_orientation) = camera_orientation {
 										*camera_orientation = standardization_quat.unwrap_or_default()
@@ -1040,7 +1040,7 @@ impl InputPlugin {
 }
 
 impl Plugin for InputPlugin {
-	fn build(&self, app: &mut AppBuilder) -> () {
+	fn build(&self, app: &mut App) -> () {
 		app
 			.insert_resource(InputState::default())
 			.add_system_to_stage(CoreStage::PreUpdate, Self::run.system());

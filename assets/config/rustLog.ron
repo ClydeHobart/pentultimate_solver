@@ -15,5 +15,8 @@
 				),
 			}
 		),
+		"bevy_render::renderer": (
+			f: Off
+		)
 	},
 )

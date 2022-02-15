@@ -30,6 +30,7 @@ use {
 	egui::{
 		self,
 		Color32,
+		CtxRef,
 		Ui,
 		Vec2
 	},
@@ -71,21 +72,25 @@ impl UIPlugin {
 	}
 
 	fn run(world: &mut World) -> () {
-		world.resource_scope(|world: &mut World, egui_context: Mut<EguiContext>| -> () {
-			Self::render_menu(&egui_context, world);
+		world.resource_scope(|world: &mut World, mut egui_context: Mut<EguiContext>| -> () {
+			let mut context: Context = Context::new_world_access(Some(egui_context.ctx_mut()), world);
 
-			match *log_option_none!(world.get_resource::<View>()) {
-				View::Main => { Self::render_main(&egui_context, world) },
-				View::Preferences(_) => { Self::render_preferences(&egui_context, world); }
+			Self::render_menu(&mut context);
+
+			match *log_option_none!(context.world().unwrap().get_resource::<View>()) {
+				View::Main => { Self::render_main(&mut context) },
+				View::Preferences(_) => { Self::render_preferences(&mut context); }
 			}
 		});
 	}
 
-	fn render_menu(egui_context: &EguiContext, world: &mut World) -> () {
-		egui::TopBottomPanel::top("Menu").show(egui_context.ctx(), |ui: &mut Ui| -> () {
+	fn render_menu(context: &mut Context) -> () {
+		egui::TopBottomPanel::top("Menu").show(context.ui_ctx.unwrap(), |ui: &mut Ui| -> () {
 			egui::menu::bar(ui, |ui: &mut Ui| -> () {
-				egui::menu::menu(ui, "File", |ui: &mut egui::Ui| -> () {
+				ui.menu_button("File", |ui: &mut egui::Ui| -> () {
 					ui.group(|ui: &mut Ui| -> () {
+						let world: &mut World = unsafe { context.world_mut() }.unwrap();
+
 						world.resource_scope(|world: &mut World, mut view: Mut<View>| -> () {
 							if ui.button("Preferences").clicked() {
 								Self::on_preferences_clicked(world, &mut *view);
@@ -267,18 +272,25 @@ impl UIPlugin {
 		));
 	}
 
-	fn render_main(egui_context: &EguiContext, world: &mut World) -> () {
+	fn render_main(context: &mut Context) -> () {
+		Self::render_input_state(&mut context.with_id(0_u64));
+		Self::render_action_stack(&mut context.with_id(1_u64));
+
+		#[cfg(debug_assertions)]
+		Self::render_debug_modes(&mut context.with_id(2_u64));
+	}
+
+	fn render_input_state(context: &mut Context) -> () {
 		const OFFSET: f32 = 20.0_f32;
 		const INPUT_STATE_OFFSET: Vec2 = Vec2::new(OFFSET, -OFFSET);
-		const ACTION_STACK_OFFSET: Vec2 = Vec2::new(-OFFSET, -OFFSET);
 
-		let extended_puzzle_state: &ExtendedPuzzleState = log_option_none!(world.get_resource::<ExtendedPuzzleState>());
+		let world: &World = log_option_none!(context.world());
 		let input_state: &InputState = log_option_none!(world.get_resource::<InputState>());
 		let preferences: &Preferences = log_option_none!(world.get_resource::<Preferences>());
 
 		egui::Area::new("InputState")
 			.anchor(egui::Align2::LEFT_BOTTOM, INPUT_STATE_OFFSET)
-			.show(egui_context.ctx(), |ui: &mut Ui| -> () {
+			.show(context.ui_ctx.unwrap(), |ui: &mut Ui| -> () {
 				let toggles: &InputToggles = &input_state.toggles;
 
 				egui::Grid::new("ModifierTable").show(ui, |ui: &mut Ui| -> () {
@@ -323,11 +335,20 @@ impl UIPlugin {
 					ui.label(format!("{:?}", TransformationType::try_from(transformation_type_u8).unwrap()));
 				}
 			});
+	}
+
+	fn render_action_stack(context: &mut Context) -> () {
+		const OFFSET: f32 = 20.0_f32;
+		const ACTION_STACK_OFFSET: Vec2 = Vec2::new(-OFFSET, -OFFSET);
+
+		let extended_puzzle_state: &ExtendedPuzzleState = log_option_none!(
+			context.world().and_then(World::get_resource::<ExtendedPuzzleState>)
+		);
 
 		egui::Area::new("ActionStack")
 			.anchor(egui::Align2::RIGHT_BOTTOM, ACTION_STACK_OFFSET)
-			.show(egui_context.ctx(), |ui: &mut Ui| -> () {
-				egui::ScrollArea::auto_sized().show(ui, |ui: &mut Ui| -> () {
+			.show(context.ui_ctx.unwrap(), |ui: &mut Ui| -> () {
+				egui::ScrollArea::vertical().show(ui, |ui: &mut Ui| -> () {
 					egui::Grid::new("ActionStackGrid")
 						.min_col_width(0.0_f32)
 						.spacing(ui.spacing().item_spacing * Vec2::Y)
@@ -362,103 +383,110 @@ impl UIPlugin {
 						});
 				});
 			});
-
-		#[cfg(debug_assertions)]
-		{
-			world.resource_scope(|world: &mut World, mut preferences: Mut<Preferences>| -> () {
-				if !preferences.debug_modes.should_render() {
-					return;
-				}
-
-				const DEBUG_MODES_OFFSET: Vec2 = Vec2::new(OFFSET, OFFSET);
-				const FILL_ALPHA: u8 = 0xC0_u8;
-
-				const fn color32_from_gray_and_alpha<const A: u8>(gray: u8) -> Color32 {
-					let premultiplied_gray: u8 = (gray as f32 * A as f32 / u8::MAX as f32) as u8;
-
-					Color32::from_rgba_premultiplied(
-						premultiplied_gray,
-						premultiplied_gray,
-						premultiplied_gray,
-						A
-					)
-				}
-
-				let prev_style: egui::Style = (*egui_context.ctx().style()).clone();
-				let mut curr_style: egui::Style = prev_style.clone();
-
-				macro_rules! style {
-					($($color_type:ident, $color32_func:path =>
-						$($color_sub_type:ident, $gray:expr, $field:expr),*);*) => {
-						$(
-							{
-								enum $color_type {
-									$($color_sub_type),*
-								}
-
-								const COUNT: usize = {
-									let mut count: usize = 0_usize;
-
-									$(
-										count += 1_usize;
-										$gray;
-									)*
-
-									count
-								};
-
-								const COLORS: [Color32; COUNT] = [
-									$(
-										($color32_func)($gray),
-									)*
-								];
-
-								$(
-									$field = COLORS[$color_type::$color_sub_type as usize];
-								)*
-							}
-						)*
-					}
-				}
-
-				style!(
-					Fill, color32_from_gray_and_alpha::<FILL_ALPHA> =>
-						WidgetsNoninteractiveBg,	27_u8,	curr_style.visuals.widgets.noninteractive.bg_fill,
-						WidgetsInactiveBg,			48_u8,	curr_style.visuals.widgets.inactive.bg_fill,
-						WidgetsHoveredBg,			70_u8,	curr_style.visuals.widgets.hovered.bg_fill,
-						WidgetsActiveBg,			55_u8,	curr_style.visuals.widgets.active.bg_fill,
-						WidgetsOpenBg,				27_u8,	curr_style.visuals.widgets.open.bg_fill,
-						FaintBgColor,				24_u8,	curr_style.visuals.faint_bg_color,
-						ExtremeBgColor,				10_u8,	curr_style.visuals.extreme_bg_color,
-						CodeBgColor,				64_u8,	curr_style.visuals.code_bg_color;
-					Stroke, Color32::from_gray =>
-						NoninteractiveBg,			060_u8,	curr_style.visuals.widgets.noninteractive.bg_stroke.color,
-						NoninteractiveFg,			140_u8,	curr_style.visuals.widgets.noninteractive.fg_stroke.color,
-						InactiveBg,					000_u8,	curr_style.visuals.widgets.inactive.bg_stroke.color,
-						InactiveFg,					180_u8,	curr_style.visuals.widgets.inactive.fg_stroke.color,
-						HoveredBg,					150_u8,	curr_style.visuals.widgets.hovered.bg_stroke.color,
-						HoveredFg,					240_u8,	curr_style.visuals.widgets.hovered.fg_stroke.color,
-						ActiveBg,					255_u8,	curr_style.visuals.widgets.active.bg_stroke.color,
-						ActiveFg,					255_u8,	curr_style.visuals.widgets.active.fg_stroke.color,
-						OpenBg,						060_u8,	curr_style.visuals.widgets.open.bg_stroke.color,
-						OpenFg,						210_u8,	curr_style.visuals.widgets.open.fg_stroke.color
-				);
-
-				curr_style.visuals.window_shadow = epaint::Shadow::default();
-				curr_style.wrap = Some(false);
-				egui_context.ctx().set_style(curr_style);
-				egui::Window::new("DebugModes")
-					.anchor(egui::Align2::LEFT_TOP, DEBUG_MODES_OFFSET)
-					.title_bar(false)
-					.show(egui_context.ctx(), |ui: &mut Ui| -> () {
-						preferences.debug_modes.render(egui_context, ui, world);
-					});
-				egui_context.ctx().set_style(prev_style);
-			});
-		}
 	}
 
-	fn render_preferences(egui_context: &EguiContext, world: &mut World) -> () {
+	#[cfg(debug_assertions)]
+	fn render_debug_modes(context: &mut Context) -> () {
+		const OFFSET: f32 = 20.0_f32;
+		const DEBUG_MODES_OFFSET: Vec2 = Vec2::new(OFFSET, OFFSET);
+		const FILL_ALPHA: u8 = 0xC0_u8;
+
+		let mut preferences: Mut<Preferences> = log_option_none!(
+			unsafe { context.world_mut() }.and_then(World::get_resource_mut::<Preferences>)
+		);
+
+		if !preferences.debug_modes.should_render() {
+			return;
+		}
+
+		const fn color32_from_gray_and_alpha<const A: u8>(gray: u8) -> Color32 {
+			let premultiplied_gray: u8 = (gray as f32 * A as f32 / u8::MAX as f32) as u8;
+
+			Color32::from_rgba_premultiplied(
+				premultiplied_gray,
+				premultiplied_gray,
+				premultiplied_gray,
+				A
+			)
+		}
+
+		let ctx_ref: &CtxRef = context.ui_ctx.unwrap();
+		let prev_style: egui::Style = (*ctx_ref.style()).clone();
+		let mut curr_style: egui::Style = prev_style.clone();
+
+		macro_rules! style {
+			($($color_type:ident, $color32_func:path =>
+				$($color_sub_type:ident, $gray:expr, $field:expr),*);*) => {
+				$(
+					{
+						enum $color_type {
+							$($color_sub_type),*
+						}
+
+						const COUNT: usize = {
+							let mut count: usize = 0_usize;
+
+							$(
+								count += 1_usize;
+								$gray;
+							)*
+
+							count
+						};
+
+						const COLORS: [Color32; COUNT] = [
+							$(
+								($color32_func)($gray),
+							)*
+						];
+
+						$(
+							$field = COLORS[$color_type::$color_sub_type as usize];
+						)*
+					}
+				)*
+			}
+		}
+
+		style!(
+			Fill, color32_from_gray_and_alpha::<FILL_ALPHA> =>
+				WidgetsNoninteractiveBg,	27_u8,	curr_style.visuals.widgets.noninteractive.bg_fill,
+				WidgetsInactiveBg,			48_u8,	curr_style.visuals.widgets.inactive.bg_fill,
+				WidgetsHoveredBg,			70_u8,	curr_style.visuals.widgets.hovered.bg_fill,
+				WidgetsActiveBg,			55_u8,	curr_style.visuals.widgets.active.bg_fill,
+				WidgetsOpenBg,				27_u8,	curr_style.visuals.widgets.open.bg_fill,
+				FaintBgColor,				24_u8,	curr_style.visuals.faint_bg_color,
+				ExtremeBgColor,				10_u8,	curr_style.visuals.extreme_bg_color,
+				CodeBgColor,				64_u8,	curr_style.visuals.code_bg_color;
+			Stroke, Color32::from_gray =>
+				NoninteractiveBg,			060_u8,	curr_style.visuals.widgets.noninteractive.bg_stroke.color,
+				NoninteractiveFg,			140_u8,	curr_style.visuals.widgets.noninteractive.fg_stroke.color,
+				InactiveBg,					000_u8,	curr_style.visuals.widgets.inactive.bg_stroke.color,
+				InactiveFg,					180_u8,	curr_style.visuals.widgets.inactive.fg_stroke.color,
+				HoveredBg,					150_u8,	curr_style.visuals.widgets.hovered.bg_stroke.color,
+				HoveredFg,					240_u8,	curr_style.visuals.widgets.hovered.fg_stroke.color,
+				ActiveBg,					255_u8,	curr_style.visuals.widgets.active.bg_stroke.color,
+				ActiveFg,					255_u8,	curr_style.visuals.widgets.active.fg_stroke.color,
+				OpenBg,						060_u8,	curr_style.visuals.widgets.open.bg_stroke.color,
+				OpenFg,						210_u8,	curr_style.visuals.widgets.open.fg_stroke.color
+		);
+
+		curr_style.visuals.window_shadow = epaint::Shadow::default();
+		curr_style.wrap = Some(false);
+		ctx_ref.set_style(curr_style);
+		egui::Window::new("DebugModes")
+			.anchor(egui::Align2::LEFT_TOP, DEBUG_MODES_OFFSET)
+			.title_bar(false)
+			.show(ctx_ref, |ui: &mut Ui| -> () {
+				preferences.debug_modes.render(ui, context);
+			});
+		context.ui_ctx.unwrap().set_style(prev_style);
+	}
+
+	fn render_preferences(context: &mut Context) -> () {
+		let ctx_ref: &CtxRef = log_option_none!(context.ui_ctx);
+		let world: &mut World = log_option_none!(unsafe { context.world_mut() });
+
 		if !world.contains_resource::<Preferences>() || !world.contains_resource::<View>() {
 			return;
 		}
@@ -475,9 +503,9 @@ impl UIPlugin {
 		world.resource_scope(|world: &mut World, mut view: Mut<View>| -> () {
 			if let View::Preferences(preferences) = &mut (*view) {
 				egui::CentralPanel::default()
-					.show(egui_context.ctx(), |ui: &mut egui::Ui| -> () {
-						egui::ScrollArea::auto_sized().show(ui, |ui: &mut Ui| -> () {
-							preferences.ui(ui, (), &Context::new(egui_context.ctx(), world));
+					.show(ctx_ref, |ui: &mut egui::Ui| -> () {
+						egui::ScrollArea::vertical().show(ui, |ui: &mut Ui| -> () {
+							preferences.ui(ui, (), &mut context.with_id(0_u64));
 							ui.horizontal(|ui: &mut Ui| -> () {
 								if ui.button("Reset").clicked() {
 									closing_action = ClosingAction::Reset;
@@ -517,7 +545,7 @@ impl UIPlugin {
 }
 
 impl Plugin for UIPlugin {
-	fn build(&self, app: &mut AppBuilder) {
+	fn build(&self, app: &mut App) {
 		app
 			.insert_resource(Preferences::from_file_or_default(&STRING_DATA.files.preferences))
 			.insert_resource(View::Main)
