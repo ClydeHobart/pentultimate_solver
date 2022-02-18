@@ -54,6 +54,13 @@ use {
 	}
 };
 
+#[cfg(debug_assertions)]
+use crate::debug::{
+	DebugMode,
+	DebugModeDataBox,
+	StackData
+};
+
 pub mod camera;
 pub mod input;
 
@@ -353,12 +360,23 @@ impl UIPlugin {
 						.min_col_width(0.0_f32)
 						.spacing(ui.spacing().item_spacing * Vec2::Y)
 						.show(ui, |ui: &mut Ui| -> () {
+							#[cfg(debug_assertions)]
+							let stack_debug: Option<&StackData> = context
+								.world()
+								.and_then(World::get_resource::<Preferences>)
+								.and_then(|preferences: &Preferences| -> Option<&DebugModeDataBox> {
+									preferences.debug_modes.get_debug_mode_data(DebugMode::Stack)
+								})
+								.and_then(|debug_mode_data_box: &DebugModeDataBox| -> Option<&StackData> {
+									debug_mode_data_box.as_any().downcast_ref::<StackData>()
+								});
+
 							for (action_index, action)
 								in extended_puzzle_state.actions.iter().enumerate()
 							{
-								let camera_half_addr: HalfAddr = *action.camera_start();
-								let transformation: FullAddr = *action.transformation() - camera_half_addr;
-								let transformation_half_addr: HalfAddr = *transformation.get_half_addr();
+								let camera_half_addr:			HalfAddr = *action.camera_start();
+								let transformation:				FullAddr = *action.transformation() - camera_half_addr;
+								let transformation_half_addr:	HalfAddr = *transformation.get_half_addr();
 
 								ui.visuals_mut().widgets.noninteractive.fg_stroke.color =
 									if action_index as i32 == extended_puzzle_state.curr_action {
@@ -366,6 +384,20 @@ impl UIPlugin {
 									} else {
 										Color32::GRAY
 									};
+
+								#[cfg(debug_assertions)]
+								if let Some(stack_debug) = stack_debug {
+									ui.label(match (
+										action_index == stack_debug.min_simplification_index.0,
+										action_index == stack_debug.max_simplification_index.0
+									) {
+										(true,	true)	=> "↕ ",
+										(true,	false)	=> "⬇ ",
+										(false,	true)	=> "⬆ ",
+										(false,	false)	=> ""
+									});
+								}
+
 								ui.label(transformation
 									.get_page_index_type()
 									.map_or_else(

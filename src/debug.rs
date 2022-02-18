@@ -27,6 +27,7 @@ use {
 		Color32,
 		Ui
 	},
+	num_traits::One,
 	serde::{
 		Deserialize,
 		Deserializer
@@ -43,7 +44,7 @@ type DebugModeInner = u8;
 macro_rules! define_debug_mode {
 	($($debug_mode:ident: $debug_mode_data:ty),*) => {
 		#[derive(Clone, Copy, Deserialize, PartialEq)]
-		enum DebugMode {
+		pub enum DebugMode {
 			$(
 				$debug_mode,
 			)*
@@ -115,12 +116,10 @@ const DEBUG_MODE_COUNT: usize = debug_mode_count();
 
 const_assert!(DEBUG_MODE_COUNT <= DebugModeInner::MAX as usize);
 
-trait DebugModeData {
+pub trait DebugModeData {
 	fn debug_mode(&self) -> DebugMode;
 
-	fn render(&mut self, ui: &mut Ui, context: &mut Context) -> () {
-		#![allow(unused_variables)]
-	}
+	fn render(&mut self, ui: &mut Ui, context: &mut Context) -> ();
 
 	fn clone_impl(&self) -> DebugModeDataBox;
 
@@ -133,7 +132,7 @@ trait DebugModeData {
 	}
 }
 
-type DebugModeDataBox = Box<dyn DebugModeData + Send + Sync>;
+pub type DebugModeDataBox = Box<dyn DebugModeData + Send + Sync>;
 
 impl Clone for DebugModeDataBox {
 	fn clone(&self) -> Self { self.clone_impl() }
@@ -273,13 +272,11 @@ impl DebugModeData for PuzzleStateData {
 	fn as_any(&self) -> &dyn Any { self }
 }
 
-define_struct_with_default!(
-	#[derive(Clone, PartialEq)]
-	struct StackData {
-		min_simplification_index:	InspectableNum<i32>	= InspectableNum(-1_i32),
-		max_simplification_index:	InspectableNum<i32>	= InspectableNum(-1_i32)
-	}
-);
+#[derive(Clone, Default, PartialEq)]
+pub struct StackData {
+	pub min_simplification_index:	InspectableNum<usize>,
+	pub max_simplification_index:	InspectableNum<usize>
+}
 
 impl DebugModeData for StackData {
 	fn debug_mode(&self) -> DebugMode { DebugMode::Stack }
@@ -307,7 +304,7 @@ impl Inspectable for StackData {
 				ui.separator();
 				changed = self.min_simplification_index.ui(
 					ui,
-					NumberAttributes::<i32>::between(-1_i32, self.max_simplification_index.0),
+					NumberAttributes::<usize>::between(0_usize, self.max_simplification_index.0),
 					context
 				);
 				ui.end_row();
@@ -315,15 +312,15 @@ impl Inspectable for StackData {
 				ui.separator();
 				changed |= self.max_simplification_index.ui(
 					ui,
-					NumberAttributes::<i32>::between(
+					NumberAttributes::<usize>::between(
 						self.min_simplification_index.0,
 						context
 							.world()
-							.and_then(|world: &World| -> Option<i32> {
+							.and_then(|world: &World| -> Option<usize> {
 								world
 									.get_resource::<ExtendedPuzzleState>()
-									.map(|extended_puzzle_state: &ExtendedPuzzleState| -> i32 {
-										extended_puzzle_state.actions.len() as i32 - 1_i32
+									.map(|extended_puzzle_state: &ExtendedPuzzleState| -> usize {
+										extended_puzzle_state.actions.len().max(1_usize) - 1_usize
 									})
 							})
 							.unwrap_or(self.max_simplification_index.0)
@@ -362,6 +359,23 @@ pub struct DebugModes {
 const_assert!(DEBUG_MODE_COUNT <= DebugModesInner::BITS as usize);
 
 impl DebugModes {
+	pub fn should_render(&self) -> bool { !self.debug_mode_data.is_empty() }
+
+	pub fn is_debug_mode_active(&self, debug_mode: DebugMode) -> bool {
+		self.active_debug_modes.get_bit(debug_mode as usize)
+	}
+
+	pub fn get_debug_mode_data(&self, debug_mode: DebugMode) -> Option<&DebugModeDataBox> {
+		if self.is_debug_mode_active(debug_mode) {
+			Some(&self.debug_mode_data[
+				(self.active_debug_modes & ((DebugModesInner::one() << debug_mode as u32) - DebugModesInner::one()))
+					.count_ones() as usize
+			])
+		} else {
+			None
+		}
+	}
+
 	pub fn render(&mut self, ui: &mut Ui, context: &mut Context) -> () {
 		egui::CollapsingHeader::new("Debug Modes")
 			.default_open(true)
@@ -376,7 +390,7 @@ impl DebugModes {
 								self
 									.debug_mode_data
 									[debug_mode_data_index]
-									.render(ui, &mut context.with_id(debug_mode_index as u64));
+									.render(ui, &mut context.with_id(debug_mode_data_index as u64));
 							}
 						);
 						debug_mode_data_index += 1_usize;
@@ -384,8 +398,6 @@ impl DebugModes {
 				}
 			});
 	}
-
-	pub fn should_render(&self) -> bool { !self.debug_mode_data.is_empty() }
 
 	pub fn default() -> Self { Self::from_file_or_default(STRING_DATA.debug.debug_modes.as_str()) }
 }
