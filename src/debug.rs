@@ -1,48 +1,67 @@
-use {
-	crate::{
-		app::prelude::*,
-		prelude::*,
-		puzzle::{
-			consts::*,
-			transformation::HalfAddr,
-			InflatedPuzzleState,
-			InflatedPieceStateComponent
+mod uses {
+	pub use {
+		crate::{
+			app::prelude::*,
+			prelude::*,
+			puzzle::{
+				consts::*,
+				transformation::HalfAddr,
+				InflatedPuzzleState,
+				InflatedPieceStateComponent
+			},
+			util::{
+				inspectable_bit_array::InspectableBitArray,
+				inspectable_num::InspectableNum
+			}
 		},
-		util::{
-			inspectable_bit_array::InspectableBitArray,
-			inspectable_num::InspectableNum
+		bevy::prelude::*,
+		bevy_inspector_egui::{
+			options::NumberAttributes,
+			Context,
+			Inspectable
+		},
+		bit_field::{
+			BitArray,
+			BitField
+		},
+		egui::{
+			widgets::Separator,
+			Color32,
+			Ui,
+			Vec2
+		},
+		num_traits::One,
+		serde::{
+			Deserialize,
+			Deserializer
+		},
+		std::{
+			any::Any,
+			convert::TryFrom,
+			mem::transmute
 		}
-	},
-	bevy::prelude::*,
-	bevy_inspector_egui::{
-		options::NumberAttributes,
-		Context,
-		Inspectable
-	},
-	bit_field::{
-		BitArray,
-		BitField
-	},
-	egui::{
-		Color32,
-		Ui
-	},
-	num_traits::One,
-	serde::{
-		Deserialize,
-		Deserializer
-	},
-	std::{
-		any::Any,
-		convert::TryFrom,
-		mem::transmute
-	}
+	};
+}
+
+pub mod prelude {
+	pub use super::{
+		data::{
+			DebugModeDataBox,
+			Stack
+		},
+		DebugMode
+	};
+}
+
+use self::{
+	uses::*,
+	data::*
 };
 
 type DebugModeInner = u8;
 
 macro_rules! define_debug_mode {
-	($($debug_mode:ident: $debug_mode_data:ty),*) => {
+	($($debug_mode:ident),*) => {
 		#[derive(Clone, Copy, Deserialize, PartialEq)]
 		pub enum DebugMode {
 			$(
@@ -63,275 +82,299 @@ macro_rules! define_debug_mode {
 			count
 		}
 
-		fn debug_mode_str(debug_mode: usize) -> &'static str {
-			const DEBUG_MODE_STRS: [&str; DEBUG_MODE_COUNT] = [
-				$(
-					stringify!($debug_mode),
-				)*
-			];
-
-			DEBUG_MODE_STRS[debug_mode]
-		}
-
-		fn debug_mode_data_eq_impl(lhs: &dyn DebugModeData, rhs: &dyn DebugModeData) -> bool {
-			if lhs.debug_mode() == rhs.debug_mode() {
-				let lhs_any: &dyn Any = lhs.as_any();
-				let rhs_any: &dyn Any = rhs.as_any();
-
-				match lhs.debug_mode() {
-					$(
-						DebugMode::$debug_mode => {
-							let lhs_data: Option<&$debug_mode_data> = lhs_any.downcast_ref::<$debug_mode_data>();
-							let rhs_data: Option<&$debug_mode_data> = rhs_any.downcast_ref::<$debug_mode_data>();
-
-							lhs_data.is_some() && rhs_data.is_some() && *lhs_data.unwrap() == *rhs_data.unwrap()
-						},
-					)*
-				}
-			} else {
-				false
-			}
-		}
-
 		impl DebugMode {
-			fn as_str(self) -> &'static str { debug_mode_str(self as usize) }
+			fn as_str(self) -> &'static str {
+				const DEBUG_MODE_STRS: [&str; DEBUG_MODE_COUNT] = [
+					$(
+						stringify!($debug_mode),
+					)*
+				];
+
+				DEBUG_MODE_STRS[self as usize]
+			}
 
 			fn new_data(self) -> DebugModeDataBox {
 				match self {
 					$(
-						Self::$debug_mode => Box::new(<$debug_mode_data>::default()) as DebugModeDataBox,
+						Self::$debug_mode => Box::new(<data::$debug_mode>::default()) as DebugModeDataBox,
 					)*
 				}
 			}
+
+			fn data_eq_impl(lhs: &dyn DebugModeData, rhs: &dyn DebugModeData) -> bool {
+				if lhs.debug_mode() == rhs.debug_mode() {
+					let lhs_any: &dyn Any = lhs.as_any();
+					let rhs_any: &dyn Any = rhs.as_any();
+
+					match lhs.debug_mode() {
+						$(
+							DebugMode::$debug_mode => {
+								let lhs_data: Option<&$debug_mode> = lhs_any.downcast_ref::<$debug_mode>();
+								let rhs_data: Option<&$debug_mode> = rhs_any.downcast_ref::<$debug_mode>();
+
+								lhs_data.is_some() && rhs_data.is_some() && *lhs_data.unwrap() == *rhs_data.unwrap()
+							},
+						)*
+					}
+				} else {
+					false
+				}
+			}
 		}
+
+		$(
+			impl DebugModeData for $debug_mode {
+				fn debug_mode(&self) -> DebugMode { DebugMode::$debug_mode }
+
+				fn clone_impl(&self) -> DebugModeDataBox { Box::new(self.clone()) as DebugModeDataBox }
+
+				fn as_debug_mode_data(&self) -> &dyn DebugModeData { self }
+
+				fn as_any(&self) -> &dyn Any { self }
+			}
+		)*
 	};
 }
 
 define_debug_mode!(
-	PuzzleState: PuzzleStateData,
-	Stack: StackData
+	PuzzleState,
+	Stack
 );
 
 const DEBUG_MODE_COUNT: usize = debug_mode_count();
 
 const_assert!(DEBUG_MODE_COUNT <= DebugModeInner::MAX as usize);
 
-pub trait DebugModeData {
-	fn debug_mode(&self) -> DebugMode;
+mod data {
+	use super::{
+		uses::*,
+		DebugMode
+	};
 
-	fn render(&mut self, ui: &mut Ui, context: &mut Context) -> ();
-
-	fn clone_impl(&self) -> DebugModeDataBox;
-
-	fn as_debug_mode_data(&self) -> &dyn DebugModeData;
-
-	fn as_any(&self) -> &dyn Any;
-
-	fn eq_impl(&self, other: &dyn DebugModeData) -> bool {
-		debug_mode_data_eq_impl(self.as_debug_mode_data(), other)
+	// We need this trait to be able to restrict DebugModeData with it while still have DebugModeDataBox still compile,
+	// since Inspectable::setup() has no self argument
+	pub trait InvokeUi {
+		fn invoke_ui(&mut self, ui: &mut Ui, context: &mut Context) -> bool;
 	}
-}
 
-pub type DebugModeDataBox = Box<dyn DebugModeData + Send + Sync>;
-
-impl Clone for DebugModeDataBox {
-	fn clone(&self) -> Self { self.clone_impl() }
-}
-
-impl PartialEq for DebugModeDataBox {
-	fn eq(&self, other: &DebugModeDataBox) -> bool {
-		debug_mode_data_eq_impl(&**self, &**other)
+	impl<T: Inspectable<Attributes = ()>> InvokeUi for T {
+		fn invoke_ui(&mut self, ui: &mut Ui, context: &mut Context) -> bool { self.ui(ui, (), context) }
 	}
-}
 
-#[derive(Clone, Default, Inspectable, PartialEq)]
-struct PuzzleStateData {
-	reorientation:			HalfAddr,
-	#[inspectable(collapse, length = PENTAGON_SIDE_COUNT)]
-	desired_pent_rot_sums:	InspectableBitArray<u8, 1_usize>,
-	#[inspectable(collapse, length = TRIANGLE_SIDE_COUNT)]
-	desired_tri_rot_sums:	InspectableBitArray<u8, 1_usize>
-}
+	pub trait DebugModeData: InvokeUi {
+		fn debug_mode(&self) -> DebugMode;
 
-impl DebugModeData for PuzzleStateData {
-	fn debug_mode(&self) -> DebugMode { DebugMode::PuzzleState }
+		fn clone_impl(&self) -> DebugModeDataBox;
 
-	fn render(&mut self, ui: &mut Ui, context: &mut Context) -> () {
-		if context.world().is_none() {
-			return;
+		fn as_debug_mode_data(&self) -> &dyn DebugModeData;
+
+		fn as_any(&self) -> &dyn Any;
+
+		fn eq_impl(&self, other: &dyn DebugModeData) -> bool {
+			DebugMode::data_eq_impl(self.as_debug_mode_data(), other)
 		}
+	}
 
-		context.world_scope(ui, "", |world: &mut World, ui: &mut Ui, context: &mut Context| -> bool {
-			if let Some(extended_puzzle_state) = world.get_resource::<ExtendedPuzzleState>() {
-				let mut changed: bool = false;
+	pub type DebugModeDataBox = Box<dyn DebugModeData + Send + Sync>;
 
-				ui.collapsing("Position & Rotation", |ui: &mut Ui| -> () {
-					ui.monospace(format!("{:#?}", extended_puzzle_state.puzzle_state));
-				});
-				ui.collapsing("Stats", |ui: &mut Ui| -> () {
-					changed |= self.ui(ui, (), context);
-		
-					egui::Grid::new("StatsTable").show(ui, |ui: &mut Ui| -> () {
-						let InflatedPuzzleState {
-							pos,
-							rot
-						} = if self.reorientation.is_valid() {
-							&extended_puzzle_state.puzzle_state + self.reorientation.as_reorientation()
-						} else {
-							extended_puzzle_state.puzzle_state.clone()
-						};
-	
-						let mut correct_pent_pos_count: u32 = 0_u32;
-						let mut correct_tri_pos_count: u32 = 0_u32;
-						let mut correct_pent_rot_count: u32 = 0_u32;
-						let mut correct_tri_rot_count: u32 = 0_u32;
-						let mut pent_rot_sum: InflatedPieceStateComponent = ZERO_IPSC;
-						let mut tri_rot_sum: InflatedPieceStateComponent = ZERO_IPSC;
-		
-						for pent_index in PENTAGON_PIECE_RANGE {
-							correct_pent_pos_count += (pos[pent_index] as usize == pent_index) as u32;
-							correct_pent_rot_count += (rot[pent_index] == ZERO_IPSC) as u32;
-							pent_rot_sum += rot[pent_index];
-						}
-		
-						pent_rot_sum %= PENTAGON_SIDE_COUNT_IPSC;
-		
-						for tri_index in TRIANGLE_PIECE_RANGE {
-							correct_tri_pos_count += (pos[tri_index] as usize == tri_index) as u32;
-							correct_tri_rot_count += (rot[tri_index] == ZERO_IPSC) as u32;
-							tri_rot_sum += rot[tri_index];
-						}
-		
-						tri_rot_sum %= TRIANGLE_SIDE_COUNT_IPSC;
-		
-						let desired_pent_rot_sum: bool = self.desired_pent_rot_sums.0.get_bit(pent_rot_sum as usize);
-						let desired_tri_rot_sum: bool = self.desired_tri_rot_sums.0.get_bit(tri_rot_sum as usize);
-						let desired_rot_sum: bool = desired_pent_rot_sum && desired_tri_rot_sum;
-		
-						macro_rules! colored_label {
-							($count:expr, $max:ident) => {
-								let count: InflatedPieceStateComponent = $count;
-		
-								ui.colored_label(
-									Color32::from_alt(red_to_green(count as f32 / $max)),
-									format!("{}", count)
-								);
-							}
-						}
-		
-						ui.label("");
-						ui.label("Pents").on_hover_text("Pentagon Pieces");
-						ui.label("Tris").on_hover_text("Triangle Pieces");
-						ui.label("Total").on_hover_text("All Pieces");
-						ui.end_row();
-		
-						ui.label("Correct Pos").on_hover_text("Correct Position Count");
-						colored_label!(correct_pent_pos_count, PENTAGON_PIECE_COUNT_F32);
-						colored_label!(correct_tri_pos_count, TRIANGLE_PIECE_COUNT_F32);
-						colored_label!(correct_pent_pos_count + correct_tri_pos_count, PIECE_COUNT_F32);
-						ui.end_row();
-		
-						ui.label("Correct Rot").on_hover_text("Correct Rotation Count");
-						colored_label!(correct_pent_rot_count, PENTAGON_PIECE_COUNT_F32);
-						colored_label!(correct_tri_rot_count, TRIANGLE_PIECE_COUNT_F32);
-						colored_label!(correct_pent_rot_count + correct_tri_rot_count, PIECE_COUNT_F32);
-						ui.end_row();
-		
-						ui.label("Rot Sum").on_hover_text("Rotation Sum (% Piece Side Count)");
-						ui.colored_label(
-							Color32::from_alt(red_to_green(desired_pent_rot_sum as u8 as f32)),
-							format!("{}", pent_rot_sum)
-						);
-						ui.colored_label(
-							Color32::from_alt(red_to_green(desired_tri_rot_sum as u8 as f32)),
-							format!("{}", tri_rot_sum)
-						);
-						ui.colored_label(
-							Color32::from_alt(red_to_green(desired_rot_sum as u8 as f32)),
-							format!("{}", if desired_rot_sum {
-								"✔"
+	impl Clone for DebugModeDataBox {
+		fn clone(&self) -> Self { self.clone_impl() }
+	}
+
+	impl PartialEq for DebugModeDataBox {
+		fn eq(&self, other: &DebugModeDataBox) -> bool {
+			DebugMode::data_eq_impl(&**self, &**other)
+		}
+	}
+
+	#[derive(Clone, Default, Inspectable, PartialEq)]
+	pub struct StatsOptions {
+		reorientation:			HalfAddr,
+		#[inspectable(collapse, length = PENTAGON_SIDE_COUNT)]
+		desired_pent_rot_sums:	InspectableBitArray<u8, 1_usize>,
+		#[inspectable(collapse, length = TRIANGLE_SIDE_COUNT)]
+		desired_tri_rot_sums:	InspectableBitArray<u8, 1_usize>
+	}
+
+	#[derive(Clone, Default, PartialEq)]
+	pub struct PuzzleState {
+		stats_options: StatsOptions
+	}
+
+	impl Inspectable for PuzzleState {
+		type Attributes = ();
+
+		fn ui(&mut self, ui: &mut Ui, _: (), context: &mut Context) -> bool {
+			if context.world().is_none() {
+				return false;
+			}
+
+			context.world_scope(ui, "", |world: &mut World, ui: &mut Ui, context: &mut Context| -> bool {
+				if let Some(extended_puzzle_state) = world.get_resource::<ExtendedPuzzleState>() {
+					let mut changed: bool = false;
+
+					ui.collapsing("Position & Rotation", |ui: &mut Ui| -> () {
+						ui.monospace(format!("{:#?}", extended_puzzle_state.puzzle_state));
+					});
+					ui.collapsing("Stats", |ui: &mut Ui| -> () {
+						changed |= self.stats_options.ui(ui, (), context);
+
+						egui::Grid::new("StatsTable").show(ui, |ui: &mut Ui| -> () {
+							let InflatedPuzzleState {
+								pos,
+								rot
+							} = if self.stats_options.reorientation.is_valid() {
+								&extended_puzzle_state.puzzle_state
+									+ self.stats_options.reorientation.as_reorientation()
 							} else {
-								"❌"
-							})
+								extended_puzzle_state.puzzle_state.clone()
+							};
+
+							let mut correct_pent_pos_count:	u32 = 0_u32;
+							let mut correct_tri_pos_count:	u32 = 0_u32;
+							let mut correct_pent_rot_count:	u32 = 0_u32;
+							let mut correct_tri_rot_count:	u32 = 0_u32;
+							let mut pent_rot_sum:			InflatedPieceStateComponent = ZERO_IPSC;
+							let mut tri_rot_sum:			InflatedPieceStateComponent = ZERO_IPSC;
+
+							for pent_index in PENTAGON_PIECE_RANGE {
+								correct_pent_pos_count += (pos[pent_index] as usize == pent_index) as u32;
+								correct_pent_rot_count += (rot[pent_index] == ZERO_IPSC) as u32;
+								pent_rot_sum += rot[pent_index];
+							}
+
+							pent_rot_sum %= PENTAGON_SIDE_COUNT_IPSC;
+
+							for tri_index in TRIANGLE_PIECE_RANGE {
+								correct_tri_pos_count += (pos[tri_index] as usize == tri_index) as u32;
+								correct_tri_rot_count += (rot[tri_index] == ZERO_IPSC) as u32;
+								tri_rot_sum += rot[tri_index];
+							}
+
+							tri_rot_sum %= TRIANGLE_SIDE_COUNT_IPSC;
+
+							let desired_pent_rot_sum: bool = self
+								.stats_options
+								.desired_pent_rot_sums
+								.0
+								.get_bit(pent_rot_sum as usize);
+							let desired_tri_rot_sum: bool = self
+								.stats_options
+								.desired_tri_rot_sums
+								.0
+								.get_bit(tri_rot_sum as usize);
+							let desired_rot_sum: bool = desired_pent_rot_sum && desired_tri_rot_sum;
+
+							macro_rules! colored_label {
+								($count:expr, $max:ident) => {
+									let count: InflatedPieceStateComponent = $count;
+
+									ui.colored_label(
+										Color32::from_alt(red_to_green(count as f32 / $max)),
+										format!("{}", count)
+									);
+								}
+							}
+
+							ui.label("");
+							ui.label("Pents").on_hover_text("Pentagon Pieces");
+							ui.label("Tris").on_hover_text("Triangle Pieces");
+							ui.label("Total").on_hover_text("All Pieces");
+							ui.end_row();
+
+							ui.label("Correct Pos").on_hover_text("Correct Position Count");
+							colored_label!(correct_pent_pos_count, PENTAGON_PIECE_COUNT_F32);
+							colored_label!(correct_tri_pos_count, TRIANGLE_PIECE_COUNT_F32);
+							colored_label!(correct_pent_pos_count + correct_tri_pos_count, PIECE_COUNT_F32);
+							ui.end_row();
+
+							ui.label("Correct Rot").on_hover_text("Correct Rotation Count");
+							colored_label!(correct_pent_rot_count, PENTAGON_PIECE_COUNT_F32);
+							colored_label!(correct_tri_rot_count, TRIANGLE_PIECE_COUNT_F32);
+							colored_label!(correct_pent_rot_count + correct_tri_rot_count, PIECE_COUNT_F32);
+							ui.end_row();
+
+							ui.label("Rot Sum").on_hover_text("Rotation Sum (% Piece Side Count)");
+							ui.colored_label(
+								Color32::from_alt(red_to_green(desired_pent_rot_sum as u8 as f32)),
+								format!("{}", pent_rot_sum)
+							);
+							ui.colored_label(
+								Color32::from_alt(red_to_green(desired_tri_rot_sum as u8 as f32)),
+								format!("{}", tri_rot_sum)
+							);
+							ui.colored_label(
+								Color32::from_alt(red_to_green(desired_rot_sum as u8 as f32)),
+								format!("{}", if desired_rot_sum {
+									"✔"
+								} else {
+									"❌"
+								})
+							);
+							ui.end_row();
+						});
+					});
+
+					changed
+				} else {
+					false
+				}
+			})
+		}
+	}
+
+	#[derive(Clone, Default, PartialEq)]
+	pub struct Stack {
+		pub min_simplification_index:	InspectableNum<usize>,
+		pub max_simplification_index:	InspectableNum<usize>
+	}
+
+	impl Inspectable for Stack {
+		type Attributes = ();
+
+		fn ui(&mut self, ui: &mut Ui, _: (), context: &mut Context) -> bool {
+			let mut changed: bool = false;
+
+			ui.collapsing("simplification_indices", |ui: &mut Ui| -> () {
+				egui::Grid::new(context.id())
+					.min_col_width(0.0_f32)
+					.show(ui, |ui: &mut Ui| -> () {
+						ui.label("min");
+						ui.add(Separator::default().vertical());
+						changed = self.min_simplification_index.ui(
+							ui,
+							NumberAttributes::<usize>::between(
+								0_usize,
+								self.max_simplification_index.0
+							),
+							context
+						);
+						ui.end_row();
+						ui.label("max");
+						ui.add(Separator::default().vertical());
+						changed |= self.max_simplification_index.ui(
+							ui,
+							NumberAttributes::<usize>::between(
+								self.min_simplification_index.0,
+								context
+									.world()
+									.and_then(|world: &World| -> Option<usize> {
+										world
+											.get_resource::<ExtendedPuzzleState>()
+											.map(|extended_puzzle_state: &ExtendedPuzzleState| -> usize {
+												extended_puzzle_state.actions.len().max(1_usize) - 1_usize
+											})
+									})
+									.unwrap_or(self.max_simplification_index.0)
+							),
+							context
 						);
 						ui.end_row();
 					});
-				});
-
-				changed
-			} else {
-				false
-			}
-		});
-	}
-
-	fn clone_impl(&self) -> DebugModeDataBox { Box::new(<PuzzleStateData as Clone>::clone(self)) as DebugModeDataBox }
-
-	fn as_debug_mode_data(&self) -> &dyn DebugModeData { self }
-
-	fn as_any(&self) -> &dyn Any { self }
-}
-
-#[derive(Clone, Default, PartialEq)]
-pub struct StackData {
-	pub min_simplification_index:	InspectableNum<usize>,
-	pub max_simplification_index:	InspectableNum<usize>
-}
-
-impl DebugModeData for StackData {
-	fn debug_mode(&self) -> DebugMode { DebugMode::Stack }
-
-	fn render(&mut self, ui: &mut Ui, context: &mut Context) -> () {
-		ui.collapsing("StackData", |ui: &mut Ui| -> () { self.ui(ui, (), context); });
-	}
-
-	fn clone_impl(&self) -> DebugModeDataBox { Box::new(self.clone()) as DebugModeDataBox }
-
-	fn as_debug_mode_data(&self) -> &dyn DebugModeData { self }
-
-	fn as_any(&self) -> &dyn Any { self }
-}
-
-impl Inspectable for StackData {
-	type Attributes = ();
-
-	fn ui(&mut self, ui: &mut egui::Ui, _: (), context: &mut Context) -> bool {
-		let mut changed: bool = false;
-
-		ui.collapsing("simplification_indicies", |ui: &mut Ui| -> () {
-			egui::Grid::new(context.id()).show(ui, |ui: &mut Ui| -> () {
-				ui.label("min");
-				ui.separator();
-				changed = self.min_simplification_index.ui(
-					ui,
-					NumberAttributes::<usize>::between(0_usize, self.max_simplification_index.0),
-					context
-				);
-				ui.end_row();
-				ui.label("max");
-				ui.separator();
-				changed |= self.max_simplification_index.ui(
-					ui,
-					NumberAttributes::<usize>::between(
-						self.min_simplification_index.0,
-						context
-							.world()
-							.and_then(|world: &World| -> Option<usize> {
-								world
-									.get_resource::<ExtendedPuzzleState>()
-									.map(|extended_puzzle_state: &ExtendedPuzzleState| -> usize {
-										extended_puzzle_state.actions.len().max(1_usize) - 1_usize
-									})
-							})
-							.unwrap_or(self.max_simplification_index.0)
-					),
-					context
-				);
-				ui.end_row();
 			});
-		});
 
-		false
+			false
+		}
 	}
 }
 
@@ -383,14 +426,16 @@ impl DebugModes {
 				let mut debug_mode_data_index: usize = 0_usize;
 
 				for debug_mode_index in 0_usize .. DEBUG_MODE_COUNT {
-					if self.active_debug_modes.get_bit(debug_mode_index) {
+					let debug_mode: DebugMode = DebugMode::try_from(debug_mode_index).unwrap();
+
+					if self.is_debug_mode_active(debug_mode) {
 						ui.collapsing(
-							DebugMode::try_from(debug_mode_index).unwrap().as_str(),
+							debug_mode.as_str(),
 							|ui: &mut Ui| -> () {
 								self
 									.debug_mode_data
 									[debug_mode_data_index]
-									.render(ui, &mut context.with_id(debug_mode_data_index as u64));
+									.invoke_ui(ui, &mut context.with_id(debug_mode_data_index as u64));
 							}
 						);
 						debug_mode_data_index += 1_usize;
@@ -428,9 +473,10 @@ impl Inspectable for DebugModes {
 		let mut debug_mode_data_index: usize = 0_usize;
 
 		for debug_mode_index in 0_usize .. DEBUG_MODE_COUNT {
+			let debug_mode: DebugMode = DebugMode::try_from(debug_mode_index).unwrap();
 			let mut debug_mode_bool: bool = self.active_debug_modes.get_bit(debug_mode_index);
 
-			if ui.checkbox(&mut debug_mode_bool, debug_mode_str(debug_mode_index)).changed() {
+			if ui.checkbox(&mut debug_mode_bool, debug_mode.as_str()).changed() {
 				self.active_debug_modes.set_bit(debug_mode_index, debug_mode_bool);
 
 				if debug_mode_bool {
@@ -438,7 +484,7 @@ impl Inspectable for DebugModes {
 						.debug_mode_data
 						.insert(
 							debug_mode_data_index,
-							DebugMode::try_from(debug_mode_index).unwrap().new_data()
+							debug_mode.new_data()
 						);
 				} else {
 					self.debug_mode_data.remove(debug_mode_data_index);

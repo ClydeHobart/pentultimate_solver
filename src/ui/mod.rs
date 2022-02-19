@@ -55,10 +55,10 @@ use {
 };
 
 #[cfg(debug_assertions)]
-use crate::debug::{
+use crate::debug::prelude::{
 	DebugMode,
 	DebugModeDataBox,
-	StackData
+	Stack
 };
 
 pub mod camera;
@@ -361,14 +361,14 @@ impl UIPlugin {
 						.spacing(ui.spacing().item_spacing * Vec2::Y)
 						.show(ui, |ui: &mut Ui| -> () {
 							#[cfg(debug_assertions)]
-							let stack_debug: Option<&StackData> = context
+							let stack_debug: Option<&Stack> = context
 								.world()
 								.and_then(World::get_resource::<Preferences>)
 								.and_then(|preferences: &Preferences| -> Option<&DebugModeDataBox> {
 									preferences.debug_modes.get_debug_mode_data(DebugMode::Stack)
 								})
-								.and_then(|debug_mode_data_box: &DebugModeDataBox| -> Option<&StackData> {
-									debug_mode_data_box.as_any().downcast_ref::<StackData>()
+								.and_then(|debug_mode_data_box: &DebugModeDataBox| -> Option<&Stack> {
+									debug_mode_data_box.as_any().downcast_ref::<Stack>()
 								});
 
 							for (action_index, action)
@@ -391,9 +391,9 @@ impl UIPlugin {
 										action_index == stack_debug.min_simplification_index.0,
 										action_index == stack_debug.max_simplification_index.0
 									) {
-										(true,	true)	=> "↕ ",
-										(true,	false)	=> "⬇ ",
-										(false,	true)	=> "⬆ ",
+										(true,	true)	=> "= ",
+										(true,	false)	=> "≥ ",
+										(false,	true)	=> "≤ ",
 										(false,	false)	=> ""
 									});
 								}

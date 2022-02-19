@@ -44,7 +44,7 @@ fn ui(&mut self, ui: &mut Ui, options: NumberAttributes<T>, context: &mut Contex
 
 	let mut changed: bool = false;
 
-	ui.group(|ui: &mut Ui| -> () {
+	ui.scope(|ui: &mut Ui| -> () {
 		ui.set_enabled(self.0 > *options.min.as_ref().unwrap());
 
 		if ui.small_button("min").clicked() {
@@ -52,7 +52,7 @@ fn ui(&mut self, ui: &mut Ui, options: NumberAttributes<T>, context: &mut Contex
 			changed = true;
 		}
 	});
-	ui.group(|ui: &mut Ui| -> () {
+	ui.scope(|ui: &mut Ui| -> () {
 		ui.set_enabled(self.0 > *options.min.as_ref().unwrap());
 
 		if ui.small_button("-").clicked() {
@@ -61,7 +61,7 @@ fn ui(&mut self, ui: &mut Ui, options: NumberAttributes<T>, context: &mut Contex
 		}
 	});
 	changed |= self.0.ui(ui, options.clone(), context);
-	ui.group(|ui: &mut Ui| -> () {
+	ui.scope(|ui: &mut Ui| -> () {
 		ui.set_enabled(self.0 < *options.max.as_ref().unwrap());
 
 		if ui.small_button("+").clicked() {
@@ -69,7 +69,7 @@ fn ui(&mut self, ui: &mut Ui, options: NumberAttributes<T>, context: &mut Contex
 			changed = true;
 		}
 	});
-	ui.group(|ui: &mut Ui| -> () {
+	ui.scope(|ui: &mut Ui| -> () {
 		ui.set_enabled(self.0 < *options.max.as_ref().unwrap());
 
 		if ui.small_button("max").clicked() {
