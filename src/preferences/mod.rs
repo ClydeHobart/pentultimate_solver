@@ -41,7 +41,7 @@ pub trait Update {
 }
 
 #[derive(Clone, PartialEq)]
-pub struct RandomTransformationTypes(pub InspectableBitArray<u16, 1_usize>);
+pub struct RandomTransformationTypes(pub InspectableBitArray<u32, 1_usize>);
 
 impl RandomTransformationTypes {
 	fn bit_index_to_transformation_type() -> Option<Box<dyn Fn(usize) -> String>> {
@@ -60,13 +60,13 @@ impl RandomTransformationTypes {
 }
 
 impl Default for RandomTransformationTypes {
-	fn default() -> Self { Self (InspectableBitArray::<u16, 1_usize>([1_u16 << Type::Simple as usize])) }
+	fn default() -> Self { Self (InspectableBitArray::<u32, 1_usize>([1_u32 << Type::Simple as usize])) }
 }
 
 impl_deserialize_and_inspectable_for_inspectable_bit_array_wrapper!(
 	Type,
 	RandomTransformationTypes,
-	InspectableBitArray<u16, 1_usize>
+	InspectableBitArray<u32, 1_usize>
 );
 
 #[derive(Clone, Deserialize, Inspectable, PartialEq)]
@@ -78,7 +78,11 @@ pub enum RandomizationType {
 
 #[derive(Clone, Deserialize, Inspectable, PartialEq)]
 pub struct FileMenuData {
-	#[inspectable(length = TYPE_COUNT, fetch_label = RandomTransformationTypes::bit_index_to_transformation_type(), collapse)]
+	#[inspectable(
+		length = TYPE_COUNT,
+		fetch_label = RandomTransformationTypes::bit_index_to_transformation_type(),
+		collapse
+	)]
 	pub random_transformation_types:	RandomTransformationTypes,
 	#[inspectable(min = 1, max = 100)]
 	pub random_transformation_count:	u8,

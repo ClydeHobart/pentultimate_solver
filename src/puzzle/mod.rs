@@ -28,8 +28,12 @@ use {
 		consts::*,
 		transformation::{
 			Action,
+			Addr,
 			FullAddr,
 			HalfAddr,
+			HalfAddrConsts,
+			Library,
+			LibraryConsts,
 			Transformation
 		}
 	},
@@ -42,11 +46,13 @@ use {
 		},
 		mem::{
 			size_of,
+			take,
 			transmute
 		},
 		ops::{
 			Add,
 			AddAssign,
+			Range,
 			Sub
 		}
 	},
@@ -470,6 +476,14 @@ pub mod inflated {
 		}
 	}
 
+	impl AddAssign<HalfAddr> for PuzzleState {
+		fn add_assign(&mut self, rhs: HalfAddr) -> () {
+			if let Some(trfm) = rhs.as_reorientation().transformation() {
+				*self += trfm;
+			}
+		}
+	}
+
 	impl AddAssign<FullAddr> for PuzzleState {
 		fn add_assign(&mut self, rhs: FullAddr) -> () {
 			if let Some(trfm) = rhs.transformation() {
@@ -574,24 +588,230 @@ pub mod inflated {
 		}
 	}
 
-	#[derive(Clone, Deserialize, Serialize)]
+	#[derive(Clone, Default, Deserialize, Serialize)]
 	pub struct ExtendedPuzzleState {
 		pub puzzle_state:	PuzzleState,
 		pub actions:		Vec<Action>,
-		pub curr_action:	i32
+		pub curr_action:	usize
 	}
 
 	impl ExtendedPuzzleState {
+		pub fn can_reorient_actions(&self, range: &Range<usize>) -> bool {
+			!self.sanitize_action_range(range).is_empty()
+		}
 
-	}
+		pub fn can_simplify_actions(&self, range: &Range<usize>) -> bool {
+			self.actions[self.sanitize_action_range(range)].iter().any(|action: &Action| -> bool {
+				action.transformation.get_page_index_type().map(TransformationType::is_complex).unwrap_or_default()
+			})
+		}
 
-	impl Default for ExtendedPuzzleState {
-		fn default() -> Self {
-			Self {
-				puzzle_state:	PuzzleState::SOLVED_STATE,
-				actions:		Vec::<Action>::new(),
-				curr_action:	-1_i32
+		pub fn actions_are_simplified(&self, range: &Range<usize>) -> bool {
+			self.has_actions() && self.actions[self.sanitize_action_range(range)].iter().all(|action: &Action| -> bool {
+				action.transformation.get_page_index_type().map(TransformationType::is_simple).unwrap_or_default()
+			})
+		}
+
+		pub fn get_as_comprising_simples(&self, range: &Range<usize>) -> Option<Vec<HalfAddr>> {
+			if !self.actions_are_simplified(range) {
+				return None;
 			}
+
+			let mut comprising_simples: Vec<HalfAddr> = Vec::<HalfAddr>::with_capacity(range.len());
+			let mut cumulative_standardization: HalfAddr = HalfAddr::ORIGIN;
+
+			for action in self.actions[self.sanitize_action_range(range)].iter() {
+				comprising_simples.push(*(action.transformation - cumulative_standardization).get_half_addr());
+				cumulative_standardization += action.standardization();
+			}
+
+			Some(comprising_simples)
+		}
+
+		pub fn has_actions(&self) -> bool { !self.actions.is_empty() }
+
+		pub fn reorient_actions(&mut self, range: &Range<usize>, reorientation: HalfAddr, camera: &mut HalfAddr) -> () {
+			let range: Range<usize> = self.sanitize_action_range(range);
+			let reorient_actions_internal = |
+				old_actions: &Vec<Action>,
+				puzzle_state: &mut PuzzleState,
+				actions: &mut Vec<Action>,
+				curr_action: Option<&mut usize>
+			| -> () {
+				let reorientation_line_index: PieceStateComponent = reorientation.get_line_index()
+					as PieceStateComponent;
+	
+				/* new_origin_word_offset may be >= WORD_COUNT, but any summation it's involved in will need to be %'ed
+				anyway */
+				let (new_origin_piece_index, new_origin_word_offset): (usize, usize) = puzzle_state
+					.pos
+					.iter()
+					.enumerate()
+					.find_map(|(piece_index, line_index): (usize, &PieceStateComponent)| -> Option<(usize, usize)> {
+						if *line_index == reorientation_line_index {
+							Some((
+								piece_index,
+								puzzle_state.rot[piece_index] as usize + reorientation.get_word_index()
+							))
+						} else {
+							None
+						}
+					})
+					.unwrap_or_default();
+
+				for old_action in old_actions[range.clone()].iter() {
+					let action: Action = *old_action + {
+						let new_origin: HalfAddr = puzzle_state.half_addr(new_origin_piece_index);
+	
+						HalfAddr::new(
+							new_origin.get_line_index(),
+							(new_origin.get_word_index() + new_origin_word_offset) % Library::WORD_COUNT
+						)
+					};
+	
+					*puzzle_state += action.transformation;
+					*puzzle_state += action.standardization();
+					actions.push(action);
+				}
+	
+				if let Some(curr_action) = curr_action {
+					*curr_action = (*curr_action).min(range.end);
+				}
+			};
+
+			if self.curr_action < range.start {
+				// Don't bother modifying self.puzzle_state, since we'd need to revert back to the current state anyway
+				let mut new_self: Self = Self {
+					puzzle_state:	self.puzzle_state.clone(),
+					actions:		self.get_allocated_actions(&range),
+					curr_action:	self.curr_action
+				};
+
+				new_self.skip_to_action(range.start);
+				reorient_actions_internal(&self.actions, &mut new_self.puzzle_state, &mut new_self.actions, None);
+				self.actions = take::<Vec<Action>>(&mut new_self.actions);
+			} else {
+				let mut curr_action: usize = self.curr_action;
+				let mut new_actions: Vec<Action> = self.get_allocated_actions(&range);
+
+				self.skip_to_action(range.start);
+				reorient_actions_internal(
+					&self.actions,
+					&mut self.puzzle_state,
+					&mut new_actions,
+					Some(&mut curr_action)
+				);
+				self.actions = take::<Vec<Action>>(&mut new_actions);
+				self.skip_to_action(curr_action);
+				*camera = self.actions[self.curr_action - 1_usize].get_standardized_camera_end();
+			}
+		}
+
+		pub fn set_camera_start(&mut self, range: &Range<usize>, camera_start: HalfAddr) -> () {
+			let range: Range<usize> = self.sanitize_action_range(range);
+
+			for action in self.actions[range].iter_mut() {
+				action.camera_start = camera_start;
+			}
+		}
+
+		pub fn set_initial_camera_start(&mut self, range: &Range<usize>, mut camera_start: HalfAddr) -> () {
+			let range: Range<usize> = self.sanitize_action_range(range);
+
+			for action in self.actions[range].iter_mut() {
+				action.camera_start = camera_start;
+				camera_start = action.get_standardized_camera_end();
+			}
+		}
+
+		pub fn simplify_actions(&mut self, range: &Range<usize>) -> () {
+			let range: Range<usize> = self.sanitize_action_range(range);
+			let mut actions: Vec<Action> = Vec::<Action>::with_capacity(self.actions.len());
+			let mut curr_action: usize = self.curr_action;
+
+			actions.resize(range.start, Action::default());
+			actions[0_usize .. range.start].copy_from_slice(
+				&self.actions[0_usize .. range.start]
+			);
+
+			for (slice_index, action) in self.actions[range.clone()].iter().enumerate() {
+				let action_index: usize = slice_index + range.start;
+
+				if action_index == self.curr_action {
+					curr_action = actions.len();
+				}
+
+				if warn_expect!(action.is_valid()) {
+					let transformation_type: TransformationType = action
+						.transformation
+						.get_page_index_type()
+						.unwrap();
+
+					if transformation_type.is_complex() {
+						let comprising_simples: &[HalfAddr] = action.transformation.get_comprising_simples();
+						let mut camera_start: HalfAddr = action.camera_start;
+						let mut cumulative_standardization: HalfAddr = HalfAddr::ORIGIN;
+
+						actions.reserve(comprising_simples.len());
+
+						for comprising_simple in action.transformation.get_comprising_simples() {
+							let transformation: FullAddr = comprising_simple.as_simple() + cumulative_standardization;
+							let standardization: HalfAddr = transformation.standardization();
+
+							actions.push(Action::new(transformation, camera_start));
+							camera_start += standardization;
+							cumulative_standardization += standardization;
+						}
+					} else {
+						actions.push(*action);
+					}
+				}
+			}
+
+			if range.end <= self.curr_action {
+				curr_action = actions.len() + self.curr_action - range.end;
+			}
+
+			let current_len: usize = actions.len();
+			let remaining: Range<usize> = range.end .. self.actions.len();
+
+			actions.resize(current_len + remaining.len(), Action::default());
+			actions[current_len .. current_len + remaining.len()].copy_from_slice(&self.actions[remaining]);
+			self.actions = actions;
+			self.curr_action = curr_action;
+		}
+
+		fn get_allocated_actions(&self, range: &Range<usize>) -> Vec<Action> {
+			let mut actions: Vec<Action> = Vec::<Action>::with_capacity(range.end);
+
+			actions.resize(range.start, Action::default());
+			actions[0 .. range.start].copy_from_slice(&self.actions[0 .. range.start]);
+
+			actions
+		}
+
+		fn sanitize_action_range(&self, range: &Range<usize>) -> Range<usize> {
+			range.start.min(self.actions.len()) .. range.end.min(self.actions.len())
+		}
+
+		fn skip_to_action(&mut self, action: usize) -> () {
+			let action: usize = action.min(self.actions.len());
+
+			if self.curr_action < action {
+				for action in self.actions[self.curr_action .. action].iter() {
+					self.puzzle_state += action.transformation;
+					self.puzzle_state += action.standardization();
+				}
+			} else if self.curr_action > action {
+				for action in self.actions[action .. self.curr_action].iter().rev() {
+					let inverted_action: Action = action.invert();
+	
+					self.puzzle_state += inverted_action.transformation;
+					self.puzzle_state += inverted_action.standardization();
+				}
+			}
+
+			self.curr_action = action;
 		}
 	}
 }

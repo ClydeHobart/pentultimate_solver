@@ -153,37 +153,58 @@ impl From<&Transformation> for Mask {
 enum ComplexClass {
 	Complex1,
 	Complex2,
-	Complex3
+	Complex3,
+	Complex4,
+	Complex5,
+	Complex6
 }
 
-const COMPLEX_CLASS_COUNT: usize = 3_usize;
-
 impl ComplexClass {
-	const fn is_invert_not_mirror(self) -> bool {
-		match self {
-			Self::Complex1 => false,
-			Self::Complex2 => false,
-			Self::Complex3 => true
-		}
-	}
+	const fn is_invert_not_mirror(self) -> bool { !matches!(self, Self::Complex1 | Self::Complex2) }
 
 	const fn comprising_simples(self) -> &'static [HalfAddr] {
-		macro_rules! ha { ($line_index:expr, $word_index:expr) => { HalfAddr::new($line_index, $word_index) } }
-		const COMPRISING_SIMPLES_LUT: [&[HalfAddr]; COMPLEX_CLASS_COUNT] = [
-			&[
-				ha!(10,	4),	ha!(8,	1),	ha!(10,	1),	ha!(8,	4)
+		macro_rules! slice_of_slices_of_half_addrs { ($([$(($line_index:expr, $word_index:expr)),*]),*) => {
+			&[ $( &[ $( HalfAddr::new($line_index, $word_index), )* ], )* ]
+		} }
+
+		const COMPRISING_SIMPLES_LUT: &[&[HalfAddr]] = slice_of_slices_of_half_addrs![
+			[
+				(10, 4), (8, 1), (10, 1), (8, 4)
 			],
-			&[
-				ha!(10,	4),	ha!(8,	1),	ha!(10,	1),	ha!(8,	4),
-				ha!(10,	4),	ha!(8,	1),	ha!(10,	1),	ha!(8,	4)
+			[
+				(10, 4), (8, 1), (10, 1), (8, 4), (10, 4), (8, 1), (10, 1), (8, 4)
 			],
-			&[
-				ha!(8,	3),	ha!(7,	2),	ha!(8,	2),	ha!(7,	3),
-				ha!(8,	3),	ha!(7,	2),	ha!(8,	2),	ha!(7,	3),
-				ha!(8,	3),	ha!(7,	2),	ha!(8,	2),	ha!(7,	3),
-				ha!(1,	3),	ha!(3,	3),	ha!(7,	2),	ha!(3,	2),
-				ha!(1,	3),	ha!(6,	3),	ha!(1,	2),	ha!(3,	2),
-				ha!(6,	3),	ha!(3,	3),	ha!(1,	2),	ha!(7,	2),
+			[
+				(8,	3),	(7,	2),	(8,	2),	(7,	3),
+				(8,	3),	(7,	2),	(8,	2),	(7,	3),
+				(8,	3),	(7,	2),	(8,	2),	(7,	3),
+				(1,	3),	(3,	3),	(7,	2),	(3,	2),
+				(1,	3),	(6,	3),	(1,	2),	(3,	2),
+				(6,	3),	(3,	3),	(1,	2),	(7,	2)
+			],
+			[
+				(2, 1),
+				(11, 4), (4, 1), (11, 1), (4, 4),
+				(5, 4), (9, 1), (5, 1), (9, 4),
+				(7, 1),
+				(8, 4),
+				(11, 4), (4, 1), (11, 1), (4, 4),
+				(8, 1),
+				(7, 4),
+				(9, 1), (5, 4), (9, 4), (5, 1), (9, 1), (5, 4), (9, 4), (5, 1),
+				(8, 1), (5, 4), (8, 4), (5, 1), (8, 1), (5, 4), (8, 4), (5, 1)
+			],
+			[
+				(1, 1), (4, 4), (1, 4), (4, 1), (1, 1), (4, 4), (1, 4), (4, 1),
+				(10, 1),
+				(4, 4), (1, 1), (4, 1), (1, 4), (4, 4), (1, 1), (4, 1), (1, 4),
+				(10, 4)
+			],
+			[
+				(8, 4), (5, 1), (8, 1), (5, 4),
+				(2, 1),
+				(8, 4), (5, 1), (8, 1), (5, 4),
+				(2, 4)
 			]
 		];
 
@@ -212,6 +233,18 @@ macro_rules! list_type {
 			Complex3B,		// This is Complex3A mirrored
 			Complex3C,		// This is Complex3A inverted
 			Complex3D,		// This is Complex3B inverted
+			Complex4A,		// This rotates the facing pentagon once clockwise. No guarantees are made for triangles. PuzzleState.rot: [0, ...] -> [1, ...]
+			Complex4B,		// This is Complex4A mirrored
+			Complex4C,		// This is Complex4A inverted
+			Complex4D,		// This is Complex4B inverted
+			Complex5A,		// This rotates two pentagons in opposite directions. No guarantees are made for triangles. PuzzleState.rot: [0, 0, ...] -> [1, 4, ...]
+			Complex5B,		// This is Copmlex5A mirrored
+			Complex5C,		// This is Complex5A inverted
+			Complex5D,		// This is Complex5B inverted
+			Complex6A,		// This commutes 3 adjacent pentagons. No guarantees are made for triangles.
+			Complex6B,		// This is Complex6A mirrored
+			Complex6C,		// This is Complex6A inverted
+			Complex6D,		// This is Complex6B inverted
 		);
 	}
 }
@@ -334,7 +367,10 @@ impl Type {
 		map_to_class!(
 			Complex1A | Complex1B							=> Complex1,
 			Complex2A | Complex2B							=> Complex2,
-			Complex3A | Complex3B | Complex3C | Complex3D	=> Complex3
+			Complex3A | Complex3B | Complex3C | Complex3D	=> Complex3,
+			Complex4A | Complex4B | Complex4C | Complex4D	=> Complex4,
+			Complex5A | Complex5B | Complex5C | Complex5D	=> Complex5,
+			Complex6A | Complex6B | Complex6C | Complex6D	=> Complex6
 		)
 	}
 
@@ -442,6 +478,12 @@ impl HalfAddrConsts for HalfAddr {
 	const ORIGIN:			HalfAddr		= HalfAddr::new(0_usize, 0_usize);
 }
 
+impl Add for HalfAddr {
+	type Output = Self;
+
+	fn add(self, rhs: Self) -> Self { self + rhs.as_reorientation() }
+}
+
 impl Add<FullAddr> for HalfAddr {
 	type Output = Self;
 
@@ -458,9 +500,9 @@ impl Add<FullAddr> for HalfAddr {
 	/// 
 	/// The resultant orientation `HalfAddr` representing where the `self` orientation is mapped to after performing
 	/// the `rhs` transformation.
-	fn add(self, rhs: FullAddr) -> Self::Output {
+	fn add(self, rhs: FullAddr) -> Self {
 		if self.is_valid() && rhs.is_valid() {
-			let mut sum: HalfAddr = rhs.transformation().unwrap().as_ref().half_addr(self.get_line_index());
+			let mut sum: Self = rhs.transformation().unwrap().as_ref().half_addr(self.get_line_index());
 
 			*sum.set_word_index((sum.get_word_index() + self.get_word_index()) % Library::WORD_COUNT)
 		} else {
@@ -468,6 +510,8 @@ impl Add<FullAddr> for HalfAddr {
 		}
 	}
 }
+
+impl AddAssign for HalfAddr { fn add_assign(&mut self, rhs: Self) -> () { *self = *self + rhs; } }
 
 impl AddAssign<FullAddr> for HalfAddr { fn add_assign(&mut self, rhs: FullAddr) -> () { *self = *self + rhs; } }
 
@@ -601,7 +645,7 @@ impl Inspectable for HalfAddr {
 								Library::LONG_LINE_COUNT
 							} else {
 								Library::LINE_COUNT
-							}
+							} - 1_usize
 						),
 						&mut context.with_id(0_u64)
 					) {
@@ -618,7 +662,7 @@ impl Inspectable for HalfAddr {
 						ui,
 						NumberAttributes::<usize>::between(
 							0_usize,
-							Library::WORD_COUNT
+							Library::WORD_COUNT - 1_usize
 						),
 						&mut context.with_id(1_u64)
 					) {
@@ -649,6 +693,12 @@ impl Neg for HalfAddr {
 	type Output = Self;
 
 	fn neg(self) -> Self::Output { *self.as_reorientation().inverse().get_half_addr() }
+}
+
+impl Sub for HalfAddr {
+	type Output = Self;
+
+	fn sub(self, rhs: Self) -> Self { self + (-rhs) }
 }
 
 pub trait FullAddrConsts {
@@ -802,6 +852,9 @@ impl FullAddr {
 		self
 	}
 
+	#[inline(always)]
+	pub fn standardization(self) -> HalfAddr { -(HalfAddr::ORIGIN + self) }
+
 	pub fn transformation(self) -> Option<&'static Transformation> {
 		if self.is_valid() { Some(Library::get().book_pack_data.transformation.get_word(self)) } else { None }
 	}
@@ -876,7 +929,7 @@ impl Add<HalfAddr> for FullAddr {
 	fn add(self, rhs: HalfAddr) -> Self::Output {
 		let mut sum: Self = self;
 
-		sum.half_addr += rhs.as_reorientation();
+		sum.half_addr += rhs;
 
 		if self.is_page_index_simple() {
 			sum.set_word_index(self.get_word_index());
@@ -1017,8 +1070,8 @@ impl SubAssign<HalfAddr> for FullAddr { fn sub_assign(&mut self, rhs: HalfAddr) 
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
 pub struct Action {
-	transformation:		FullAddr,
-	camera_start:		HalfAddr
+	pub transformation:	FullAddr,
+	pub camera_start:	HalfAddr
 }
 
 impl Action {
@@ -1029,21 +1082,11 @@ impl Action {
 		}
 	}
 
-	#[inline(always)]
-	pub fn transformation(&self) -> &FullAddr { &self.transformation }
-
-	#[inline(always)]
-	pub fn camera_start(&self) -> &HalfAddr { &self.camera_start }
-
-	pub fn camera_end(&self) -> HalfAddr {
-		if self.transformation.is_page_index_reorientation() {
-			*self.transformation.get_half_addr()
-		} else {
-			self.camera_start
-		}
-	}
-
-	pub fn duration(&self, animation_speed_data: &AnimationSpeedData, action_type: PuzzleActionType) -> Duration {
+	pub fn compute_duration(
+		&self,
+		animation_speed_data: &AnimationSpeedData,
+		action_type: PuzzleActionType
+	) -> Duration {
 		if matches!(action_type, PuzzleActionType::Undo | PuzzleActionType::Redo)
 			&& !animation_speed_data.animate_undo_and_redo
 		{
@@ -1058,6 +1101,16 @@ impl Action {
 		}
 	}
 
+	pub fn get_camera_end(&self) -> HalfAddr {
+		if self.transformation.is_page_index_reorientation() {
+			*self.transformation.get_half_addr()
+		} else {
+			self.camera_start
+		}
+	}
+
+	pub fn get_standardized_camera_end(&self) -> HalfAddr { self.get_camera_end() + self.standardization() }
+
 	pub fn invert(&self) -> Self {
 		if self.is_valid() {
 			if self.transformation.is_page_index_reorientation() {
@@ -1066,11 +1119,11 @@ impl Action {
 					*self.transformation.get_half_addr()
 				)
 			} else {
-				let self_standardization: FullAddr = self.standardization();
+				let standardization: HalfAddr = self.standardization();
 
 				Self::new(
-					self.transformation.inverse() + *self_standardization.get_half_addr(),
-					self.camera_end() + self_standardization
+					self.transformation.inverse() + standardization,
+					self.get_camera_end() + standardization
 				)
 			}
 		} else {
@@ -1079,8 +1132,20 @@ impl Action {
 	}
 
 	pub fn is_valid(&self) -> bool { self.transformation.is_valid() && self.camera_start.is_valid() }
+
 	#[inline(always)]
-	pub fn standardization(&self) -> FullAddr { (HalfAddr::ORIGIN + self.transformation).as_reorientation().inverse() }
+	pub fn standardization(&self) -> HalfAddr { self.transformation.standardization() }
+}
+
+impl Add<HalfAddr> for Action {
+	type Output = Self;
+
+	fn add(self, rhs: HalfAddr) -> Self {
+		Self {
+			transformation:	self.transformation + rhs,
+			camera_start:	self.camera_start + rhs
+		}
+	}
 }
 
 pub struct OrientationData {

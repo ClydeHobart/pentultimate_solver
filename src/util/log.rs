@@ -26,7 +26,7 @@ pub mod prelude {
 			LogError,
 			LogErrorResult,
 			init_env_logger,
-			set_env_var
+			set_rust_log_env_var
 		}
 	};
 }
@@ -376,7 +376,7 @@ pub mod macros {
 	#[cfg(not(debug_assertions))]
 	#[macro_export(local_inner_macros)]
 	macro_rules! log_expect_ok {
-		($level:path, $expr:expr, $block:block) => {
+		($level:path, $expr:expr, $closure:expr) => {
 			if let Ok(ok) = $expr {
 				($closure)(ok)
 			}
@@ -547,12 +547,12 @@ impl std::error::Error for LogError {
 
 pub fn init_env_logger() -> () {
 	INIT_ENV_LOGGER.call_once(|| -> () {
-		set_env_var();
+		set_rust_log_env_var();
 		env_logger::init();
 	});
 }
 
-pub fn set_env_var() -> () {
+pub fn set_rust_log_env_var() -> () {
 	SET_ENV_VAR.call_once(|| -> () {
 		type Iter<'a> = StdIter<'a, String, Module>;
 		type Item<'a> = <Iter<'a> as Iterator>::Item;
@@ -638,7 +638,7 @@ pub struct LogPlugin;
 
 impl Plugin for LogPlugin {
 	fn build(&self, app: &mut App) -> () {
-		app.add_startup_system_to_stage(StartupStage::PreStartup, set_env_var.system());
+		app.add_startup_system_to_stage(StartupStage::PreStartup, set_rust_log_env_var.system());
 	}
 }
 

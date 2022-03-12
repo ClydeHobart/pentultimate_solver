@@ -97,10 +97,12 @@ impl UIPlugin {
 				ui.menu_button("File", |ui: &mut egui::Ui| -> () {
 					ui.group(|ui: &mut Ui| -> () {
 						let world: &mut World = unsafe { context.world_mut() }.unwrap();
+						let mut close_menu: bool = false;
 
 						world.resource_scope(|world: &mut World, mut view: Mut<View>| -> () {
 							if ui.button("Preferences").clicked() {
 								Self::on_preferences_clicked(world, &mut *view);
+								close_menu = true;
 							}
 						});
 
@@ -111,20 +113,28 @@ impl UIPlugin {
 
 							if ui.button("Reset").clicked() {
 								Self::on_reset_clicked(world, input_state);
+								close_menu = true;
 							}
 
 							if ui.button("Randomize").clicked() {
 								Self::on_randomize_clicked(world, input_state);
+								close_menu = true;
 							}
 
 							if ui.button("Save Puzzle State").clicked() {
 								Self::on_save_clicked(input_state);
+								close_menu = true;
 							}
 
 							if ui.button("Load Puzzle State").clicked() {
 								Self::on_load_clicked(input_state);
+								close_menu = true;
 							}
 						});
+
+						if close_menu {
+							ui.close_menu();
+						}
 					});
 				});
 			});
@@ -374,12 +384,12 @@ impl UIPlugin {
 							for (action_index, action)
 								in extended_puzzle_state.actions.iter().enumerate()
 							{
-								let camera_half_addr:			HalfAddr = *action.camera_start();
-								let transformation:				FullAddr = *action.transformation() - camera_half_addr;
+								let camera_half_addr:			HalfAddr = action.camera_start;
+								let transformation:				FullAddr = action.transformation - camera_half_addr;
 								let transformation_half_addr:	HalfAddr = *transformation.get_half_addr();
 
 								ui.visuals_mut().widgets.noninteractive.fg_stroke.color =
-									if action_index as i32 == extended_puzzle_state.curr_action {
+									if action_index + 1_usize == extended_puzzle_state.curr_action {
 										Color32::WHITE
 									} else {
 										Color32::GRAY
@@ -388,8 +398,8 @@ impl UIPlugin {
 								#[cfg(debug_assertions)]
 								if let Some(stack_debug) = stack_debug {
 									ui.label(match (
-										action_index == stack_debug.min_simplification_index.0,
-										action_index == stack_debug.max_simplification_index.0
+										action_index == stack_debug.min_focus_index,
+										action_index == stack_debug.max_focus_index
 									) {
 										(true,	true)	=> "= ",
 										(true,	false)	=> "≥ ",
@@ -406,10 +416,51 @@ impl UIPlugin {
 											format!("{:?} ", transformation_type)
 										}
 									));
-								ui.label(format!("({}, ", transformation_half_addr.get_line_index()));
-								ui.label(format!("{}) ", transformation_half_addr.get_word_index()));
-								ui.label(format!("@ ({}, ", camera_half_addr.get_line_index()));
-								ui.label(format!("{})", camera_half_addr.get_word_index()));
+
+								if transformation_half_addr.is_valid() {
+									ui.label(format!("({}, ", transformation_half_addr.get_line_index()));
+									ui.label(format!("{}) ", transformation_half_addr.get_word_index()));
+								} else {
+									ui.label(format!("(-1, "));
+									ui.label(format!("-1) "));
+								}
+
+								if camera_half_addr.is_valid() {
+									ui.label(format!("@ ({}, ", camera_half_addr.get_line_index()));
+									ui.label(format!("{})", camera_half_addr.get_word_index()));
+								} else {
+									ui.label(format!("(-1, "));
+									ui.label(format!("-1)"));
+								}
+
+								#[cfg(debug_assertions)]
+								if let Some(stack_debug) = stack_debug {
+									if stack_debug.print_true_action {
+										let transformation:				FullAddr = action.transformation;
+										let transformation_half_addr:	HalfAddr = *transformation.get_half_addr();
+
+										ui.label(format!(
+											" (== {}",
+											transformation
+												.get_page_index_type()
+												.map_or_else(
+													|| -> String { "[INVALID]".into() },
+													|transformation_type: Type| -> String {
+														format!("{:?} ", transformation_type)
+													}
+												)
+										));
+
+										if transformation_half_addr.is_valid() {
+											ui.label(format!("({}, ", transformation_half_addr.get_line_index()));
+											ui.label(format!("{}) ", transformation_half_addr.get_word_index()));
+										} else {
+											ui.label(format!("(-1, "));
+											ui.label(format!("-1)"));
+										}
+									}
+								}
+
 								ui.end_row();
 							}
 						});

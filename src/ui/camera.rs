@@ -117,6 +117,21 @@ impl<'field, 'world, 'state, 'cc, 't> CameraQueryNT<'field, 'world, 'state, 'cc,
 	}
 }
 
+pub struct CameraQueryStateNT<'field, 'cc, 't>(pub &'field mut CameraQueryState<'cc, 't>);
+
+impl<'field, 'cc, 't> CameraQueryStateNT<'field, 'cc, 't> {
+	pub fn orientation<T, F: FnOnce(Option<&Quat>) -> T>(&mut self, world: &World, f: F) -> T {
+		match self.0.iter(world).next() {
+			Some((_, transform)) => {
+				f(Some(&transform.rotation))
+			},
+			None => {
+				f(None)
+			}
+		}
+	}
+}
+
 pub type CameraTupleMut<'cc, 't> = (&'cc CameraComponent, &'t mut Transform);
 pub type CameraQueryStateMut<'cc, 't> = QueryState<CameraTupleMut<'cc, 't>>;
 pub type CameraQueryMut<'world, 'state, 'cc, 't> = Query<'world, 'state, CameraTupleMut<'cc, 't>>;
@@ -125,6 +140,21 @@ pub struct CameraQueryNTMut<'field, 'world, 'state, 'cc, 't>(pub &'field mut Cam
 impl<'field, 'world, 'state, 'cc, 't> CameraQueryNTMut<'field, 'world, 'state, 'cc, 't> {
 	pub fn orientation<T, F: FnOnce(Option<&mut Quat>) -> T>(&mut self, f: F) -> T {
 		match self.0.iter_mut().next() {
+			Some((_, mut transform)) => {
+				f(Some(&mut transform.rotation))
+			},
+			None => {
+				f(None)
+			}
+		}
+	}
+}
+
+pub struct CameraQueryStateNTMut<'field, 'cc, 't>(pub &'field mut CameraQueryStateMut<'cc, 't>);
+
+impl<'field, 'cc, 't> CameraQueryStateNTMut<'field, 'cc, 't> {
+	pub fn orientation<T, F: FnOnce(Option<&mut Quat>) -> T>(&mut self, world: &mut World, f: F) -> T {
+		match self.0.iter_mut(world).next() {
 			Some((_, mut transform)) => {
 				f(Some(&mut transform.rotation))
 			},

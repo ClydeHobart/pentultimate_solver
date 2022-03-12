@@ -81,3 +81,13 @@ fn ui(&mut self, ui: &mut Ui, options: NumberAttributes<T>, context: &mut Contex
 	changed
 }
 }
+
+impl<'a, T: InspectableNumTrait> From<&'a mut T> for &'a mut InspectableNum<T> {
+	fn from(t: &'a mut T) -> Self {
+		/* Safe because InspectableNum<T> is just a singleton tuple around a T, and the function signature maintains
+		borrow safety */
+		unsafe {
+			(t as *mut T as *mut InspectableNum<T>).as_mut()
+		}.unwrap()
+	}
+}

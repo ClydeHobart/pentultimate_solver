@@ -1,5 +1,5 @@
 use {
-	crate::prelude::set_env_var,
+	crate::prelude::set_rust_log_env_var,
 	self::prelude::*,
 	bevy::{
 		prelude::*,
@@ -14,6 +14,7 @@ use {
 
 pub mod prelude {
 	pub use crate::{
+		app::SaveState,
 		math::polyhedra::data::{
 			Data as PolyhedraData,
 			DataPlugin as PolyhedraDataPlugin,
@@ -54,6 +55,8 @@ pub mod prelude {
 				CameraQueryNTMut,
 				CameraQueryState,
 				CameraQueryStateMut,
+				CameraQueryStateNT,
+				CameraQueryStateNTMut,
 				CameraTuple,
 				CameraTupleMut,
 			},
@@ -101,6 +104,10 @@ impl PluginGroup for AppPluginGroup {
 }
 
 pub fn main() -> () {
-	set_env_var();
+	set_rust_log_env_var();
+
+	#[cfg(debug_assertions)]
+	std::env::set_var("RUST_BACKTRACE", "1");
+
 	App::new().add_plugins(AppPluginGroup).run();
 }

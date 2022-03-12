@@ -16,6 +16,7 @@ pub mod prelude {
 		ToFile,
 		ToOption,
 		ToResult,
+		debug_break,
 		red_to_green,
 		untracked_ref,
 		untracked_ref_mut
@@ -540,6 +541,12 @@ pub fn red_to_green(s: f32) -> Color {
 	};
 
 	Color::hsl(s * 120.0_f32, 1.0_f32, 0.5_f32)
+}
+
+#[cfg(debug_assertions)]
+pub fn debug_break() -> (){
+	// Put break point here
+	return;
 }
 
 // Macro adapted from https://stackoverflow.com/questions/66291962/how-do-i-use-macro-rules-to-define-a-struct-with-optional-cfg

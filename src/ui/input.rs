@@ -301,7 +301,7 @@ pub struct PendingActions {
 	pub camera_orientation:		Quat,
 	pub actions:				VecDeque<Action>,
 	pub animation_speed_data:	AnimationSpeedData,
-	pub curr_action:			i32,
+	pub curr_action:			usize,
 	pub set_puzzle_state:		bool,
 	pub set_camera_orientation:	bool,
 	pub set_action_stack:		bool,
@@ -325,7 +325,7 @@ impl PendingActions {
 			Some(CurrentAction {
 				camera_orientation,
 				start:					Instant::now(),
-				duration:				action.duration(&self.animation_speed_data, action_type),
+				duration:				action.compute_duration(&self.animation_speed_data, action_type),
 				action,
 				has_camera_orientation:	true,
 			})
@@ -387,7 +387,7 @@ impl PendingActions {
 				}
 
 				if let Some(prev_action) = actions.back() {
-					let prev_transformation: FullAddr = *prev_action.transformation();
+					let prev_transformation: FullAddr = prev_action.transformation;
 
 					if match (
 						transformation.get_page_index_type().unwrap(),
@@ -408,12 +408,12 @@ impl PendingActions {
 				}
 
 				let action: Action = Action::new(transformation, camera);
-				let standardization: FullAddr = action.standardization();
+				let standardization: HalfAddr = action.standardization();
 
 				actions.push_back(action);
 				puzzle_state += transformation;
 				puzzle_state += standardization;
-				camera = action.camera_end() + standardization;
+				camera = action.get_camera_end() + standardization;
 			}
 
 			(puzzle_state, actions)
@@ -436,11 +436,11 @@ impl PendingActions {
 		pending_actions
 	}
 
-	pub fn load(save_state: &SaveState, preferences: &Preferences) -> Self { Self {
+	pub fn load(save_state: &SaveState, animation_speed_data: &AnimationSpeedData) -> Self { Self {
 		puzzle_state:			save_state.extended_puzzle_state.puzzle_state.clone(),
 		camera_orientation:		save_state.camera.orientation().copied().unwrap_or_default(),
 		actions:				save_state.extended_puzzle_state.actions.clone().into(),
-		animation_speed_data:	preferences.speed.animation.clone(),
+		animation_speed_data:	animation_speed_data.clone(),
 		curr_action:			save_state.extended_puzzle_state.curr_action,
 		set_puzzle_state:		true,
 		set_camera_orientation:	true,
@@ -513,24 +513,24 @@ impl PuzzleAction {
 
 			if let Some(current_action) = &self.current_action {
 				let action: Action = current_action.action;
-				let end_quat: Option<Quat> = action.camera_end().orientation().copied();
+				let end_quat: Option<Quat> = action.get_camera_end().orientation().copied();
 
 				match current_action.s_now() {
 					Some(s) => {
-						if action.transformation().is_valid() {
+						if action.transformation.is_valid() {
 							let comprising_simples: &[HalfAddr] = action
-								.transformation()
+								.transformation
 								.get_comprising_simples();
-							let total_cycles: f32 = FullAddr::get_cycles_for_comprising_simples(
-								&comprising_simples
-							) as f32;
 							let mut cycle_count: f32 = 0.0_f32;
 							let mut puzzle_state: InflatedPuzzleState = extended_puzzle_state.puzzle_state.clone();
+							
+							let s: f32 = s * FullAddr::get_cycles_for_comprising_simples(
+								&comprising_simples
+							) as f32;
 
 							for comprising_simple in comprising_simples {
 								let comprising_simple: FullAddr = comprising_simple.as_simple();
 								let cycles: f32 = comprising_simple.get_cycles() as f32;
-								let s: f32 = s * total_cycles;
 
 								if cycles == 0.0_f32 {
 									continue;
@@ -588,21 +588,21 @@ impl PuzzleAction {
 					None => {
 						let mut standardization_quat: Option<Quat> = None;
 
-						if action.transformation().is_valid() {
-							let standardization_addr: FullAddr = action.standardization();
+						if action.transformation.is_valid() {
+							let standardization_addr: FullAddr = action.standardization().as_reorientation();
 
-							extended_puzzle_state.puzzle_state += *action.transformation();
+							extended_puzzle_state.puzzle_state += action.transformation;
 							extended_puzzle_state.puzzle_state += standardization_addr;
 							warn_expect!(extended_puzzle_state.puzzle_state.is_standardized());
 
 							extended_puzzle_state.puzzle_state.update_pieces(&mut queries.q1());
 
-							if !action.transformation().is_page_index_reorientation() {
+							if !action.transformation.is_page_index_reorientation() {
 								standardization_quat = standardization_addr.rotation().copied();
 							}
 						}
 
-						if action.camera_start().is_valid() {
+						if action.camera_start.is_valid() {
 							CameraQueryNTMut(&mut queries.q0())
 								.orientation(|camera_orientation: Option<&mut Quat>| -> () {
 									if let Some(camera_orientation) = camera_orientation {
@@ -618,20 +618,17 @@ impl PuzzleAction {
 
 						match self.action_type {
 							PuzzleActionType::Transformation | PuzzleActionType::Randomize => {
-								if warn_expect!(action.transformation().is_valid()) {
-									extended_puzzle_state.curr_action += 1_i32;
-
-									let len: usize = extended_puzzle_state.curr_action as usize;
-
-									extended_puzzle_state.actions.truncate(len);
+								if warn_expect!(action.transformation.is_valid()) {
+									extended_puzzle_state.actions.truncate(extended_puzzle_state.curr_action);
 									extended_puzzle_state.actions.push(action);
+									extended_puzzle_state.curr_action += 1_usize;
 								}
 							},
 							PuzzleActionType::Undo => {
-								extended_puzzle_state.curr_action -= 1_i32;
+								extended_puzzle_state.curr_action -= 1_usize;
 							},
 							PuzzleActionType::Redo => {
-								extended_puzzle_state.curr_action += 1_i32;
+								extended_puzzle_state.curr_action += 1_usize;
 							},
 							_ => {}
 						}
@@ -898,7 +895,7 @@ impl InputPlugin {
 								warn_expect_ok!(SaveState::from_file(file_name), |save_state: SaveState| -> () {
 									input_state.puzzle_action = Some(PuzzleAction {
 										current_action: None,
-										pending_actions: Some(Box::new(PendingActions::load(&save_state, &preferences))),
+										pending_actions: Some(Box::new(PendingActions::load(&save_state, &preferences.speed.animation))),
 										action_type: PuzzleActionType::Load
 									});
 									input_state.toggles = save_state.input_toggles;
@@ -953,12 +950,11 @@ impl InputPlugin {
 			if keyboard_input.just_pressed(input_data.recenter_camera.into()) {
 				puzzle_action_type = Some(PuzzleActionType::RecenterCamera);
 			} else if keyboard_input.just_pressed(input_data.undo.into())
-				&& extended_puzzle_state.curr_action >= 0_i32
+				&& extended_puzzle_state.curr_action > 0_usize
 			{
 				puzzle_action_type = Some(PuzzleActionType::Undo);
 			} else if keyboard_input.just_pressed(input_data.redo.into())
-				&& ((extended_puzzle_state.curr_action + 1_i32) as usize)
-				< extended_puzzle_state.actions.len()
+				&& extended_puzzle_state.curr_action < extended_puzzle_state.actions.len()
 			{
 				puzzle_action_type = Some(PuzzleActionType::Redo);
 			}
@@ -986,20 +982,20 @@ impl InputPlugin {
 				),
 				PuzzleActionType::Undo => extended_puzzle_state
 					.actions
-					[extended_puzzle_state.curr_action as usize]
+					[extended_puzzle_state.curr_action - 1_usize]
 					.invert(),
 				PuzzleActionType::Redo => extended_puzzle_state
 					.actions
-					[(extended_puzzle_state.curr_action + 1_i32) as usize],
+					[extended_puzzle_state.curr_action],
 				_ => unreachable!()
 			};
 
 			if !info_expect!(matches!(puzzle_action_type, PuzzleActionType::RecenterCamera)
 				|| action.is_valid()
-				&& if action.transformation().is_page_index_reorientation() {
-					*action.transformation().get_half_addr() != *action.camera_start()
+				&& if action.transformation.is_page_index_reorientation() {
+					*action.transformation.get_half_addr() != action.camera_start
 				} else {
-					!action.transformation().is_identity_transformation()
+					!action.transformation.is_identity_transformation()
 				}
 			) {
 				debug_expr!(puzzle_action_type, action);
@@ -1015,7 +1011,7 @@ impl InputPlugin {
 				(Quat::IDENTITY, false)
 			};
 			let start: Instant = Instant::now();
-			let duration: Duration = action.duration(&speed_data.animation, puzzle_action_type);
+			let duration: Duration = action.compute_duration(&speed_data.animation, puzzle_action_type);
 
 			input_state.puzzle_action = Some(
 				PuzzleAction {
