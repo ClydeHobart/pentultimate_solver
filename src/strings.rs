@@ -13,6 +13,7 @@ macro_rules! root { ($($file:expr)?) => { file_concat!("." $(, $file)?) } }
 define_struct_with_default!(
 	#[derive(Deserialize)]
 	pub struct Files<String> {
+		pub library						= config!("library.ron"),
 		pub preferences					= config!("preferences.ron"),
 		pub piece_library_data			= config!("pieceLibraryData.ron"),
 		pub rust_log					= config!("rustLog.ron"),

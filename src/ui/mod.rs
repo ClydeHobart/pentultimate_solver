@@ -6,8 +6,9 @@ use {
 		preferences::Update,
 		puzzle::transformation::{
 			Addr,
-			Type,
-			TYPE_COUNT
+			GenusIndex,
+			GenusIndexType,
+			Library
 		},
 		ui::input::{
 			FileAction,
@@ -340,16 +341,16 @@ impl UIPlugin {
 					ui.end_row();
 				});
 
-				for transformation_type_u8 in 0_u8 .. TYPE_COUNT as u8 {
-					ui.visuals_mut().widgets.noninteractive.fg_stroke.color = if toggles.transformation_type as u8
-						== transformation_type_u8
+				for genus_index_type in 0 as GenusIndexType .. Library::get_genus_count() as GenusIndexType {
+					ui.visuals_mut().widgets.noninteractive.fg_stroke.color = if *toggles.genus_index
+						== genus_index_type
 					{
 						Color32::WHITE
 					} else {
 						Color32::GRAY
 					};
 
-					ui.label(format!("{:?}", TransformationType::try_from(transformation_type_u8).unwrap()));
+					ui.label(format!("{:?}", GenusIndex::try_from(genus_index_type).unwrap()));
 				}
 			});
 	}
@@ -409,25 +410,25 @@ impl UIPlugin {
 								}
 
 								ui.label(transformation
-									.get_page_index_type()
+									.try_get_genus_index()
 									.map_or_else(
 										|| -> String { "[INVALID]".into() },
-										|transformation_type: Type| -> String {
-											format!("{:?} ", transformation_type)
+										|genus_index: GenusIndex| -> String {
+											format!("{:?} ", genus_index)
 										}
 									));
 
 								if transformation_half_addr.is_valid() {
-									ui.label(format!("({}, ", transformation_half_addr.get_line_index()));
-									ui.label(format!("{}) ", transformation_half_addr.get_word_index()));
+									ui.label(format!("({}, ", transformation_half_addr.get_species_index()));
+									ui.label(format!("{}) ", transformation_half_addr.get_organism_index()));
 								} else {
 									ui.label(format!("(-1, "));
 									ui.label(format!("-1) "));
 								}
 
 								if camera_half_addr.is_valid() {
-									ui.label(format!("@ ({}, ", camera_half_addr.get_line_index()));
-									ui.label(format!("{})", camera_half_addr.get_word_index()));
+									ui.label(format!("@ ({}, ", camera_half_addr.get_species_index()));
+									ui.label(format!("{})", camera_half_addr.get_organism_index()));
 								} else {
 									ui.label(format!("(-1, "));
 									ui.label(format!("-1)"));
@@ -442,18 +443,18 @@ impl UIPlugin {
 										ui.label(format!(
 											" (== {}",
 											transformation
-												.get_page_index_type()
+												.try_get_genus_index()
 												.map_or_else(
 													|| -> String { "[INVALID]".into() },
-													|transformation_type: Type| -> String {
-														format!("{:?} ", transformation_type)
+													|genus_index: GenusIndex| -> String {
+														format!("{:?} ", genus_index)
 													}
 												)
 										));
 
 										if transformation_half_addr.is_valid() {
-											ui.label(format!("({}, ", transformation_half_addr.get_line_index()));
-											ui.label(format!("{}) ", transformation_half_addr.get_word_index()));
+											ui.label(format!("({}, ", transformation_half_addr.get_species_index()));
+											ui.label(format!("{}) ", transformation_half_addr.get_organism_index()));
 										} else {
 											ui.label(format!("(-1, "));
 											ui.label(format!("-1)"));

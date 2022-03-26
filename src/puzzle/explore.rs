@@ -5,9 +5,10 @@ use {
 	super::{
 		transformation::{
 			FullAddr,
+			GenusIndex,
+			GenusIndexConsts,
 			Library,
-			LibraryConsts,
-			Type
+			LibraryConsts
 		},
 		DeflatedPuzzleState,
 		InflatedPuzzleState
@@ -47,33 +48,33 @@ pub enum RunResult {
 }
 
 pub struct Explorer {
-	state_queue:			VecDeque<DeflatedPuzzleState>,
-	path_queue:				VecDeque<u8>, // Stored as [depth byte][depth FullAddr payload bytes]
-	seen:					HashSet<DeflatedPuzzleState>,
-	should_explore:			Option<ShouldExplore>,
-	is_end_state:			IsEndState,
-	elapsed:				Duration,
-	depth_elapsed:			Duration,
-	run_result:				RunResult,
-	cycle:					u64,
-	states:					u64,
-	depth_states:			u64,
-	candidate_trfm_types:	u16,
-	depth:					u8,
-	max_depth:				u8,
+	state_queue:		VecDeque<DeflatedPuzzleState>,
+	path_queue:			VecDeque<u8>, // Stored as [depth byte][depth FullAddr payload bytes]
+	seen:				HashSet<DeflatedPuzzleState>,
+	should_explore:		Option<ShouldExplore>,
+	is_end_state:		IsEndState,
+	elapsed:			Duration,
+	depth_elapsed:		Duration,
+	run_result:			RunResult,
+	cycle:				u64,
+	states:				u64,
+	depth_states:		u64,
+	candidate_genera:	u16, // Swap out for bit vector
+	depth:				u8,
+	max_depth:			u8,
 }
 
 impl Explorer {
 	#[inline]
 	pub fn init(
 		&mut self,
-		start_state:			&InflatedPuzzleState,
-		should_explore:			Option<ShouldExplore>,
-		is_end_state:			IsEndState,
-		candidate_trfm_types:	u16,
-		max_depth:				u8
+		start_state:		&InflatedPuzzleState,
+		should_explore:		Option<ShouldExplore>,
+		is_end_state:		IsEndState,
+		candidate_genera:	u16,
+		max_depth:			u8
 	) -> () {
-		*self = Self::from((start_state, should_explore, is_end_state, candidate_trfm_types, max_depth));
+		*self = Self::from((start_state, should_explore, is_end_state, candidate_genera, max_depth));
 	}
 
 	#[inline]
@@ -87,8 +88,8 @@ impl Explorer {
 	}
 
 	#[inline]
-	pub fn set_candidate_trfm_types(&mut self, candidate_trfm_types: u16) -> () {
-		self.candidate_trfm_types = candidate_trfm_types;
+	pub fn set_candidate_genera(&mut self, candidate_genera: u16) -> () {
+		self.candidate_genera = candidate_genera;
 	}
 
 	#[inline]
@@ -209,21 +210,21 @@ impl Explorer {
 
 			let mut full_addr: FullAddr = FullAddr::default();
 
-			/* Always skip Type::Reorientation, since all transformations of that type are "identity" transformations
-			(for all states A and all transformations T in the set of all Reorientation transformations, standardize(A)
-			== standardize(A + T)) */
-			for page_index in Type::Simple as usize .. Library::PAGE_COUNT {
-				if self.candidate_trfm_types & 1_u16 << page_index == 0_u16 {
+			/* Always skip GenusIndex::REORIENTATION, since all transformations of that genus are "identity"
+			transformations (for all states A and all transformations T in the set of all Reorientation transformations,
+			standardize(A) == standardize(A + T)) */
+			for genus_index in usize::from(GenusIndex::SIMPLE) .. Library::get_genus_count() {
+				if self.candidate_genera & 1_u16 << genus_index == 0_u16 {
 					continue;
 				}
 
-				full_addr.set_page_index(page_index);
+				full_addr.set_genus_index(genus_index);
 
-				for line_index in 0_usize .. Library::LINE_COUNT {
-					full_addr.set_line_index(line_index);
+				for species_index in 0_usize .. Library::SPECIES_PER_GENUS {
+					full_addr.set_species_index(species_index);
 
-					for word_index in 0_usize .. Library::WORD_COUNT {
-						full_addr.set_word_index(word_index);
+					for organism_index in 0_usize .. Library::ORGANISMS_PER_SPECIES {
+						full_addr.set_organism_index(organism_index);
 
 						if full_addr.is_identity_transformation()
 							|| !self
@@ -310,17 +311,26 @@ impl Default for Explorer {
 		cycle:					0_u64,
 		states:					0_u64,
 		depth_states:			0_u64,
-		candidate_trfm_types:	u16::MAX,
+		candidate_genera:	u16::MAX,
 		depth:					0_u8,
 		max_depth:				0_u8
 	} }
 }
 
 impl From<(&InflatedPuzzleState, Option<ShouldExplore>, IsEndState, u16, u8)> for Explorer {
-	fn from(
-		(start_state,			should_explore,			is_end_state,	candidate_trfm_types,	max_depth):
-		(&InflatedPuzzleState,	Option<ShouldExplore>,	IsEndState,		u16,					u8)
-	) -> Self {
+	fn from((
+		start_state,
+		should_explore,
+		is_end_state,
+		candidate_genera,
+		max_depth
+	): (&
+		InflatedPuzzleState,
+		Option<ShouldExplore>,
+		IsEndState,
+		u16,
+		u8
+	)) -> Self {
 		Self {
 			state_queue:	VecDeque::<DeflatedPuzzleState>::from([DeflatedPuzzleState::from(start_state)]),
 			path_queue:		VecDeque::<u8>::from([0_u8]),
@@ -333,7 +343,7 @@ impl From<(&InflatedPuzzleState, Option<ShouldExplore>, IsEndState, u16, u8)> fo
 			}]),
 			should_explore,
 			is_end_state,
-			candidate_trfm_types,
+			candidate_genera,
 			max_depth,
 			.. Self::default()
 		}

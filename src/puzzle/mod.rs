@@ -329,6 +329,8 @@ pub mod inflated {
 			pos_index ^ 0b11_usize
 		}
 
+		pub fn is_solved(&self) -> bool { *self == Self::SOLVED_STATE }
+
 		pub fn is_standardized(&self) -> bool {
 			self.pos[0_usize] == 0 as PieceStateComponent && self.rot[0_usize] == 0 as PieceStateComponent
 		}
@@ -411,7 +413,7 @@ pub mod inflated {
 		pub fn standardization_half_addr(&self) -> HalfAddr { *self.standardization_full_addr().get_half_addr() }
 
 		pub fn standardization_full_addr(&self) -> FullAddr {
-			self.full_addr(PENTAGON_INDEX_OFFSET).inverse()
+			self.full_addr(PENTAGON_INDEX_OFFSET).get_inverse_addr()
 		}
 
 		pub fn standardize(&mut self) -> &mut Self {
@@ -422,7 +424,7 @@ pub mod inflated {
 
 		pub fn update_pieces(&self, pieces_query: &mut PieceQuery) -> () {
 			for (piece_component, mut transform) in pieces_query.iter_mut() {
-				transform.rotation = *self.half_addr(piece_component.index).orientation().unwrap();
+				transform.rotation = *self.half_addr(piece_component.index).get_orientation().unwrap();
 			}
 		}
 	}
@@ -458,7 +460,11 @@ pub mod inflated {
 		type Output = PuzzleState;
 
 		fn add(self, rhs: FullAddr) -> Self::Output {
-			if let Some(trfm) = rhs.transformation() { self + trfm } else { self.clone() }
+			if let Some(transformation) = rhs.get_transformation() {
+				self + transformation
+			} else {
+				self.clone()
+			}
 		}
 	}
 
@@ -478,15 +484,15 @@ pub mod inflated {
 
 	impl AddAssign<HalfAddr> for PuzzleState {
 		fn add_assign(&mut self, rhs: HalfAddr) -> () {
-			if let Some(trfm) = rhs.as_reorientation().transformation() {
-				*self += trfm;
+			if let Some(transformation) = rhs.as_reorientation().get_transformation() {
+				*self += transformation;
 			}
 		}
 	}
 
 	impl AddAssign<FullAddr> for PuzzleState {
 		fn add_assign(&mut self, rhs: FullAddr) -> () {
-			if let Some(trfm) = rhs.transformation() {
+			if let Some(trfm) = rhs.get_transformation() {
 				*self += trfm;
 			}
 		}
@@ -602,13 +608,13 @@ pub mod inflated {
 
 		pub fn can_simplify_actions(&self, range: &Range<usize>) -> bool {
 			self.actions[self.sanitize_action_range(range)].iter().any(|action: &Action| -> bool {
-				action.transformation.get_page_index_type().map(TransformationType::is_complex).unwrap_or_default()
+				action.transformation.try_get_genus_index().map(GenusIndex::is_complex).unwrap_or_default()
 			})
 		}
 
 		pub fn actions_are_simplified(&self, range: &Range<usize>) -> bool {
 			self.has_actions() && self.actions[self.sanitize_action_range(range)].iter().all(|action: &Action| -> bool {
-				action.transformation.get_page_index_type().map(TransformationType::is_simple).unwrap_or_default()
+				action.transformation.try_get_genus_index().map(GenusIndex::is_simple).unwrap_or_default()
 			})
 		}
 
@@ -638,7 +644,7 @@ pub mod inflated {
 				actions: &mut Vec<Action>,
 				curr_action: Option<&mut usize>
 			| -> () {
-				let reorientation_line_index: PieceStateComponent = reorientation.get_line_index()
+				let reorientation_line_index: PieceStateComponent = reorientation.get_species_index()
 					as PieceStateComponent;
 	
 				/* new_origin_word_offset may be >= WORD_COUNT, but any summation it's involved in will need to be %'ed
@@ -651,7 +657,7 @@ pub mod inflated {
 						if *line_index == reorientation_line_index {
 							Some((
 								piece_index,
-								puzzle_state.rot[piece_index] as usize + reorientation.get_word_index()
+								puzzle_state.rot[piece_index] as usize + reorientation.get_organism_index()
 							))
 						} else {
 							None
@@ -664,8 +670,8 @@ pub mod inflated {
 						let new_origin: HalfAddr = puzzle_state.half_addr(new_origin_piece_index);
 	
 						HalfAddr::new(
-							new_origin.get_line_index(),
-							(new_origin.get_word_index() + new_origin_word_offset) % Library::WORD_COUNT
+							new_origin.get_species_index(),
+							(new_origin.get_organism_index() + new_origin_word_offset) % Library::ORGANISMS_PER_SPECIES
 						)
 					};
 	
@@ -742,19 +748,19 @@ pub mod inflated {
 				}
 
 				if warn_expect!(action.is_valid()) {
-					let transformation_type: TransformationType = action
+					let genus_index: GenusIndex = action
 						.transformation
-						.get_page_index_type()
+						.try_get_genus_index()
 						.unwrap();
 
-					if transformation_type.is_complex() {
-						let comprising_simples: &[HalfAddr] = action.transformation.get_comprising_simples();
+					if genus_index.is_complex() {
+						let comprising_simples: &[HalfAddr] = action.transformation.get_simple_slice();
 						let mut camera_start: HalfAddr = action.camera_start;
 						let mut cumulative_standardization: HalfAddr = HalfAddr::ORIGIN;
 
 						actions.reserve(comprising_simples.len());
 
-						for comprising_simple in action.transformation.get_comprising_simples() {
+						for comprising_simple in action.transformation.get_simple_slice() {
 							let transformation: FullAddr = comprising_simple.as_simple() + cumulative_standardization;
 							let standardization: HalfAddr = transformation.standardization();
 
@@ -1052,7 +1058,7 @@ mod tests {
 	fn test_puzzle_state_properties() -> () {
 		use super::{
 			inflated::PuzzleStateConsts,
-			transformation::Page
+			transformation::Genus
 		};
 
 		const ITERATION_COUNT: usize = 10000000_usize;

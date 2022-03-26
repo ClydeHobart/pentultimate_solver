@@ -3,7 +3,8 @@ use {
 	self::prelude::*,
 	bevy::{
 		prelude::*,
-		app::PluginGroupBuilder
+		app::PluginGroupBuilder,
+		log::LogPlugin
 	},
 	bevy_inspector_egui::bevy_egui::EguiPlugin,
 	serde::{
@@ -39,7 +40,7 @@ pub mod prelude {
 				FullAddr,
 				HalfAddr,
 				Library as TransformationLibrary,
-				Type as TransformationType
+				GenusIndex
 			},
 			ExtendedPuzzleState,
 			PuzzlePlugin,
@@ -83,7 +84,9 @@ struct AppPlugin;
 impl Plugin for AppPlugin {
 	fn build(&self, app: &mut App) {
 		app
-			.add_plugins(DefaultPlugins)
+			.add_plugins_with(DefaultPlugins, |group: &mut PluginGroupBuilder| -> &mut PluginGroupBuilder {
+				group.disable::<LogPlugin>()
+			})
 			.add_plugin(EguiPlugin);
 	}
 }
@@ -93,6 +96,7 @@ struct AppPluginGroup;
 impl PluginGroup for AppPluginGroup {
 	fn build(&mut self, group: &mut PluginGroupBuilder) -> () {
 		group
+			.add(LogPlugin)
 			.add(PolyhedraDataPlugin)
 			.add(TransformationPlugin)
 			.add(ColorsPlugin)

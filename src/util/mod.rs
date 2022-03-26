@@ -545,8 +545,19 @@ pub fn red_to_green(s: f32) -> Color {
 
 #[cfg(debug_assertions)]
 pub fn debug_break() -> (){
-	// Put break point here
-	return;
+	unsafe { core::intrinsics::breakpoint(); }
+}
+
+#[cfg(debug_assertions)]
+#[macro_export]
+macro_rules! cond_break {
+	($cond:expr) => {
+		{
+			if $cond {
+				crate::util::debug_break();
+			}
+		}
+	}
 }
 
 // Macro adapted from https://stackoverflow.com/questions/66291962/how-do-i-use-macro-rules-to-define-a-struct-with-optional-cfg
@@ -625,7 +636,7 @@ macro_rules! define_super_trait {
 /// can be useful in cases where a user wants to hold a mutable reference to one field of a struct, and an immutable
 /// reference to another field
 pub fn untracked_ref<T>(reference: &T) -> &'static T {
-	unsafe { (reference as *const T as usize as *const T).as_ref() }.unwrap()
+	unsafe { (reference as *const T).as_ref() }.unwrap()
 }
 
 /// Returns a copy of a mutable reference that is no longer tracked by the borrow checker
@@ -635,7 +646,7 @@ pub fn untracked_ref<T>(reference: &T) -> &'static T {
 /// in scope. This can be useful in cases where a user wants to hold a mutable reference to one field of a struct, and 
 /// an immutable reference to another field
 pub fn untracked_ref_mut<T>(reference: &mut T) -> &'static mut T {
-	unsafe { (reference as *mut T as usize as *mut T).as_mut() }.unwrap()
+	unsafe { (reference as *mut T).as_mut() }.unwrap()
 }
 
 #[macro_export]

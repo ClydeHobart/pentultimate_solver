@@ -20,15 +20,16 @@ use {
 		puzzle::{
 			consts::*,
 			transformation::{
-				self,
 				Action,
 				Addr,
 				FullAddr,
+				GenusIndex,
+				GenusIndexConsts,
+				GenusIndexType,
 				HalfAddr,
+				Library,
 				Mask,
-				RandHalfAddrParams,
-				Type as TransformationType,
-				TYPE_COUNT
+				RandHalfAddrParams
 			},
 			ExtendedPuzzleState,
 			InflatedPuzzleState,
@@ -244,19 +245,19 @@ define_struct_with_default!(
 	#[derive(Clone, Deserialize, Inspectable, PartialEq)]
 	pub struct InputData {
 		#[inspectable(collapse)]
-		pub default_positions:				[usize; HALF_PENTAGON_PIECE_COUNT]		= generate_default_positions(),
+		pub default_positions:		[usize; HALF_PENTAGON_PIECE_COUNT]		= generate_default_positions(),
 		#[inspectable(collapse)]
-		pub rotation_keys:					[KeyCode; HALF_PENTAGON_PIECE_COUNT]	= [bkc!(Numpad0), bkc!(Numpad1), bkc!(Numpad4), bkc!(Numpad5), bkc!(Numpad6), bkc!(Numpad3)],
-		pub recenter_camera:				KeyCode									= bkc!(Space),
-		pub undo:							KeyCode									= bkc!(Left),
-		pub redo:							KeyCode									= bkc!(Right),
-		pub cycle_transformation_type_up:	KeyCode									= bkc!(Up),
-		pub cycle_transformation_type_down:	KeyCode									= bkc!(Down),
-		pub enable_modifiers:				KeyCode									= bkc!(E),
-		pub rotate_twice:					KeyCode									= bkc!(D),
-		pub counter_clockwise:				KeyCode									= bkc!(S),
-		pub alt_hemi:						KeyCode									= bkc!(A),
-		pub disable_recentering:			KeyCode									= bkc!(X)
+		pub rotation_keys:			[KeyCode; HALF_PENTAGON_PIECE_COUNT]	= [bkc!(Numpad0), bkc!(Numpad1), bkc!(Numpad4), bkc!(Numpad5), bkc!(Numpad6), bkc!(Numpad3)],
+		pub recenter_camera:		KeyCode									= bkc!(Space),
+		pub undo:					KeyCode									= bkc!(Left),
+		pub redo:					KeyCode									= bkc!(Right),
+		pub cycle_genus_index_up:	KeyCode									= bkc!(Up),
+		pub cycle_genus_index_down:	KeyCode									= bkc!(Down),
+		pub enable_modifiers:		KeyCode									= bkc!(E),
+		pub rotate_twice:			KeyCode									= bkc!(D),
+		pub counter_clockwise:		KeyCode									= bkc!(S),
+		pub alt_hemi:				KeyCode									= bkc!(A),
+		pub disable_recentering:	KeyCode									= bkc!(X)
 	}
 );
 
@@ -338,8 +339,8 @@ impl PendingActions {
 		Self {
 			camera_orientation:		(*CameraPlugin::compute_camera_addr(camera_orientation)
 				.as_reorientation()
-				.inverse()
-				.rotation()
+				.get_inverse_addr()
+				.get_rotation()
 				.unwrap()
 			) * (*camera_orientation),
 			animation_speed_data,
@@ -356,18 +357,18 @@ impl PendingActions {
 		};
 		let (puzzle_state, actions): (InflatedPuzzleState, VecDeque<Action>) = {
 			let random_transformation_count: usize = preferences.file_menu.random_transformation_count as usize;
-			let transformation_types: Vec<TransformationType> = {
-				let mut transformation_types: Vec<TransformationType> = Vec::<TransformationType>::new();
+			let genus_indices: Vec<GenusIndex> = {
+				let mut genus_indices: Vec<GenusIndex> = Vec::<GenusIndex>::new();
 
-				for type_usize in 0_usize .. TYPE_COUNT {
-					if preferences.file_menu.random_transformation_types.0.0.get_bit(type_usize) {
-						transformation_types.push(TransformationType::try_from(type_usize as u8).unwrap());
+				for genus_index_usize in 0_usize .. Library::get_genus_count() {
+					if preferences.file_menu.random_transformation_genera.0.0.get_bit(genus_index_usize) {
+						genus_indices.push(GenusIndex::try_from(genus_index_usize as GenusIndexType).unwrap());
 					}
 				}
 
-				transformation_types
+				genus_indices
 			};
-			let transformation_type_count: f32 = transformation_types.len() as f32;
+			let genus_index_count: f32 = genus_indices.len() as f32;
 			let mut puzzle_state: InflatedPuzzleState = if matches!(
 				preferences.file_menu.randomization_type,
 				RandomizationType::FromCurrent
@@ -378,8 +379,8 @@ impl PendingActions {
 
 			while actions.len() < random_transformation_count {
 				let transformation: FullAddr = FullAddr::from((
-					transformation_types[(thread_rng.gen::<f32>() * transformation_type_count) as usize],
-					HalfAddr::from(RandHalfAddrParams { thread_rng: &mut thread_rng, allow_long_line_indices: false })
+					genus_indices[(thread_rng.gen::<f32>() * genus_index_count) as usize],
+					HalfAddr::from(RandHalfAddrParams { thread_rng: &mut thread_rng, allow_species_large_indices: false })
 				));
 
 				if transformation.is_identity_transformation() {
@@ -390,18 +391,18 @@ impl PendingActions {
 					let prev_transformation: FullAddr = prev_action.transformation;
 
 					if match (
-						transformation.get_page_index_type().unwrap(),
-						prev_transformation.get_page_index_type().unwrap()
+						transformation.try_get_genus_index().unwrap(),
+						prev_transformation.try_get_genus_index().unwrap()
 					) {
 						(
-							TransformationType::Reorientation,
-							TransformationType::Reorientation
+							GenusIndex::REORIENTATION,
+							GenusIndex::REORIENTATION
 						) => true,
 						(
-							TransformationType::Simple,
-							TransformationType::Simple
-						) => transformation.get_line_index() == prev_transformation.get_line_index(),
-						_ => transformation.inverse() == prev_transformation
+							GenusIndex::SIMPLE,
+							GenusIndex::SIMPLE
+						) => transformation.get_species_index() == prev_transformation.get_species_index(),
+						_ => transformation.get_inverse_addr() == prev_transformation
 					} {
 						continue;
 					}
@@ -438,7 +439,7 @@ impl PendingActions {
 
 	pub fn load(save_state: &SaveState, animation_speed_data: &AnimationSpeedData) -> Self { Self {
 		puzzle_state:			save_state.extended_puzzle_state.puzzle_state.clone(),
-		camera_orientation:		save_state.camera.orientation().copied().unwrap_or_default(),
+		camera_orientation:		save_state.camera.get_orientation().copied().unwrap_or_default(),
 		actions:				save_state.extended_puzzle_state.actions.clone().into(),
 		animation_speed_data:	animation_speed_data.clone(),
 		curr_action:			save_state.extended_puzzle_state.curr_action,
@@ -513,14 +514,14 @@ impl PuzzleAction {
 
 			if let Some(current_action) = &self.current_action {
 				let action: Action = current_action.action;
-				let end_quat: Option<Quat> = action.get_camera_end().orientation().copied();
+				let end_quat: Option<Quat> = action.get_camera_end().get_orientation().copied();
 
 				match current_action.s_now() {
 					Some(s) => {
 						if action.transformation.is_valid() {
 							let comprising_simples: &[HalfAddr] = action
 								.transformation
-								.get_comprising_simples();
+								.get_simple_slice();
 							let mut cycle_count: f32 = 0.0_f32;
 							let mut puzzle_state: InflatedPuzzleState = extended_puzzle_state.puzzle_state.clone();
 							
@@ -538,9 +539,9 @@ impl PuzzleAction {
 									puzzle_state += comprising_simple;
 									cycle_count += cycles;
 								} else {
-									let mask: Mask = *comprising_simple.mask().unwrap();
+									let mask: Mask = *comprising_simple.get_mask().unwrap();
 									let rotation: Quat = Quat::IDENTITY.short_slerp(
-										*comprising_simple.rotation().unwrap(),
+										*comprising_simple.get_rotation().unwrap(),
 										(s - cycle_count) / cycles
 									);
 
@@ -556,7 +557,7 @@ impl PuzzleAction {
 											rotation
 										} else {
 											Quat::IDENTITY
-										} * (*puzzle_state.half_addr(piece_index).orientation().unwrap());
+										} * (*puzzle_state.half_addr(piece_index).get_orientation().unwrap());
 									}
 
 									break;
@@ -597,8 +598,8 @@ impl PuzzleAction {
 
 							extended_puzzle_state.puzzle_state.update_pieces(&mut queries.q1());
 
-							if !action.transformation.is_page_index_reorientation() {
-								standardization_quat = standardization_addr.rotation().copied();
+							if !action.transformation.is_genus_index_reorientation() {
+								standardization_quat = standardization_addr.get_rotation().copied();
 							}
 						}
 
@@ -700,7 +701,7 @@ pub struct InputToggles {
 	pub counter_clockwise:		bool,
 	pub alt_hemi:				bool,
 	pub disable_recentering:	bool,
-	pub transformation_type:	TransformationType,
+	pub genus_index:			GenusIndex,
 }
 
 impl InputToggles {
@@ -740,7 +741,7 @@ impl Default for InputToggles {
 			counter_clockwise:		false,
 			alt_hemi:				false,
 			disable_recentering:	false,
-			transformation_type:	TransformationType::Simple
+			genus_index:			GenusIndex::SIMPLE
 		}
 	}
 }
@@ -798,22 +799,22 @@ impl InputPlugin {
 		check_toggle!(alt_hemi);
 		check_toggle!(disable_recentering);
 
-		if keyboard_input.just_pressed(input_data.cycle_transformation_type_up.into()) {
-			toggles.transformation_type = TransformationType::try_from(
-				if toggles.transformation_type as u8 == 0_u8 {
-					transformation::TYPE_COUNT as u8
+		if keyboard_input.just_pressed(input_data.cycle_genus_index_up.into()) {
+			toggles.genus_index = GenusIndex::try_from(
+				if usize::from(toggles.genus_index) == 0_usize {
+					Library::get_genus_count() as GenusIndexType
 				} else {
-					toggles.transformation_type as u8
-				} - 1_u8
+					*toggles.genus_index
+				} - 1 as GenusIndexType
 			).unwrap();
 		}
 
-		if keyboard_input.just_pressed(input_data.cycle_transformation_type_down.into()) {
-			toggles.transformation_type = TransformationType::try_from(
-				if toggles.transformation_type as u8 == transformation::TYPE_COUNT as u8 - 1_u8 {
-					0_u8
+		if keyboard_input.just_pressed(input_data.cycle_genus_index_down.into()) {
+			toggles.genus_index = GenusIndex::try_from(
+				if usize::from(toggles.genus_index) == Library::get_genus_count() - 1_usize {
+					0 as GenusIndexType
 				} else {
-					toggles.transformation_type as u8 + 1_u8
+					*toggles.genus_index + 1 as GenusIndexType
 				}
 			).unwrap();
 		}
@@ -973,7 +974,7 @@ impl InputPlugin {
 				),
 				PuzzleActionType::Transformation => Action::new(
 					FullAddr::from((
-						input_state.toggles.transformation_type,
+						input_state.toggles.genus_index,
 						input_state
 							.toggles
 							.half_addr(default_position.unwrap())
@@ -992,7 +993,7 @@ impl InputPlugin {
 
 			if !info_expect!(matches!(puzzle_action_type, PuzzleActionType::RecenterCamera)
 				|| action.is_valid()
-				&& if action.transformation.is_page_index_reorientation() {
+				&& if action.transformation.is_genus_index_reorientation() {
 					*action.transformation.get_half_addr() != action.camera_start
 				} else {
 					!action.transformation.is_identity_transformation()

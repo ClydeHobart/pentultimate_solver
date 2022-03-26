@@ -2,8 +2,11 @@ use {
 	crate::{
 		prelude::*,
 		puzzle::transformation::{
-			Type,
-			TYPE_COUNT
+			GenusIndex,
+			GenusIndexConsts,
+			GenusIndexType,
+			GenusIndexString,
+			Library
 		},
 		util::inspectable_bit_array::InspectableBitArray,
 		impl_deserialize_and_inspectable_for_inspectable_bit_array_wrapper
@@ -41,17 +44,19 @@ pub trait Update {
 }
 
 #[derive(Clone, PartialEq)]
-pub struct RandomTransformationTypes(pub InspectableBitArray<u32, 1_usize>);
+pub struct RandomTransformationGenera(pub InspectableBitArray<u32, 1_usize>);
 
-impl RandomTransformationTypes {
-	fn bit_index_to_transformation_type() -> Option<Box<dyn Fn(usize) -> String>> {
+impl RandomTransformationGenera {
+	fn bit_index_to_genus_index_string() -> Option<Box<dyn Fn(usize) -> String>> {
 		Some(Box::new(|bit_index: usize| -> String {
-			if let Ok(transformation_type) = if let Ok(bit_index_u8) = u8::try_from(bit_index) {
-				Type::try_from(bit_index_u8)
-			} else {
-				Err(())
-			} {
-				format!("{:?}", transformation_type)
+			if let Ok(genus_index) =
+				if let Ok(bit_index_genus_index_type) = GenusIndexType::try_from(bit_index) {
+					GenusIndex::try_from(bit_index_genus_index_type)
+				} else {
+					Err(())
+				}
+			{
+				format!("{:?}", genus_index)
 			} else {
 				"[OUT OF RANGE]".into()
 			}
@@ -59,14 +64,15 @@ impl RandomTransformationTypes {
 	}
 }
 
-impl Default for RandomTransformationTypes {
-	fn default() -> Self { Self (InspectableBitArray::<u32, 1_usize>([1_u32 << Type::Simple as usize])) }
+impl Default for RandomTransformationGenera {
+	fn default() -> Self { Self (InspectableBitArray::<u32, 1_usize>([1_u32 << usize::from(GenusIndex::SIMPLE)])) }
 }
 
 impl_deserialize_and_inspectable_for_inspectable_bit_array_wrapper!(
-	Type,
-	RandomTransformationTypes,
-	InspectableBitArray<u32, 1_usize>
+	GenusIndexString,
+	RandomTransformationGenera,
+	InspectableBitArray<u32, 1_usize>,
+	|genus_index_string: GenusIndexString| -> usize { usize::from(genus_index_string.0) }
 );
 
 #[derive(Clone, Deserialize, Inspectable, PartialEq)]
@@ -79,11 +85,11 @@ pub enum RandomizationType {
 #[derive(Clone, Deserialize, Inspectable, PartialEq)]
 pub struct FileMenuData {
 	#[inspectable(
-		length = TYPE_COUNT,
-		fetch_label = RandomTransformationTypes::bit_index_to_transformation_type(),
+		length = Library::get_genus_count(),
+		fetch_label = RandomTransformationGenera::bit_index_to_genus_index_string(),
 		collapse
 	)]
-	pub random_transformation_types:	RandomTransformationTypes,
+	pub random_transformation_genera:	RandomTransformationGenera,
 	#[inspectable(min = 1, max = 100)]
 	pub random_transformation_count:	u8,
 	pub randomization_type:				RandomizationType
@@ -91,7 +97,7 @@ pub struct FileMenuData {
 
 impl Default for FileMenuData {
 	fn default() -> Self { Self {
-		random_transformation_types:	RandomTransformationTypes::default(),
+		random_transformation_genera:	RandomTransformationGenera::default(),
 		random_transformation_count:	30_u8,
 		randomization_type:				RandomizationType::FromSolved
 	} }

@@ -9,7 +9,7 @@ use {
 				RunResult
 			},
 			transformation::{
-				Type,
+				GenusIndex,
 				Library
 			},
 			// InflatedPieceStateComponent,

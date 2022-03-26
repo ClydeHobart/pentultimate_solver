@@ -150,13 +150,13 @@ impl<T: InstpectableBitArraySuperTrait, const N: usize> Inspectable for Inspecta
 
 #[macro_export]
 macro_rules! impl_deserialize_and_inspectable_for_inspectable_bit_array_wrapper {
-	($enum:ty, $outer:path, $inner:ty) => {
+	($enum:ty, $outer:path, $inner:ty, $enum_to_usize:expr) => {
 		impl<'de> Deserialize<'de> for $outer {
 			fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
 				let mut inner: $inner = <$inner>::default();
 
 				for variant in Vec::<$enum>::deserialize(deserializer)? {
-					let variant_bit: usize = variant as usize;
+					let variant_bit: usize = $enum_to_usize(variant);
 
 					if variant_bit < inner.0.bit_length() {
 						inner.0.set_bit(variant_bit, true);

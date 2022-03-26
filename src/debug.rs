@@ -162,7 +162,7 @@ const_assert!(DEBUG_MODE_COUNT <= DebugModeInner::MAX as usize);
 mod data {
 	use crate::puzzle::transformation::Addr;
 
-use super::{
+	use super::{
 		uses::*,
 		DebugMode
 	};
@@ -476,7 +476,7 @@ use super::{
 						comprising_simples
 							.iter()
 							.map(|simple: &HalfAddr| -> (u32, u32) {
-								(simple.get_line_index() as u32, simple.get_word_index() as u32)
+								(simple.get_species_index() as u32, simple.get_organism_index() as u32)
 							})
 							.collect::<Vec<(u32, u32)>>()
 					);
