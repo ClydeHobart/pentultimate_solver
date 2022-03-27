@@ -6,6 +6,8 @@ use {
 		transformation::{
 			FullAddr,
 			GenusIndex,
+			GenusIndexBitArray,
+			GenusIndexBitArrayConsts,
 			GenusIndexConsts,
 			Library,
 			LibraryConsts
@@ -59,7 +61,7 @@ pub struct Explorer {
 	cycle:				u64,
 	states:				u64,
 	depth_states:		u64,
-	candidate_genera:	u16, // Swap out for bit vector
+	candidate_genera:	GenusIndexBitArray,
 	depth:				u8,
 	max_depth:			u8,
 }
@@ -71,7 +73,7 @@ impl Explorer {
 		start_state:		&InflatedPuzzleState,
 		should_explore:		Option<ShouldExplore>,
 		is_end_state:		IsEndState,
-		candidate_genera:	u16,
+		candidate_genera:	GenusIndexBitArray,
 		max_depth:			u8
 	) -> () {
 		*self = Self::from((start_state, should_explore, is_end_state, candidate_genera, max_depth));
@@ -88,7 +90,7 @@ impl Explorer {
 	}
 
 	#[inline]
-	pub fn set_candidate_genera(&mut self, candidate_genera: u16) -> () {
+	pub fn set_candidate_genera(&mut self, candidate_genera: GenusIndexBitArray) -> () {
 		self.candidate_genera = candidate_genera;
 	}
 
@@ -214,7 +216,7 @@ impl Explorer {
 			transformations (for all states A and all transformations T in the set of all Reorientation transformations,
 			standardize(A) == standardize(A + T)) */
 			for genus_index in usize::from(GenusIndex::SIMPLE) .. Library::get_genus_count() {
-				if self.candidate_genera & 1_u16 << genus_index == 0_u16 {
+				if !self.candidate_genera.get_bit(genus_index) {
 					continue;
 				}
 
@@ -300,24 +302,24 @@ impl Explorer {
 
 impl Default for Explorer {
 	fn default() -> Self { Self {
-		state_queue:			VecDeque::<DeflatedPuzzleState>::new(),
-		path_queue:				VecDeque::<u8>::new(),
-		seen:					HashSet::<DeflatedPuzzleState>::new(),
-		should_explore:			None,
-		is_end_state:			Box::new(|_: &InflatedPuzzleState| -> bool { true }),
-		elapsed:				Duration::ZERO,
-		depth_elapsed:			Duration::ZERO,
-		run_result:				RunResult::Pending,
-		cycle:					0_u64,
-		states:					0_u64,
-		depth_states:			0_u64,
-		candidate_genera:	u16::MAX,
-		depth:					0_u8,
-		max_depth:				0_u8
+		state_queue:		VecDeque::<DeflatedPuzzleState>::new(),
+		path_queue:			VecDeque::<u8>::new(),
+		seen:				HashSet::<DeflatedPuzzleState>::new(),
+		should_explore:		None,
+		is_end_state:		Box::new(|_: &InflatedPuzzleState| -> bool { true }),
+		elapsed:			Duration::ZERO,
+		depth_elapsed:		Duration::ZERO,
+		run_result:			RunResult::Pending,
+		cycle:				0_u64,
+		states:				0_u64,
+		depth_states:		0_u64,
+		candidate_genera:	GenusIndexBitArray::ALL,
+		depth:				0_u8,
+		max_depth:			0_u8
 	} }
 }
 
-impl From<(&InflatedPuzzleState, Option<ShouldExplore>, IsEndState, u16, u8)> for Explorer {
+impl From<(&InflatedPuzzleState, Option<ShouldExplore>, IsEndState, GenusIndexBitArray, u8)> for Explorer {
 	fn from((
 		start_state,
 		should_explore,
@@ -328,7 +330,7 @@ impl From<(&InflatedPuzzleState, Option<ShouldExplore>, IsEndState, u16, u8)> fo
 		InflatedPuzzleState,
 		Option<ShouldExplore>,
 		IsEndState,
-		u16,
+		GenusIndexBitArray,
 		u8
 	)) -> Self {
 		Self {

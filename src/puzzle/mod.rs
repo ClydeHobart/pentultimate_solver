@@ -81,7 +81,7 @@ pub use {
 };
 
 pub mod transformation;
-pub mod explore;
+pub mod explorer;
 
 pub mod consts {
 	use {
@@ -492,8 +492,8 @@ pub mod inflated {
 
 	impl AddAssign<FullAddr> for PuzzleState {
 		fn add_assign(&mut self, rhs: FullAddr) -> () {
-			if let Some(trfm) = rhs.get_transformation() {
-				*self += trfm;
+			if let Some(transformation) = rhs.get_transformation() {
+				*self += transformation;
 			}
 		}
 	}

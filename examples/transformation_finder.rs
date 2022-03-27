@@ -3,13 +3,16 @@ use {
 		prelude::*,
 		puzzle::{
 			consts::*,
-			explore::{
+			explorer::{
 				Explorer,
 				IsEndState,
 				RunResult
 			},
 			transformation::{
 				GenusIndex,
+				GenusIndexConsts,
+				GenusIndexBitArray,
+				GenusIndexBitArrayConsts,
 				Library
 			},
 			// InflatedPieceStateComponent,
@@ -104,7 +107,7 @@ fn main() -> () {
 		&InflatedPuzzleState::SOLVED_STATE,
 		None,
 		Box::new(is_end_state) as IsEndState,
-		1_u16 << Type::Simple as u16,
+		GenusIndexBitArray::try_from([GenusIndex::SIMPLE].as_slice()).unwrap_or(GenusIndexBitArray::NONE),
 		0_u8
 	));
 

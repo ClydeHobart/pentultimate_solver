@@ -1,6 +1,9 @@
 use {
 	std::{
-		convert::TryFrom,
+		convert::{
+			TryFrom,
+			TryInto
+		},
 		fmt::{
 			Debug,
 			Formatter
@@ -22,6 +25,7 @@ use {
 		}
 	},
 	bevy::prelude::Quat,
+	bit_field::BitArray,
 	serde::{
 		Deserialize,
 		Deserializer,
@@ -138,6 +142,20 @@ impl DerefMut for GenusIndex { fn deref_mut(&mut self) -> &mut GenusIndexType { 
 
 impl From<GenusIndex> for usize { fn from(genus_index: GenusIndex) -> Self { genus_index.0 as Self } }
 
+impl<'a> TryFrom<&'a str> for GenusIndex {
+	type Error = ();
+
+	fn try_from(genus_index_str: &'a str) -> Result<Self, ()> {
+		for (genus_index, genus_info) in Library::get().genus_infos.iter().enumerate() {
+			if genus_index_str == genus_info.name {
+				return Ok(Self::from_usize(genus_index));
+			}
+		}
+
+		Err(())
+	}
+}
+
 impl TryFrom<GenusIndexType> for GenusIndex {
 	type Error = ();
 
@@ -149,6 +167,50 @@ impl TryFrom<GenusIndexType> for GenusIndex {
 		} else {
 			Err(())
 		}
+	}
+}
+
+pub trait GenusIndexBitArrayConsts {
+	type Block;
+	const SIZE:	usize;
+	const ALL:	GenusIndexBitArray;
+	const NONE:	GenusIndexBitArray;
+}
+
+pub struct GenusIndexBitArray(pub [<Self as GenusIndexBitArrayConsts>::Block; Self::SIZE]);
+
+impl GenusIndexBitArray {
+	#[inline(always)]
+	pub fn get_bit<G: Into<usize>>(&self, genus_index: G) -> bool { self.0.get_bit(genus_index.into()) }
+
+	#[inline(always)]
+	pub fn set_bit<G: Into<usize>>(&mut self, genus_index: GenusIndex, enabled: bool) -> () {
+		self.0.set_bit(genus_index.into(), enabled)
+	}
+
+	const fn size() -> usize {
+		(1_usize << GenusIndexType::BITS) / <Self as GenusIndexBitArrayConsts>::Block::BITS as usize
+	}
+}
+
+impl GenusIndexBitArrayConsts for GenusIndexBitArray {
+	type Block			= u32;
+	const SIZE:	usize	= Self::size();
+	const ALL:	Self	= GenusIndexBitArray([Self::Block::MAX; Self::SIZE]);
+	const NONE:	Self	= GenusIndexBitArray([Self::Block::MIN; Self::SIZE]);
+}
+
+impl<G: Copy + TryInto<GenusIndex>> From<&[G]> for GenusIndexBitArray {
+	fn from(genus_indices: &[G]) -> Self {
+		let mut genus_index_bit_array: Self = Self::NONE;
+
+		for genus_index in genus_indices {
+			if let Ok(genus_index) = TryInto::<GenusIndex>::try_into(*genus_index) {
+				genus_index_bit_array.set_bit::<GenusIndex>(genus_index, true);
+			}
+		}
+
+		genus_index_bit_array
 	}
 }
 
@@ -260,7 +322,7 @@ pub trait LibraryConsts {
 	const SPECIES_PER_GENUS:		usize;
 	const ORGANISMS_PER_GENUS:		usize;
 	const SPECIES_PER_LARGE_GENUS:	usize;
-	const GENERA_PER_SMALL_CLASS:		usize;
+	const GENERA_PER_SMALL_CLASS:	usize;
 }
 
 pub type Organism<T>	= T;
