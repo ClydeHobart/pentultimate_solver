@@ -214,6 +214,12 @@ impl<G: Copy + TryInto<GenusIndex>> From<&[G]> for GenusIndexBitArray {
 	}
 }
 
+/* With GenusIndexType as a u8, size_of::<GenusIndexBitArray>() == 32_usize. This is acceptable. With GenusIndexType as
+a u16, or some other integer type of greater or equal size, size_of::<GenusIndexBitArray>() >= 8192_usize. This is
+unacceptable. If there's a need to increase the bit count of GenusIndexType to be greater than 8, GenusIndexBitArray
+should be modified to be a dynamically allocated bit vector. */
+assert_type_eq_all!(GenusIndexType, u8);
+
 pub struct GenusIndexString(pub GenusIndex);
 
 impl<'de> Deserialize<'de> for GenusIndexString {
