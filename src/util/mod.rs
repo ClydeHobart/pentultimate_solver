@@ -46,7 +46,11 @@ use {
 		mem::transmute,
 		path::Path,
 		str,
-		time::Duration
+		sync::Once,
+		time::{
+			Duration,
+			Instant
+		}
 	},
 	num_format::{
 		Buffer,
@@ -317,18 +321,59 @@ impl<T, E> ToOption<T> for Result<T, E> where E: Debug {
 	}
 }
 
-pub trait StaticDataLibrary {
-	/// Initializes the data if it needs to, otherwise does nothing
-	fn initialize() -> ();
-	/// Calls `initialize()`, then returns `get()`
-	fn initialize_and_get() -> &'static Self {
-		Self::initialize();
+pub trait StaticDataLibrary: 'static {
+	fn pre_init() -> Option<Box<dyn FnOnce() -> ()>> { None }
 
-		Self::get()
-	}
-  
-	/// Fetches the data, assuming it has already been initialized
+	fn init() -> Option<Box<dyn FnOnce() -> ()>> { Some(Box::new(|| -> () { Self::get(); })) }
+
+	fn post_init() -> Option<Box<dyn FnOnce() -> ()>> { None }
+
 	fn get() -> &'static Self;
+
+	fn get_once() -> Option<&'static Once> { None /* Some types utilize lazy_static!, which maintains its own Once */ }
+
+	fn build() -> () {
+		let build = || -> () {
+			macro_rules! call_build_stage {
+				($stage:ident) => {
+					{
+						if let Some($stage) = Self::$stage() {
+							let start: Instant = Instant::now();
+	
+							$stage();
+	
+							let end: Instant = Instant::now();
+				
+							::log::info!("StaticDataLibrary::{}() called for {} in {}",
+								stringify!($stage),
+								std::any::type_name::<Self>(),
+								String::from_alt(end - start)
+							);
+						}
+					}
+				}
+			}
+			
+			let start: Instant = Instant::now();
+	
+			call_build_stage!(pre_init);
+			call_build_stage!(init);
+			call_build_stage!(post_init);
+	
+			let end: Instant = Instant::now();
+	
+			::log::info!("StaticDataLibrary::build() called for {} in {}",
+				std::any::type_name::<Self>(),
+				String::from_alt(end - start)
+			);
+		};
+
+		if let Some(once) = Self::get_once() {
+			once.call_once(build);
+		} else {
+			build();
+		}
+	}
 }
 
 pub fn to_pretty_string<T: Debug + Sized>(value: T) -> String { format!("{:#?}", value) }

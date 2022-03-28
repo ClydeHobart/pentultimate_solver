@@ -1,9 +1,8 @@
-use super::transformation::Addr;
-
 use {
 	crate::util::FromAlt,
 	super::{
 		transformation::{
+			Addr,
 			FullAddr,
 			GenusIndex,
 			GenusIndexBitArray,
@@ -13,7 +12,8 @@ use {
 			LibraryConsts
 		},
 		DeflatedPuzzleState,
-		InflatedPuzzleState
+		InflatedPuzzleState,
+		InflatedPuzzleStateConsts
 	},
 	std::{
 		collections::{
@@ -49,6 +49,31 @@ pub enum RunResult {
 	DidNotFinish(DidNotFinishError)
 }
 
+pub struct ExplorerParams<'a> {
+	pub start_state:		&'a InflatedPuzzleState,
+	pub should_explore:		Option<ShouldExplore>,
+	pub is_end_state:		IsEndState,
+	pub candidate_genera:	GenusIndexBitArray,
+	pub max_depth:			u8
+}
+
+impl Default for ExplorerParams<'static> {
+	fn default() -> Self { Self {
+		start_state:		&Explorer::START_STATE,
+		should_explore:		Explorer::SHOULD_EXPLORE,
+		is_end_state:		Explorer::default_is_end_state(),
+		candidate_genera:	Explorer::CANDIDATE_GENERA,
+		max_depth:			Explorer::MAX_DEPTH
+	} }
+}
+
+trait ExplorerConsts {
+	const START_STATE:		InflatedPuzzleState;
+	const SHOULD_EXPLORE:	Option<ShouldExplore>;
+	const CANDIDATE_GENERA:	GenusIndexBitArray;
+	const MAX_DEPTH:		u8;
+}
+
 pub struct Explorer {
 	state_queue:		VecDeque<DeflatedPuzzleState>,
 	path_queue:			VecDeque<u8>, // Stored as [depth byte][depth FullAddr payload bytes]
@@ -68,15 +93,33 @@ pub struct Explorer {
 
 impl Explorer {
 	#[inline]
-	pub fn init(
-		&mut self,
-		start_state:		&InflatedPuzzleState,
-		should_explore:		Option<ShouldExplore>,
-		is_end_state:		IsEndState,
-		candidate_genera:	GenusIndexBitArray,
-		max_depth:			u8
-	) -> () {
-		*self = Self::from((start_state, should_explore, is_end_state, candidate_genera, max_depth));
+	pub fn init<'a>(&mut self, params: ExplorerParams<'a>) -> () { *self = Self::new(params); }
+
+	pub fn new<'a>(params: ExplorerParams<'a>) -> Self {
+		let ExplorerParams {
+			start_state,
+			should_explore,
+			is_end_state,
+			candidate_genera,
+			max_depth
+		} = params;
+
+		Self {
+			state_queue:	VecDeque::<DeflatedPuzzleState>::from([DeflatedPuzzleState::from(start_state)]),
+			path_queue:		VecDeque::<u8>::from([0_u8]),
+			seen:			HashSet::from([{
+				let mut start_state: InflatedPuzzleState = start_state.clone();
+
+				start_state.standardize();
+
+				DeflatedPuzzleState::from(&start_state)
+			}]),
+			should_explore,
+			is_end_state,
+			candidate_genera,
+			max_depth,
+			.. Self::default()
+		}
 	}
 
 	#[inline]
@@ -298,6 +341,15 @@ impl Explorer {
 	}
 
 	pub fn run_result(&self) -> &RunResult { &self.run_result }
+
+	fn default_is_end_state() -> IsEndState { Box::new(|_: &InflatedPuzzleState| -> bool { true }) }
+}
+
+impl ExplorerConsts for Explorer {
+	const START_STATE:		InflatedPuzzleState		= InflatedPuzzleState::SOLVED_STATE;
+	const SHOULD_EXPLORE:	Option<ShouldExplore>	= None;
+	const CANDIDATE_GENERA:	GenusIndexBitArray		= GenusIndexBitArray::ALL;
+	const MAX_DEPTH:		u8						= 0_u8;
 }
 
 impl Default for Explorer {
@@ -305,49 +357,16 @@ impl Default for Explorer {
 		state_queue:		VecDeque::<DeflatedPuzzleState>::new(),
 		path_queue:			VecDeque::<u8>::new(),
 		seen:				HashSet::<DeflatedPuzzleState>::new(),
-		should_explore:		None,
-		is_end_state:		Box::new(|_: &InflatedPuzzleState| -> bool { true }),
+		should_explore:		Self::SHOULD_EXPLORE,
+		is_end_state:		Self::default_is_end_state(),
 		elapsed:			Duration::ZERO,
 		depth_elapsed:		Duration::ZERO,
 		run_result:			RunResult::Pending,
 		cycle:				0_u64,
 		states:				0_u64,
 		depth_states:		0_u64,
-		candidate_genera:	GenusIndexBitArray::ALL,
+		candidate_genera:	Self::CANDIDATE_GENERA,
 		depth:				0_u8,
-		max_depth:			0_u8
+		max_depth:			Self::MAX_DEPTH
 	} }
-}
-
-impl From<(&InflatedPuzzleState, Option<ShouldExplore>, IsEndState, GenusIndexBitArray, u8)> for Explorer {
-	fn from((
-		start_state,
-		should_explore,
-		is_end_state,
-		candidate_genera,
-		max_depth
-	): (&
-		InflatedPuzzleState,
-		Option<ShouldExplore>,
-		IsEndState,
-		GenusIndexBitArray,
-		u8
-	)) -> Self {
-		Self {
-			state_queue:	VecDeque::<DeflatedPuzzleState>::from([DeflatedPuzzleState::from(start_state)]),
-			path_queue:		VecDeque::<u8>::from([0_u8]),
-			seen:			HashSet::from([{
-				let mut start_state: InflatedPuzzleState = start_state.clone();
-
-				start_state.standardize();
-
-				DeflatedPuzzleState::from(&start_state)
-			}]),
-			should_explore,
-			is_end_state,
-			candidate_genera,
-			max_depth,
-			.. Self::default()
-		}
-	}
 }

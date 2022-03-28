@@ -1052,5 +1052,5 @@ impl<A : Addr + Sized, T> GetWord<A, T> for Class<T> {
 pub struct TransformationPlugin;
 
 impl Plugin for TransformationPlugin {
-	fn build(&self, _: &mut App) -> () { <Library as StaticDataLibrary>::initialize(); }
+	fn build(&self, _: &mut App) -> () { <Library as StaticDataLibrary>::build(); }
 }

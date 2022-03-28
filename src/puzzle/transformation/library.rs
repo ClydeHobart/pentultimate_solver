@@ -18,11 +18,7 @@ use {
 			DerefMut,
 			Range
 		},
-		sync::{
-			Mutex,
-			MutexGuard,
-			PoisonError
-		}
+		sync::Once
 	},
 	bevy::prelude::Quat,
 	bit_field::BitArray,
@@ -370,46 +366,46 @@ impl Library {
 	pub fn get_transformation(full_addr: FullAddr) -> &'static Transformation {
 		debug_assert!(full_addr.is_valid());
 
-		Self::get().transformations.get_word(full_addr)
+		Library::get().transformations.get_word(full_addr)
 	}
 
 	#[inline(always)]
 	pub fn get_mask(full_addr: FullAddr) -> &'static Mask {
 		debug_assert!(full_addr.is_valid());
 
-		Self::get().masks.get_word(full_addr)
+		Library::get().masks.get_word(full_addr)
 	}
 
 	#[inline(always)]
 	pub fn get_inverse_addr(full_addr: FullAddr) -> &'static FullAddr {
 		debug_assert!(full_addr.is_valid());
 
-		Self::get().inverse_addrs.get_word(full_addr)
+		Library::get().inverse_addrs.get_word(full_addr)
 	}
 
 	#[inline(always)]
 	pub fn get_rotation(full_addr: FullAddr) -> &'static Quat {
 		debug_assert!(full_addr.is_valid() && full_addr.get_genus_index() < Self::GENERA_PER_SMALL_CLASS);
 
-		Self::get().rotations.get_word(full_addr)
+		Library::get().rotations.get_word(full_addr)
 	}
 
 	#[inline(always)]
 	pub fn get_orientation(half_addr: HalfAddr) -> &'static Quat {
 		debug_assert!(half_addr.is_valid());
 
-		Self::get().orientations.get_word(half_addr)
+		Library::get().orientations.get_word(half_addr)
 	}
 
 	#[inline(always)]
 	pub fn get_simple_slice(full_addr: FullAddr) -> &'static [HalfAddr] {
 		debug_assert!(full_addr.is_valid());
 
-		get_simple_slice(Self::get(), full_addr)
+		get_simple_slice(&Library::get(), full_addr)
 	}
 
 	#[inline(always)]
-	pub fn get_genus_count() -> usize { return Self::get().genus_infos.len() }
+	pub fn get_genus_count() -> usize { return Library::get().genus_infos.len() }
 
 	fn get_simple_slice_genus(&self, genus_index: GenusIndex) -> Option<Box<Genus<SimpleSlice>>> {
 		let simples_range: Range<usize> = {
@@ -550,8 +546,6 @@ impl Library {
 	}
 
 	fn initialize(&mut self) -> () {
-		Data::initialize();
-
 		self.family_infos		= Vec::<FamilyInfo>::new();
 		self.genus_infos		= Vec::<GenusInfo>::with_capacity(Self::GENERA_PER_SMALL_CLASS);
 		self.simples			= Vec::<HalfAddr>::with_capacity(Self::ORGANISMS_PER_GENUS);
@@ -996,36 +990,33 @@ impl LibraryConsts for Library {
 	const GENERA_PER_SMALL_CLASS:	usize = GenusIndex::COMPLEX_OFFSET;
 }
 
-static mut LIBRARY: MaybeUninit<Library> = MaybeUninit::<Library>::uninit();
-
-lazy_static! {
-	static ref LIBRARY_MUTEX: Mutex<bool> = Mutex::<bool>::new(false);
-}
-
+/* Library needs a more complicated setup because Library::initialize() relies on Library::get(), so a lazy_static won't
+suffice */
 impl StaticDataLibrary for Library {
-	fn initialize() -> () {
-		let mut mutex_guard: MutexGuard<bool> = LIBRARY_MUTEX
-			.lock()
-			.unwrap_or_else(PoisonError::<MutexGuard<bool>>::into_inner);
+	fn pre_init() -> Option<Box<dyn FnOnce() -> ()>> { Some(Box::new(|| -> () { Data::initialize(); }))}
 
-		if !*mutex_guard {
-			unsafe {
-				LIBRARY = MaybeUninit::<Library>::new(Library {
-					.. Default::default()
-				});
-				LIBRARY.assume_init_mut()
-			}.initialize();
+	fn init() -> Option<Box<dyn FnOnce() -> ()>> { Some(Box::new(|| -> () {
+		unsafe {
+			LIBRARY = MaybeUninit::<Library>::new(Library::default());
 
-			*mutex_guard = true;
+			LIBRARY.assume_init_mut().initialize();
 		}
-	}
+	}))}
 
 	fn get() -> &'static Self { unsafe { LIBRARY.assume_init_ref() } }
+
+	fn get_once() -> Option<&'static Once> { Some(&LIBRARY_ONCE) }
 }
+
+static mut LIBRARY: MaybeUninit<Library> = MaybeUninit::<Library>::uninit();
+static LIBRARY_ONCE: Once = Once::new();
 
 #[cfg(test)]
 mod tests {
-	use super::*;
+	use {
+		super::*,
+		crate::util::StaticDataLibrary
+	};
 
 	fn test_validity() -> () {
 		let library: &Library = Library::get();
@@ -1395,7 +1386,7 @@ mod tests {
 	#[test]
 	fn test_transformation_library() -> () {
 		init_env_logger();
-		<Library as StaticDataLibrary>::initialize();
+		<Library as StaticDataLibrary>::build();
 		test_validity();
 
 		/* Though Type::Reorientation is listed before Simple (intentionally: it doesn't actually change the

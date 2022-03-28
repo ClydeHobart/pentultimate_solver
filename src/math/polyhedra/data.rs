@@ -11,16 +11,16 @@ use {
 				PolyhedronOption
 			}
 		},
-		prelude::*
+		prelude::*,
+		util::StaticDataLibrary
 	},
 	std::{
 		f32::consts::TAU,
-		mem::MaybeUninit,
-		sync::{
-			Mutex,
-			MutexGuard,
-			PoisonError
-		}
+		mem::{
+			MaybeUninit,
+			transmute
+		},
+		sync::Once
 	},
 	bevy::{
 		prelude::*,
@@ -135,13 +135,13 @@ pub struct Data {
 pub type OptionalPredicate<T> = Option<Box<dyn Fn(&T) -> bool>>;
 
 impl Data {
+	pub fn initialize() -> () { DataLibrary::build(); }
+
 	/// get()
 	/// 
 	/// It is the caller's responsibility to ensure Data::initialize() was called first. Calling it a second time
 	/// has no side effects
-	pub fn get(polyhedron: Polyhedron) -> &'static Self { &DataLibrary::get()[polyhedron as usize] }
-
-	pub fn initialize() -> () { DataLibrary::initialize(); }
+	pub fn get(polyhedron: Polyhedron) -> &'static Self { &DataLibrary::get().0[polyhedron as usize] }
 
 	pub fn get_closest_vert_index(&self, vec: &Vec3, filter: OptionalPredicate<VertexData>) -> usize {
 		Data::get_closest_vert_index_for_verts(&self.verts, vec, filter)
@@ -1004,59 +1004,47 @@ impl<'a> DataBuilder<'a> {
 	}
 }
 
-struct DataLibrary(MaybeUninit<[Data; 4]>);
-
-static mut DATA_LIBRARY: DataLibrary = DataLibrary(MaybeUninit::<[Data; 4]>::uninit());
-
-lazy_static! {
-	static ref DATA_LIBRARY_MUTEX: Mutex<bool> = Mutex::new(false);
-}
+struct DataLibrary([Data; 4_usize]);
 
 impl DataLibrary {
-	fn get() -> &'static [Data; 4] { unsafe { <DataLibrary as StaticDataLibrary>::get().0.assume_init_ref() } }
-}
+	fn new() -> Self {
+		let mut data_array: [MaybeUninit<Data>; 4_usize] = unsafe {
+			MaybeUninit::<[MaybeUninit<Data>; 4_usize]>::uninit().assume_init()
+		};
 
-impl StaticDataLibrary for DataLibrary {
-	fn initialize() -> () {
-		let mut mutex_guard: MutexGuard<bool> = DATA_LIBRARY_MUTEX
-			.lock()
-			.unwrap_or_else(PoisonError::<MutexGuard<bool>>::into_inner);
-
-		if !*mutex_guard {
-			unsafe {
-				let data_array: &mut [Data; 4] = DATA_LIBRARY.0.assume_init_mut();
-
-				for polyhedron_usize in 0_usize .. 4_usize {
-					let data: &mut Data = &mut data_array[polyhedron_usize];
-
-					*data = Data {
+		for (polyhedron_index, data) in data_array.iter_mut().enumerate() {
+			DataBuilder {
+				data: unsafe {
+					std::ptr::write(data.as_mut_ptr(), Data {
 						verts:			Vec::<VertexData>::new(),
 						edges:			Vec::<EdgeData>::new(),
 						vert_indices:	Vec::<usize>::new(),
 						faces:			Vec::<FaceData>::new()
-					};
-
-					DataBuilder {
-						data,
-						polyhedron: PolyhedronOption::from(polyhedron_usize as u8).0.unwrap()
-					}.generate();
-				}
-
-				*mutex_guard = true;
-			}
+					});
+	
+					data.assume_init_mut()
+				},
+				polyhedron: PolyhedronOption::from(polyhedron_index as u8).0.unwrap()
+			}.generate();
 		}
-	}
 
-	fn get() -> &'static Self {
-		unsafe { &DATA_LIBRARY }
+		DataLibrary(unsafe { transmute::<[MaybeUninit<Data>; 4_usize], [Data; 4_usize]>(data_array) })
 	}
+}
+
+impl StaticDataLibrary for DataLibrary {
+	fn get() -> &'static Self { &DATA_LIBRARY }
+}
+
+lazy_static! {
+	static ref DATA_LIBRARY: DataLibrary = DataLibrary::new();
 }
 
 pub struct DataPlugin;
 
 impl Plugin for DataPlugin {
 	fn build(&self, _app: &mut App) -> () {
-		DataLibrary::initialize();
+		DataLibrary::build();
 	}
 }
 

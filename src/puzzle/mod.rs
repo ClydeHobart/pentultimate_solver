@@ -80,8 +80,9 @@ pub use {
 	transformation::TransformationPlugin,
 };
 
-pub mod transformation;
 pub mod explorer;
+pub mod solver;
+pub mod transformation;
 
 pub mod consts {
 	use {

@@ -37,12 +37,16 @@ pub mod prelude {
 		},
 		puzzle::{
 			transformation::{
+				Addr,
 				FullAddr,
 				HalfAddr,
 				Library as TransformationLibrary,
-				GenusIndex
+				GenusIndex,
+				GenusIndexConsts
 			},
 			ExtendedPuzzleState,
+			InflatedPuzzleState,
+			InflatedPuzzleStateConsts,
 			PuzzlePlugin,
 			TransformationPlugin
 		},

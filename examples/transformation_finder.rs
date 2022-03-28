@@ -5,6 +5,7 @@ use {
 			consts::*,
 			explorer::{
 				Explorer,
+				ExplorerParams,
 				IsEndState,
 				RunResult
 			},
@@ -15,10 +16,7 @@ use {
 				GenusIndexBitArrayConsts,
 				Library
 			},
-			// InflatedPieceStateComponent,
-			InflatedPuzzleState,
-			// InflatedPuzzleStateComponent,
-			InflatedPuzzleStateConsts
+			InflatedPuzzleState
 		},
 		util::StaticDataLibrary
 	}
@@ -101,15 +99,14 @@ fn is_end_state(inflated_puzzle_state: &InflatedPuzzleState) -> bool {
 
 fn main() -> () {
 	init_env_logger();
-	<Library as StaticDataLibrary>::initialize();
+	<Library as StaticDataLibrary>::build();
 
-	let mut explorer: Explorer = Explorer::from((
-		&InflatedPuzzleState::SOLVED_STATE,
-		None,
-		Box::new(is_end_state) as IsEndState,
-		GenusIndexBitArray::try_from([GenusIndex::SIMPLE].as_slice()).unwrap_or(GenusIndexBitArray::NONE),
-		0_u8
-	));
+	let mut explorer: Explorer = Explorer::new(ExplorerParams {
+		is_end_state: Box::new(is_end_state) as IsEndState,
+		candidate_genera: GenusIndexBitArray::try_from([GenusIndex::SIMPLE].as_slice())
+			.unwrap_or(GenusIndexBitArray::NONE),
+		.. ExplorerParams::default()
+	});
 
 	// let cycle_duration: Option<Duration> = Some(Duration::from_millis(32_u64));
 
