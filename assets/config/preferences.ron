@@ -64,4 +64,8 @@ Preferences(
 		),
 		solver_cycle_duration_millis:	30.0
 	),
+	tools:				[
+		PuzzleState,
+		Stack
+	],
 )

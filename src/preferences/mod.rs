@@ -25,7 +25,7 @@ use {
 };
 
 #[cfg(debug_assertions)]
-use crate::debug::DebugModes;
+use crate::debug::ToolsData;
 
 pub use {
 	crate::{
@@ -90,7 +90,7 @@ pub struct FileMenuData {
 		collapse
 	)]
 	pub random_transformation_genera:	RandomTransformationGenera,
-	#[inspectable(min = 1, max = 100)]
+	#[inspectable(min = 1_u8, max = 100_u8)]
 	pub random_transformation_count:	u8,
 	pub randomization_type:				RandomizationType
 }
@@ -108,7 +108,7 @@ impl Default for FileMenuData {
 define_struct_with_default!(
 	#[derive(Clone, Deserialize, Inspectable, PartialEq)]
 	pub struct AnimationSpeedData {
-		#[inspectable(min = 0, max = 2000)]
+		#[inspectable(min = 0_u32, max = 2000_u32)]
 		pub rotation_millis:					u32		= 250_u32,
 
 		pub uniform_transformation_duration:	bool	= false,
@@ -120,10 +120,10 @@ define_struct_with_default!(
 define_struct_with_default!(
 	#[derive(Clone, Deserialize, Inspectable, PartialEq)]
 	pub struct CameraSpeedData {
-		#[inspectable(min = 1, max = 100)]
+		#[inspectable(min = 1_u32, max = 100_u32)]
 		pub pan_speed:							u32		= 50_u32,
 
-		#[inspectable(min = 1, max = 100)]
+		#[inspectable(min = 1_u32, max = 100_u32)]
 		pub roll_speed:							u32		= 50_u32
 	}
 );
@@ -136,6 +136,7 @@ pub struct SpeedData {
 	#[inspectable(collapse)]
 	pub animation:						AnimationSpeedData,
 
+	#[inspectable(min = 1.0_f32, max = 60.0_f32)]
 	pub solver_cycle_duration_millis:	f32
 }
 
@@ -151,11 +152,8 @@ pub struct Preferences {
 	pub light_and_camera:	LightAndCameraData,
 	#[inspectable(collapse)]
 	pub speed:				SpeedData,
-
-	#[cfg(debug_assertions)]
 	#[inspectable(collapse)]
-	#[serde(skip, default = "DebugModes::default")]
-	pub debug_modes:		DebugModes,
+	pub tools:				ToolsData,
 }
 
 impl Update for Preferences {

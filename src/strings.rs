@@ -45,20 +45,6 @@ define_struct_with_default!(
 	}
 );
 
-#[cfg(debug_assertions)]
-pub mod debug {
-	use super::*;
-
-	define_struct_with_default!(
-		#[derive(Deserialize)]
-		pub struct Debug<String> {
-			pub debug_modes				= config!("debugModes.ron")
-		}
-	);
-
-	impl Debug { pub fn default() -> Self { Self::from_file_or_default(config!("debugStringData.ron")) } }
-}
-
 #[cfg(test)]
 pub mod test {
 	use super::*;
@@ -78,10 +64,6 @@ pub struct StringData {
 	pub files:	Files,
 	pub labels:	Labels,
 	pub misc:	Misc,
-
-	#[cfg(debug_assertions)]
-	#[serde(skip, default = "debug::Debug::default")]
-	pub debug:	debug::Debug,
 
 	#[cfg(test)]
 	#[serde(skip, default = "test::Test::default")]

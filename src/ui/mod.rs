@@ -57,8 +57,8 @@ use {
 
 #[cfg(debug_assertions)]
 use crate::debug::prelude::{
-	DebugMode,
-	DebugModeDataBox,
+	Tool,
+	ToolDataBox,
 	Stack
 };
 
@@ -313,7 +313,7 @@ impl UIPlugin {
 		Self::render_action_stack(&mut context.with_id(1_u64));
 
 		#[cfg(debug_assertions)]
-		Self::render_debug_modes(&mut context.with_id(2_u64));
+		Self::render_tools(&mut context.with_id(2_u64));
 	}
 
 	fn render_input_state(context: &mut Context) -> () {
@@ -393,11 +393,11 @@ impl UIPlugin {
 							let stack_debug: Option<&Stack> = context
 								.world()
 								.and_then(World::get_resource::<Preferences>)
-								.and_then(|preferences: &Preferences| -> Option<&DebugModeDataBox> {
-									preferences.debug_modes.get_debug_mode_data(DebugMode::Stack)
+								.and_then(|preferences: &Preferences| -> Option<&ToolDataBox> {
+									preferences.tools.get_tool_data(Tool::Stack)
 								})
-								.and_then(|debug_mode_data_box: &DebugModeDataBox| -> Option<&Stack> {
-									debug_mode_data_box.as_any().downcast_ref::<Stack>()
+								.and_then(|tool_data_box: &ToolDataBox| -> Option<&Stack> {
+									tool_data_box.as_any().downcast_ref::<Stack>()
 								});
 
 							for (action_index, action)
@@ -488,16 +488,16 @@ impl UIPlugin {
 	}
 
 	#[cfg(debug_assertions)]
-	fn render_debug_modes(context: &mut Context) -> () {
+	fn render_tools(context: &mut Context) -> () {
 		const OFFSET: f32 = 20.0_f32;
-		const DEBUG_MODES_OFFSET: Vec2 = Vec2::new(OFFSET, OFFSET);
+		const TOOLS_OFFSET: Vec2 = Vec2::new(OFFSET, OFFSET);
 		const FILL_ALPHA: u8 = 0xC0_u8;
 
 		let mut preferences: Mut<Preferences> = log_option_none!(
 			unsafe { context.world_mut() }.and_then(World::get_resource_mut::<Preferences>)
 		);
 
-		if !preferences.debug_modes.should_render() {
+		if !preferences.tools.should_render() {
 			return;
 		}
 
@@ -576,11 +576,11 @@ impl UIPlugin {
 		curr_style.visuals.window_shadow = epaint::Shadow::default();
 		curr_style.wrap = Some(false);
 		ctx_ref.set_style(curr_style);
-		egui::Window::new("DebugModes")
-			.anchor(egui::Align2::LEFT_TOP, DEBUG_MODES_OFFSET)
+		egui::Window::new("Tools")
+			.anchor(egui::Align2::LEFT_TOP, TOOLS_OFFSET)
 			.title_bar(false)
 			.show(ctx_ref, |ui: &mut Ui| -> () {
-				preferences.debug_modes.render(ui, context);
+				preferences.tools.render(ui, context);
 			});
 		context.ui_ctx.unwrap().set_style(prev_style);
 	}

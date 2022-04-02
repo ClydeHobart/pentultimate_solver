@@ -60,10 +60,10 @@ mod uses {
 pub mod prelude {
 	pub use super::{
 		data::{
-			DebugModeDataBox,
+			ToolDataBox,
 			Stack
 		},
-		DebugMode
+		Tool
 	};
 }
 
@@ -72,59 +72,59 @@ use self::{
 	data::*
 };
 
-type DebugModeInner = u8;
+type ToolInner = u8;
 
-macro_rules! define_debug_mode {
-	($($debug_mode:ident),*) => {
+macro_rules! define_tool {
+	($($tool:ident),*) => {
 		#[derive(Clone, Copy, Deserialize, PartialEq)]
-		pub enum DebugMode {
+		pub enum Tool {
 			$(
-				$debug_mode,
+				$tool,
 			)*
 		}
 
-		const fn debug_mode_count() -> usize {
+		const fn tool_count() -> usize {
 			#![allow(path_statements)]
 
 			let mut count: usize = 0_usize;
 
 			$(
-				DebugMode::$debug_mode;
+				Tool::$tool;
 				count += 1_usize;
 			)*
 
 			count
 		}
 
-		impl DebugMode {
+		impl Tool {
 			fn as_str(self) -> &'static str {
-				const DEBUG_MODE_STRS: [&str; DEBUG_MODE_COUNT] = [
+				const TOOL_STRS: [&str; TOOL_COUNT] = [
 					$(
-						stringify!($debug_mode),
+						stringify!($tool),
 					)*
 				];
 
-				DEBUG_MODE_STRS[self as usize]
+				TOOL_STRS[self as usize]
 			}
 
-			fn new_data(self) -> DebugModeDataBox {
+			fn new_data(self) -> ToolDataBox {
 				match self {
 					$(
-						Self::$debug_mode => Box::new(<data::$debug_mode>::default()) as DebugModeDataBox,
+						Self::$tool => Box::new(<data::$tool>::default()) as ToolDataBox,
 					)*
 				}
 			}
 
-			fn data_eq_impl(lhs: &dyn DebugModeData, rhs: &dyn DebugModeData) -> bool {
-				if lhs.debug_mode() == rhs.debug_mode() {
+			fn data_eq_impl(lhs: &dyn ToolData, rhs: &dyn ToolData) -> bool {
+				if lhs.tool() == rhs.tool() {
 					let lhs_any: &dyn Any = lhs.as_any();
 					let rhs_any: &dyn Any = rhs.as_any();
 
-					match lhs.debug_mode() {
+					match lhs.tool() {
 						$(
-							DebugMode::$debug_mode => {
-								let lhs_data: Option<&$debug_mode> = lhs_any.downcast_ref::<$debug_mode>();
-								let rhs_data: Option<&$debug_mode> = rhs_any.downcast_ref::<$debug_mode>();
+							Tool::$tool => {
+								let lhs_data: Option<&$tool> = lhs_any.downcast_ref::<$tool>();
+								let rhs_data: Option<&$tool> = rhs_any.downcast_ref::<$tool>();
 
 								lhs_data.is_some() && rhs_data.is_some() && *lhs_data.unwrap() == *rhs_data.unwrap()
 							},
@@ -137,12 +137,12 @@ macro_rules! define_debug_mode {
 		}
 
 		$(
-			impl DebugModeData for $debug_mode {
-				fn debug_mode(&self) -> DebugMode { DebugMode::$debug_mode }
+			impl ToolData for $tool {
+				fn tool(&self) -> Tool { Tool::$tool }
 
-				fn clone_impl(&self) -> DebugModeDataBox { Box::new(self.clone()) as DebugModeDataBox }
+				fn clone_impl(&self) -> ToolDataBox { Box::new(self.clone()) as ToolDataBox }
 
-				fn as_debug_mode_data(&self) -> &dyn DebugModeData { self }
+				fn as_tool_data(&self) -> &dyn ToolData { self }
 
 				fn as_any(&self) -> &dyn Any { self }
 			}
@@ -150,25 +150,24 @@ macro_rules! define_debug_mode {
 	};
 }
 
-define_debug_mode!(
+define_tool!(
 	PuzzleState,
 	Stack
 );
 
-const DEBUG_MODE_COUNT: usize = debug_mode_count();
+const TOOL_COUNT: usize = tool_count();
 
-const_assert!(DEBUG_MODE_COUNT <= DebugModeInner::MAX as usize);
+const_assert!(TOOL_COUNT <= ToolInner::MAX as usize);
 
 mod data {
 	use crate::puzzle::transformation::Addr;
 
 	use super::{
 		uses::*,
-		DebugMode
+		Tool
 	};
 
-	// We need this trait to be able to restrict DebugModeData with it while still have DebugModeDataBox still compile,
-	// since Inspectable::setup() has no self argument
+	// We need this trait to be able to restrict ToolData with it while still have ToolDataBox still compile, since Inspectable::setup() has no self argument
 	pub trait InvokeUi {
 		fn invoke_ui(&mut self, ui: &mut Ui, context: &mut Context) -> bool;
 	}
@@ -177,29 +176,29 @@ mod data {
 		fn invoke_ui(&mut self, ui: &mut Ui, context: &mut Context) -> bool { self.ui(ui, (), context) }
 	}
 
-	pub trait DebugModeData: InvokeUi {
-		fn debug_mode(&self) -> DebugMode;
+	pub trait ToolData: InvokeUi {
+		fn tool(&self) -> Tool;
 
-		fn clone_impl(&self) -> DebugModeDataBox;
+		fn clone_impl(&self) -> ToolDataBox;
 
-		fn as_debug_mode_data(&self) -> &dyn DebugModeData;
+		fn as_tool_data(&self) -> &dyn ToolData;
 
 		fn as_any(&self) -> &dyn Any;
 
-		fn eq_impl(&self, other: &dyn DebugModeData) -> bool {
-			DebugMode::data_eq_impl(self.as_debug_mode_data(), other)
+		fn eq_impl(&self, other: &dyn ToolData) -> bool {
+			Tool::data_eq_impl(self.as_tool_data(), other)
 		}
 	}
 
-	pub type DebugModeDataBox = Box<dyn DebugModeData + Send + Sync>;
+	pub type ToolDataBox = Box<dyn ToolData + Send + Sync>;
 
-	impl Clone for DebugModeDataBox {
+	impl Clone for ToolDataBox {
 		fn clone(&self) -> Self { self.clone_impl() }
 	}
 
-	impl PartialEq for DebugModeDataBox {
-		fn eq(&self, other: &DebugModeDataBox) -> bool {
-			DebugMode::data_eq_impl(&**self, &**other)
+	impl PartialEq for ToolDataBox {
+		fn eq(&self, other: &ToolDataBox) -> bool {
+			Tool::data_eq_impl(&**self, &**other)
 		}
 	}
 
@@ -559,40 +558,40 @@ mod data {
 	}
 }
 
-impl TryFrom<usize> for DebugMode {
+impl TryFrom<usize> for Tool {
 	type Error = usize;
 
 	fn try_from(value: usize) -> Result<Self, Self::Error> {
-		if value < DEBUG_MODE_COUNT {
-			Ok(unsafe { transmute::<DebugModeInner, Self>(value as DebugModeInner) })
+		if value < TOOL_COUNT {
+			Ok(unsafe { transmute::<ToolInner, Self>(value as ToolInner) })
 		} else {
 			// Return how much out of range the value is
-			Err(value - DEBUG_MODE_COUNT + 1_usize)
+			Err(value - TOOL_COUNT + 1_usize)
 		}
 	}
 }
 
-type DebugModesInner = u32;
+type ToolsInner = u32;
 
 #[derive(Clone, Default)]
-pub struct DebugModes {
-	active_debug_modes:	DebugModesInner,
-	debug_mode_data:	Vec<DebugModeDataBox>
+pub struct ToolsData {
+	active_tools:	ToolsInner,
+	tool_data:	Vec<ToolDataBox>
 }
 
-const_assert!(DEBUG_MODE_COUNT <= DebugModesInner::BITS as usize);
+const_assert!(TOOL_COUNT <= ToolsInner::BITS as usize);
 
-impl DebugModes {
-	pub fn should_render(&self) -> bool { !self.debug_mode_data.is_empty() }
+impl ToolsData {
+	pub fn should_render(&self) -> bool { !self.tool_data.is_empty() }
 
-	pub fn is_debug_mode_active(&self, debug_mode: DebugMode) -> bool {
-		self.active_debug_modes.get_bit(debug_mode as usize)
+	pub fn is_tool_active(&self, tool: Tool) -> bool {
+		self.active_tools.get_bit(tool as usize)
 	}
 
-	pub fn get_debug_mode_data(&self, debug_mode: DebugMode) -> Option<&DebugModeDataBox> {
-		if self.is_debug_mode_active(debug_mode) {
-			Some(&self.debug_mode_data[
-				(self.active_debug_modes & ((DebugModesInner::one() << debug_mode as u32) - DebugModesInner::one()))
+	pub fn get_tool_data(&self, tool: Tool) -> Option<&ToolDataBox> {
+		if self.is_tool_active(tool) {
+			Some(&self.tool_data[
+				(self.active_tools & ((ToolsInner::one() << tool as u32) - ToolsInner::one()))
 					.count_ones() as usize
 			])
 		} else {
@@ -601,81 +600,79 @@ impl DebugModes {
 	}
 
 	pub fn render(&mut self, ui: &mut Ui, context: &mut Context) -> () {
-		egui::CollapsingHeader::new("Debug Modes")
+		egui::CollapsingHeader::new("Tools")
 			.default_open(true)
 			.show(ui, |ui: &mut Ui| -> () {
-				let mut debug_mode_data_index: usize = 0_usize;
+				let mut tool_data_index: usize = 0_usize;
 
-				for debug_mode_index in 0_usize .. DEBUG_MODE_COUNT {
-					let debug_mode: DebugMode = DebugMode::try_from(debug_mode_index).unwrap();
+				for tool_index in 0_usize .. TOOL_COUNT {
+					let tool: Tool = Tool::try_from(tool_index).unwrap();
 
-					if self.is_debug_mode_active(debug_mode) {
+					if self.is_tool_active(tool) {
 						ui.collapsing(
-							debug_mode.as_str(),
+							tool.as_str(),
 							|ui: &mut Ui| -> () {
 								self
-									.debug_mode_data
-									[debug_mode_data_index]
-									.invoke_ui(ui, &mut context.with_id(debug_mode_data_index as u64));
+									.tool_data
+									[tool_data_index]
+									.invoke_ui(ui, &mut context.with_id(tool_data_index as u64));
 							}
 						);
-						debug_mode_data_index += 1_usize;
+						tool_data_index += 1_usize;
 					}
 				}
 			});
 	}
-
-	pub fn default() -> Self { Self::from_file_or_default(STRING_DATA.debug.debug_modes.as_str()) }
 }
 
-impl<'de> Deserialize<'de> for DebugModes {
+impl<'de> Deserialize<'de> for ToolsData {
 	fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-		let mut debug_modes: Self = <Self as Default>::default();
+		let mut tools: Self = <Self as Default>::default();
 
-		for debug_mode in Vec::<DebugMode>::deserialize(deserializer)? {
-			debug_modes.active_debug_modes.set_bit(debug_mode as usize, true);
+		for tool in Vec::<Tool>::deserialize(deserializer)? {
+			tools.active_tools.set_bit(tool as usize, true);
 		}
 
-		for debug_mode_index in 0_usize .. DEBUG_MODE_COUNT {
-			if debug_modes.active_debug_modes.get_bit(debug_mode_index) {
-				debug_modes.debug_mode_data.push(DebugMode::try_from(debug_mode_index).unwrap().new_data());
+		for tool_index in 0_usize .. TOOL_COUNT {
+			if tools.active_tools.get_bit(tool_index) {
+				tools.tool_data.push(Tool::try_from(tool_index).unwrap().new_data());
 			}
 		}
 
-		Ok(debug_modes)
+		Ok(tools)
 	}
 }
 
-impl Inspectable for DebugModes {
+impl Inspectable for ToolsData {
 	type Attributes = ();
 
 	fn ui(&mut self, ui: &mut Ui, _: (), _: &mut Context) -> bool {
 		let mut changed: bool = false;
-		let mut debug_mode_data_index: usize = 0_usize;
+		let mut tool_data_index: usize = 0_usize;
 
-		for debug_mode_index in 0_usize .. DEBUG_MODE_COUNT {
-			let debug_mode: DebugMode = DebugMode::try_from(debug_mode_index).unwrap();
-			let mut debug_mode_bool: bool = self.active_debug_modes.get_bit(debug_mode_index);
+		for tool_index in 0_usize .. TOOL_COUNT {
+			let tool: Tool = Tool::try_from(tool_index).unwrap();
+			let mut tool_bool: bool = self.active_tools.get_bit(tool_index);
 
-			if ui.checkbox(&mut debug_mode_bool, debug_mode.as_str()).changed() {
-				self.active_debug_modes.set_bit(debug_mode_index, debug_mode_bool);
+			if ui.checkbox(&mut tool_bool, tool.as_str()).changed() {
+				self.active_tools.set_bit(tool_index, tool_bool);
 
-				if debug_mode_bool {
+				if tool_bool {
 					self
-						.debug_mode_data
+						.tool_data
 						.insert(
-							debug_mode_data_index,
-							debug_mode.new_data()
+							tool_data_index,
+							tool.new_data()
 						);
 				} else {
-					self.debug_mode_data.remove(debug_mode_data_index);
+					self.tool_data.remove(tool_data_index);
 				}
 
 				changed = true;
 			}
 
-			if debug_mode_bool {
-				debug_mode_data_index += 1_usize;
+			if tool_bool {
+				tool_data_index += 1_usize;
 			}
 		}
 
@@ -683,14 +680,14 @@ impl Inspectable for DebugModes {
 	}
 }
 
-impl PartialEq for DebugModes {
+impl PartialEq for ToolsData {
 	fn eq(&self, other: &Self) -> bool {
-		if self.active_debug_modes == other.active_debug_modes {
+		if self.active_tools == other.active_tools {
 			for (
-				self_debug_mode_data,
-				other_debug_mode_data
-			) in self.debug_mode_data.iter().zip(other.debug_mode_data.iter()) {
-				if self_debug_mode_data != other_debug_mode_data {
+				self_tool_data,
+				other_tool_data
+			) in self.tool_data.iter().zip(other.tool_data.iter()) {
+				if self_tool_data != other_tool_data {
 					return false;
 				}
 			}
