@@ -16,8 +16,6 @@ pub mod preferences;
 pub mod prelude;
 pub mod puzzle;
 pub mod strings;
+pub mod tools;
 pub mod ui;
 pub mod util;
-
-#[cfg(debug_assertions)]
-pub mod debug;

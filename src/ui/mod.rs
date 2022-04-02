@@ -10,6 +10,7 @@ use {
 			GenusIndexType,
 			Library
 		},
+		tools::prelude::*,
 		ui::input::{
 			FileAction,
 			FileActionType,
@@ -53,13 +54,6 @@ use {
 		sync::Mutex,
 		time::SystemTime
 	}
-};
-
-#[cfg(debug_assertions)]
-use crate::debug::prelude::{
-	Tool,
-	ToolDataBox,
-	Stack
 };
 
 pub mod camera;

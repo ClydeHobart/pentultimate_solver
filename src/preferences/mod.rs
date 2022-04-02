@@ -8,6 +8,7 @@ use {
 			GenusIndexString,
 			Library
 		},
+		tools::ToolsData,
 		util::inspectable_bit_array::InspectableBitArray,
 		impl_deserialize_and_inspectable_for_inspectable_bit_array_wrapper
 	},
@@ -23,9 +24,6 @@ use {
 		Deserializer
 	}
 };
-
-#[cfg(debug_assertions)]
-use crate::debug::ToolsData;
 
 pub use {
 	crate::{
