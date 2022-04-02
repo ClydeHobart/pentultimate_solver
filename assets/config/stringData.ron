@@ -11,6 +11,11 @@
 		puzzle_startup:			"PuzzlePlugin::startup()",
 		camera_run:				"CameraPlugin::run()",
 		puzzle_run:				"PuzzlePlugin::run()",
+		puzzle_startup:			"PuzzlePlugin::startup()",
+		solver_update:			"SolverPlugin::update()",
+		solver_post_update:		"SolverPlugin::post_update()",
+		solver_startup:			"SolverPlugin::startup()",
+		ui_startup:				"UIPlugin::startup()"
 	),
 	misc: (
 		app_title:				"Pentultimate Solver",

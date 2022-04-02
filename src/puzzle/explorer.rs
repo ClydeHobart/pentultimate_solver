@@ -27,8 +27,8 @@ use {
 	}
 };
 
-pub type ShouldExplore = Box<dyn Fn(&InflatedPuzzleState, FullAddr) -> bool>;
-pub type IsEndState = Box<dyn Fn(&InflatedPuzzleState) -> bool>;
+pub type ShouldExplore = Box<dyn Fn(&InflatedPuzzleState, FullAddr) -> bool + Send + Sync + 'static>;
+pub type IsEndState = Box<dyn Fn(&InflatedPuzzleState) -> bool + Send + Sync + 'static>;
 
 #[derive(Clone, Debug)]
 pub struct EndState {
@@ -74,18 +74,23 @@ trait ExplorerConsts {
 	const MAX_DEPTH:		u8;
 }
 
+#[derive(Default)]
+pub struct Stats {
+	pub elapsed:		Duration,
+	pub depth_elapsed:	Duration,
+	pub cycle:			u64,
+	pub states:			u64,
+	pub depth_states:	u64
+}
+
 pub struct Explorer {
 	state_queue:		VecDeque<DeflatedPuzzleState>,
 	path_queue:			VecDeque<u8>, // Stored as [depth byte][depth FullAddr payload bytes]
 	seen:				HashSet<DeflatedPuzzleState>,
 	should_explore:		Option<ShouldExplore>,
 	is_end_state:		IsEndState,
-	elapsed:			Duration,
-	depth_elapsed:		Duration,
+	pub stats:			Stats,
 	run_result:			RunResult,
-	cycle:				u64,
-	states:				u64,
-	depth_states:		u64,
 	candidate_genera:	GenusIndexBitArray,
 	depth:				u8,
 	max_depth:			u8,
@@ -93,9 +98,9 @@ pub struct Explorer {
 
 impl Explorer {
 	#[inline]
-	pub fn init<'a>(&mut self, params: ExplorerParams<'a>) -> () { *self = Self::new(params); }
+	pub fn init(&mut self, params: ExplorerParams) -> () { *self = Self::new(params); }
 
-	pub fn new<'a>(params: ExplorerParams<'a>) -> Self {
+	pub fn new(params: ExplorerParams) -> Self {
 		let ExplorerParams {
 			start_state,
 			should_explore,
@@ -121,6 +126,9 @@ impl Explorer {
 			.. Self::default()
 		}
 	}
+
+	#[inline]
+	pub fn get_stats(&self) -> &Stats { &self.stats }
 
 	#[inline]
 	pub fn set_should_explore(&mut self, should_explore: Option<ShouldExplore>) -> () {
@@ -156,7 +164,7 @@ impl Explorer {
 		let mut depth_start: Instant = cycle_start;
 		let mut cycle_states: u64 = 0_u64;
 
-		self.cycle += 1_u64;
+		self.stats.cycle += 1_u64;
 
 		while !self.state_queue.is_empty() {
 			let state: InflatedPuzzleState = InflatedPuzzleState::from(&self.state_queue.pop_front().unwrap());
@@ -181,7 +189,7 @@ impl Explorer {
 			if path_length as u8 != self.depth {
 				let now: Instant = Instant::now();
 
-				self.depth_elapsed += now - depth_start;
+				self.stats.depth_elapsed += now - depth_start;
 				depth_start = now;
 
 				if log_depth_stats {
@@ -190,33 +198,36 @@ impl Explorer {
 							\tElapsed: {}\n\
 							\tStates Examined: {}",
 						self.depth,
-						String::from_alt(self.depth_elapsed),
-						self.depth_states
+						String::from_alt(self.stats.depth_elapsed),
+						self.stats.depth_states
 					);
 				}
 
-				self.depth_elapsed = Duration::ZERO;
-				self.depth_states = 0_u64;
+				self.stats.depth_elapsed = Duration::ZERO;
+				self.stats.depth_states = 0_u64;
 				self.depth = path_length as u8;
 			}
 
 			cycle_states += 1_u64;
-			self.states += 1_u64;
-			self.depth_states += 1_u64;
+			self.stats.states += 1_u64;
+			self.stats.depth_states += 1_u64;
 
 			if (self.is_end_state)(&state) {
 				let now: Instant = Instant::now();
+				let cycle_elapsed: Duration = now - cycle_start;
 
 				if log_cycle_stats {
 					log::trace!(
 						"Cycle {}:\n\
 							\tElapsed: {}\n\
 							\tStates Examined: {}\n",
-						self.cycle,
-						String::from_alt(now - cycle_start),
+						self.stats.cycle,
+						String::from_alt(cycle_elapsed),
 						cycle_states
 					);
 				}
+
+				self.stats.depth_elapsed += now - depth_start;
 
 				if log_depth_stats {
 					log::trace!(
@@ -224,8 +235,8 @@ impl Explorer {
 							\tElapsed: {}\n\
 							\tStates Examined: {}",
 						self.depth,
-						String::from_alt(now - depth_start + self.depth_elapsed),
-						self.depth_states
+						String::from_alt(self.stats.depth_elapsed),
+						self.stats.depth_states
 					);
 				}
 
@@ -234,6 +245,8 @@ impl Explorer {
 					path
 				};
 
+				self.stats.elapsed += cycle_elapsed;
+
 				log::trace!(
 					"End State Found:\n\
 						\tCycle: {}\n\
@@ -241,10 +254,10 @@ impl Explorer {
 						\tElapsed: {}\n\
 						\tStates Examined: {}\n\
 						\tEnd State: {:#?}",
-					self.cycle,
+					self.stats.cycle,
 					self.depth,
-					String::from_alt(now - cycle_start + self.elapsed),
-					self.states,
+					String::from_alt(self.stats.elapsed),
+					self.stats.states,
 					end_state
 				);
 
@@ -308,15 +321,15 @@ impl Explorer {
 				let cycle_duration: Duration = now - cycle_start;
 
 				if cycle_duration >= *max_cycle_duration {
-					self.elapsed += cycle_duration;
-					self.depth_elapsed += now - depth_start;
+					self.stats.elapsed += cycle_duration;
+					self.stats.depth_elapsed += now - depth_start;
 
 					if log_cycle_stats {
 						log::trace!(
 							"Cycle {}:\n\
 								\tElapsed: {}\n\
 								\tStates Examined: {}",
-							self.cycle,
+							self.stats.cycle,
 							String::from_alt(cycle_duration),
 							cycle_states
 						);
@@ -359,12 +372,8 @@ impl Default for Explorer {
 		seen:				HashSet::<DeflatedPuzzleState>::new(),
 		should_explore:		Self::SHOULD_EXPLORE,
 		is_end_state:		Self::default_is_end_state(),
-		elapsed:			Duration::ZERO,
-		depth_elapsed:		Duration::ZERO,
+		stats:				Stats::default(),
 		run_result:			RunResult::Pending,
-		cycle:				0_u64,
-		states:				0_u64,
-		depth_states:		0_u64,
 		candidate_genera:	Self::CANDIDATE_GENERA,
 		depth:				0_u8,
 		max_depth:			Self::MAX_DEPTH

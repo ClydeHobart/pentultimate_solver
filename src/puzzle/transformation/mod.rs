@@ -9,6 +9,7 @@ pub use self::library::{
 	GenusIndexConsts,
 	GenusIndexString,
 	GenusIndexType,
+	GenusRange,
 	LargeGenus,
 	Library,
 	LibraryConsts,
@@ -26,6 +27,7 @@ use {
 			Polyhedron
 		},
 		preferences::AnimationSpeedData,
+		prelude::*,
 		ui::input::PuzzleActionType,
 		util::StaticDataLibrary
 	},
@@ -33,8 +35,9 @@ use {
 		consts::*,
 		inflated::{
 			PieceStateComponent,
+			MutPosAndRot,
+			PosAndRot,
 			PuzzleState,
-			PuzzleStateComponent,
 			PuzzleStateConsts
 		}
 	},
@@ -80,23 +83,25 @@ use {
 	}
 };
 
-const_assert!(PIECE_COUNT <= u32::BITS as usize);
+pub type HalfMask = u32;
+
+const_assert!(PIECE_COUNT <= HalfMask::BITS as usize);
 
 #[derive(Clone, Copy, Default)]
-pub struct Mask {
-	affected_poses:		u32,
-	affected_pieces:	u32
+pub struct FullMask {
+	pub affected_poses:		HalfMask,
+	pub affected_pieces:	HalfMask
 }
 
-impl Mask {
+impl FullMask {
 	#[inline]
 	pub fn affects_pos(&self, piece_index: usize) -> bool {
-		self.affected_poses & (1_u32 << piece_index) != 0_u32
+		self.affected_poses & ((1 as HalfMask) << piece_index) != 0 as HalfMask
 	}
 
 	#[inline]
 	pub fn affects_piece(&self, piece_index: usize) -> bool {
-		self.affected_pieces & (1_u32 << piece_index) != 0_u32
+		self.affected_pieces & ((1 as HalfMask) << piece_index) != 0 as HalfMask
 	}
 
 	fn from_pentagon_index(pentagon_index: usize) -> Self {
@@ -107,46 +112,39 @@ impl Mask {
 				pentagon_index
 			);
 
-			Self {
-				affected_poses:		0_u32,
-				affected_pieces:	0_u32
-			}
+			Self::default()
 		} else {
-			let data: &Data = Data::get(Polyhedron::Icosidodecahedron);
-			let faces: &Vec<FaceData> = &data.faces;
-			let face_normal: Vec3 = faces[pentagon_index].norm;
+			let data:			&Data			= Data::get(Polyhedron::Icosidodecahedron);
+			let faces:			&Vec<FaceData>	= &data.faces;
+			let face_normal:	Vec3			= faces[pentagon_index].norm;
 
-			let mut mask: u32 = 0_u32;
+			let mut half_mask:	HalfMask		= HalfMask::default();
 
 			for pent_index in 0_usize .. PIECE_COUNT {
-				mask |= ((faces[pent_index].norm.dot(face_normal) > 0.0_f32) as u32) << pent_index;
+				half_mask |= ((faces[pent_index].norm.dot(face_normal) > 0.0_f32) as HalfMask) << pent_index;
 			}
 
 			Self {
-				affected_poses:		mask,
-				affected_pieces:	mask
+				affected_poses:		half_mask,
+				affected_pieces:	half_mask
 			}
 		}
 	}
 }
 
-impl From<&Transformation> for Mask {
-	fn from(transformation: &Transformation) -> Self {
-		let mut affected_poses:		u32												= 0_u32;
-		let mut affected_pieces:	u32												= 0_u32;
-		let (pos, rot):				(&PuzzleStateComponent, &PuzzleStateComponent)	= transformation.as_ref().arrays();
+impl<'p, 'r> From<PosAndRot<'p, 'r>> for FullMask {
+	fn from((pos, rot): PosAndRot) -> Self {
+		let mut full_mask: Self = Self::default();
 
 		for piece_index in PIECE_RANGE {
 			let affects_pos: bool = pos[piece_index] as usize != piece_index;
 
-			affected_poses |= (affects_pos as u32) << piece_index;
-			affected_pieces |= ((affects_pos || rot[piece_index] != 0 as PieceStateComponent) as u32) << piece_index;
+			full_mask.affected_poses |= (affects_pos as HalfMask) << piece_index;
+			full_mask.affected_pieces |= ((affects_pos || rot[piece_index] != 0 as PieceStateComponent) as HalfMask)
+				<< piece_index;
 		}
 
-		Mask {
-			affected_poses,
-			affected_pieces
-		}
+		full_mask
 	}
 }
 
@@ -570,8 +568,8 @@ impl FullAddr {
 	#[inline(always)]
 	pub fn species_index_is_valid(&self) -> bool { self.half_addr.species_index_is_valid() }
 
-	pub fn get_mask(self) -> Option<&'static Mask> {
-		if self.is_valid() { Some(Library::get_mask(self)) } else { None }
+	pub fn get_full_mask(self) -> Option<&'static FullMask> {
+		if self.is_valid() { Some(Library::get_full_mask(self)) } else { None }
 	}
 
 	pub fn mirror(self) -> Self {
@@ -899,11 +897,11 @@ pub struct OrientationData {
 pub struct Transformation(PuzzleState);
 
 impl Transformation {
-	pub fn arrays(&self) -> (&PuzzleStateComponent, &PuzzleStateComponent) {
+	pub fn arrays(&self) -> PosAndRot {
 		self.0.arrays()
 	}
 
-	pub fn arrays_mut(&mut self) -> (&mut PuzzleStateComponent, &mut PuzzleStateComponent) {
+	pub fn arrays_mut(&mut self) -> MutPosAndRot {
 		self.0.arrays_mut()
 	}
 
@@ -989,21 +987,6 @@ impl<T> FindWord<T> for Genus<T>
 	}
 }
 
-// impl<T> FindWord<T> for SmallFamily<T>
-// 	where
-// 		T: PartialEq
-// {
-// 	fn find_word(&self, target_word: &Organism<T>) -> Option<FullAddr> {
-// 		for (page_index, page) in self.iter().enumerate() {
-// 			if let Some(mut address) = page.find_word(target_word) {
-// 				return Some(*address.set_genus_index(page_index));
-// 			}
-// 		}
-
-// 		None
-// 	}
-// }
-
 pub trait GetWord<A : Addr, T : ?Sized> {
 	fn get_word(&self, addr: A) -> &Organism<T>;
 	fn get_word_mut(&mut self, addr: A) -> &mut Organism<T>;
@@ -1051,6 +1034,17 @@ impl<A : Addr + Sized, T> GetWord<A, T> for Class<T> {
 
 pub struct TransformationPlugin;
 
+impl TransformationPlugin {
+	fn startup() -> () {
+		Library::build();
+	}
+}
+
 impl Plugin for TransformationPlugin {
-	fn build(&self, _: &mut App) -> () { <Library as StaticDataLibrary>::build(); }
+	fn build(&self, app: &mut App) -> () {
+		app.add_startup_system(Self::startup
+			.system()
+			.label(STRING_DATA.labels.transformation_startup.as_ref())
+		);
+	}
 }

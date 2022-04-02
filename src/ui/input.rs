@@ -28,7 +28,7 @@ use {
 				GenusIndexType,
 				HalfAddr,
 				Library,
-				Mask,
+				FullMask,
 				RandHalfAddrParams
 			},
 			ExtendedPuzzleState,
@@ -269,7 +269,8 @@ pub enum PuzzleActionType {
 	Redo,
 	Reset,
 	Randomize,
-	Load
+	Load,
+	Solve
 }
 
 pub struct CurrentAction {
@@ -351,7 +352,7 @@ impl PendingActions {
 	}
 
 	pub fn randomize(preferences: &Preferences, puzzle_state: &InflatedPuzzleState, camera_orientation: &Quat) -> Self {
-		let mut pending_actions: PendingActions = PendingActions {
+		let mut pending_actions: Self = Self {
 			animation_speed_data: preferences.speed.animation.clone(),
 			.. Self::default()
 		};
@@ -539,7 +540,7 @@ impl PuzzleAction {
 									puzzle_state += comprising_simple;
 									cycle_count += cycles;
 								} else {
-									let mask: Mask = *comprising_simple.get_mask().unwrap();
+									let mask: FullMask = *comprising_simple.get_full_mask().unwrap();
 									let rotation: Quat = Quat::IDENTITY.short_slerp(
 										*comprising_simple.get_rotation().unwrap(),
 										(s - cycle_count) / cycles
@@ -752,11 +753,14 @@ pub struct InputState {
 	pub file_action:			Option<FileAction>,
 	pub camera_rotation:		Quat,
 	pub has_camera_rotation:	bool,
+	pub is_solving:				bool,
 	pub toggles:				InputToggles,
 }
 
 impl InputState {
-	pub fn has_active_action(&self) -> bool { self.puzzle_action.is_some() || self.file_action.is_some() }
+	pub fn has_active_action(&self) -> bool {
+		self.puzzle_action.is_some() || self.file_action.is_some() || self.is_solving
+	}
 
 	fn reset_update_data(&mut self) -> () { self.has_camera_rotation = false; }
 }

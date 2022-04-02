@@ -56,7 +56,10 @@ use {
 			Sub
 		}
 	},
-	bevy::prelude::*,
+	bevy::{
+		app::PluginGroupBuilder,
+		prelude::*
+	},
 	libc::{
 		c_void,
 		memcmp
@@ -76,8 +79,7 @@ pub use {
 		PuzzleState as InflatedPuzzleState,
 		PuzzleStateComponent as InflatedPuzzleStateComponent,
 		PuzzleStateConsts as InflatedPuzzleStateConsts
-	},
-	transformation::TransformationPlugin,
+	}
 };
 
 pub mod explorer;
@@ -234,6 +236,9 @@ pub mod inflated {
 		];
 	}
 
+	pub type PosAndRot<'p, 'r> = (&'p PuzzleStateComponent, &'r PuzzleStateComponent);
+	pub type MutPosAndRot<'p, 'r> = (&'p mut PuzzleStateComponent, &'r mut PuzzleStateComponent);
+
 	#[derive(Clone, Deserialize, Serialize)]
 	#[repr(align(32))]
 	pub struct PuzzleState {
@@ -295,11 +300,11 @@ pub mod inflated {
 			self.half_addr(piece_index).as_reorientation()
 		}
 
-		pub fn arrays(&self) -> (&PuzzleStateComponent, &PuzzleStateComponent) {
+		pub fn arrays(&self) -> PosAndRot {
 			(&self.pos, &self.rot)
 		}
 
-		pub fn arrays_mut(&mut self) -> (&mut PuzzleStateComponent, &mut PuzzleStateComponent) {
+		pub fn arrays_mut(&mut self) -> MutPosAndRot {
 			(&mut self.pos, &mut self.rot)
 		}
 
@@ -910,6 +915,23 @@ impl Plugin for PuzzlePlugin {
 				.system()
 				.label(STRING_DATA.labels.puzzle_run.as_ref())
 			);
+	}
+}
+
+pub struct PuzzlePluginGroup;
+
+impl Plugin for PuzzlePluginGroup {
+	fn build(&self, app: &mut App) -> () {
+		app.add_plugins(Self);
+	}
+}
+
+impl PluginGroup for PuzzlePluginGroup {
+	fn build(&mut self, group: &mut PluginGroupBuilder) -> () {
+		group
+			.add(TransformationPlugin)
+			.add(PuzzlePlugin)
+			.add(SolverPlugin);
 	}
 }
 

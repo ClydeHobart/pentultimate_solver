@@ -36,19 +36,24 @@ pub mod prelude {
 			Preferences
 		},
 		puzzle::{
+			solver::{
+				Solver,
+				SolverPlugin
+			},
 			transformation::{
 				Addr,
 				FullAddr,
 				HalfAddr,
 				Library as TransformationLibrary,
 				GenusIndex,
-				GenusIndexConsts
+				GenusIndexConsts,
+				TransformationPlugin
 			},
 			ExtendedPuzzleState,
 			InflatedPuzzleState,
 			InflatedPuzzleStateConsts,
 			PuzzlePlugin,
-			TransformationPlugin
+			PuzzlePluginGroup
 		},
 		ui::{
 			camera::{
@@ -102,10 +107,9 @@ impl PluginGroup for AppPluginGroup {
 		group
 			.add(LogPlugin)
 			.add(PolyhedraDataPlugin)
-			.add(TransformationPlugin)
+			.add(PuzzlePluginGroup)
 			.add(ColorsPlugin)
 			.add(PiecePlugin)
-			.add(PuzzlePlugin)
 			.add(UIPlugin)
 			.add(AppPlugin);
 	}

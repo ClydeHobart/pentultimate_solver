@@ -23,10 +23,8 @@ Preferences(
 	),
 	file_menu:			FileMenuData(
 		random_transformation_genera:	[ "Simple" ],
-		// random_transformation_count:	30,
-		// randomization_type:				FromSolved
-		random_transformation_count:	5,
-		randomization_type:				FromCurrent
+		random_transformation_count:	30,
+		randomization_type:				FromSolvedNoStack
 	),
 	input:				InputData(
 		default_positions:		(	0,			5,			10,			1,			8,			4		),
@@ -54,15 +52,16 @@ Preferences(
 		light_illuminance:	4.0
 	),
 	speed:				SpeedData(
-		camera:		CameraSpeedData(
+		camera:							CameraSpeedData(
 			pan_speed:	50,
 			roll_speed:	50,
 		),
-		animation:	AnimationSpeedData(
+		animation:						AnimationSpeedData(
 			rotation_millis:					250,
 			// rotation_millis:					50,
 			uniform_transformation_duration:	false,
 			animate_undo_and_redo:				true,
-		)
+		),
+		solver_cycle_duration_millis:	30.0
 	),
 )

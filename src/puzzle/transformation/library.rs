@@ -55,7 +55,7 @@ use {
 		FullAddr,
 		HalfAddr,
 		HalfAddrConsts,
-		Mask,
+		FullMask,
 		Transformation
 	}
 };
@@ -180,7 +180,7 @@ impl GenusIndexBitArray {
 	pub fn get_bit<G: Into<usize>>(&self, genus_index: G) -> bool { self.0.get_bit(genus_index.into()) }
 
 	#[inline(always)]
-	pub fn set_bit<G: Into<usize>>(&mut self, genus_index: GenusIndex, enabled: bool) -> () {
+	pub fn set_bit<G: Into<usize> + Sized>(&mut self, genus_index: G, enabled: bool) -> () {
 		self.0.set_bit(genus_index.into(), enabled)
 	}
 
@@ -202,7 +202,9 @@ impl<G: Copy + TryInto<GenusIndex>> From<&[G]> for GenusIndexBitArray {
 
 		for genus_index in genus_indices {
 			if let Ok(genus_index) = TryInto::<GenusIndex>::try_into(*genus_index) {
-				genus_index_bit_array.set_bit::<GenusIndex>(genus_index, true);
+				if genus_index.is_valid() {
+					genus_index_bit_array.set_bit(genus_index, true);
+				}
 			}
 		}
 
@@ -296,6 +298,45 @@ impl FamilyInfo {
 	}
 }
 
+#[derive(Clone)]
+pub struct GenusRange(Range<GenusIndexType>);
+
+impl Default for GenusRange { fn default() -> Self { GenusRange(GenusIndex::INVALID.0 .. GenusIndex::INVALID.0) } }
+
+impl TryFrom<&str> for GenusRange {
+	type Error = ();
+
+	fn try_from(base_genus_index_str: &str) -> Result<Self, ()> {
+		if let Ok(base_genus_index) = GenusIndex::try_from(base_genus_index_str) {
+			if let Some(family_info) = Library::get().get_family_info(base_genus_index) {
+				let genus_range: Range<usize> = family_info.get_genus_range();
+
+				Ok(Self(genus_range.start as GenusIndexType .. genus_range.end as GenusIndexType))
+			} else {
+				/* While it's not a full-fledge family, if it's a valid index w/o a family info, it's either
+				REORIENTATION or SIMPLE, which are still valid genera in an of themselves */
+				Ok(Self(base_genus_index.0 .. base_genus_index.0 + 1 as GenusIndexType))
+			}
+		} else {
+			Err(())
+		}
+	}
+}
+
+impl From<GenusRange> for GenusIndexBitArray {
+	fn from(genus_range: GenusRange) -> Self {
+		let genus_count: GenusIndexType = Library::get_genus_count() as GenusIndexType;
+
+		let mut genus_index_bit_array: Self = Self::NONE;
+
+		for genus_index_type in genus_range.0.start.min(genus_count) .. genus_range.0.end.min(genus_count) {
+			genus_index_bit_array.set_bit(genus_index_type, true);
+		}
+
+		genus_index_bit_array
+	}
+}
+
 type SimpleOffsetType = u32;
 type SimpleSliceLenType = u16;
 type FamilyIndexType = u8;
@@ -341,7 +382,7 @@ pub struct Library {
 	genus_infos:		Vec<GenusInfo>,
 	simples:			Vec<HalfAddr>,
 	transformations:	Class<Transformation>,
-	masks:				Class<Mask>,
+	full_masks:				Class<FullMask>,
 	inverse_addrs:		Class<FullAddr>,
 	rotations:			SmallClass<Quat>,
 	orientations:		LargeGenus<Quat>,
@@ -370,10 +411,10 @@ impl Library {
 	}
 
 	#[inline(always)]
-	pub fn get_mask(full_addr: FullAddr) -> &'static Mask {
+	pub fn get_full_mask(full_addr: FullAddr) -> &'static FullMask {
 		debug_assert!(full_addr.is_valid());
 
-		Library::get().masks.get_word(full_addr)
+		Library::get().full_masks.get_word(full_addr)
 	}
 
 	#[inline(always)]
@@ -550,7 +591,7 @@ impl Library {
 		self.genus_infos		= Vec::<GenusInfo>::with_capacity(Self::GENERA_PER_SMALL_CLASS);
 		self.simples			= Vec::<HalfAddr>::with_capacity(Self::ORGANISMS_PER_GENUS);
 		self.transformations	= Class::<Transformation>::with_capacity(Self::ORGANISMS_PER_GENUS);
-		self.masks				= Class::<Mask>::with_capacity(Self::ORGANISMS_PER_GENUS);
+		self.full_masks				= Class::<FullMask>::with_capacity(Self::ORGANISMS_PER_GENUS);
 		self.inverse_addrs		= Class::<FullAddr>::with_capacity(Self::ORGANISMS_PER_GENUS);
 
 		let icosidodecahedron_data: &Data = Data::get(Polyhedron::Icosidodecahedron);
@@ -588,13 +629,13 @@ impl Library {
 		): (
 			&    [Species<Quat>],
 			&mut Genus<Transformation>,
-			&mut Genus<Mask>,
+			&mut Genus<FullMask>,
 			&mut Genus<FullAddr>,
 			&mut Genus<Quat>
 		) = (
 			&    self.orientations		[0_usize .. Self::SPECIES_PER_GENUS],
 			&mut self.transformations	[reorientation_genus_index],
-			&mut self.masks				[reorientation_genus_index],
+			&mut self.full_masks		[reorientation_genus_index],
 			&mut self.inverse_addrs		[reorientation_genus_index],
 			&mut self.rotations			[reorientation_genus_index]
 		);
@@ -603,13 +644,13 @@ impl Library {
 		for species_index in 0_usize .. Self::SPECIES_PER_GENUS {
 			let orientation_species:	&    Species<Quat>				= &    orientation_genus	[species_index];
 			let transformation_species:	&mut Species<Transformation>	= &mut transformation_genus	[species_index];
-			let mask_species:			&mut Species<Mask>				= &mut mask_genus			[species_index];
+			let mask_species:			&mut Species<FullMask>			= &mut mask_genus			[species_index];
 			let rotation_species:		&mut Species<Quat>				= &mut rotation_genus		[species_index];
 
 			for organism_index in 0_usize .. Self::ORGANISMS_PER_SPECIES {
 				let orientation:	&    Quat				= &    orientation_species		[organism_index];
 				let transformation:	&mut Transformation		= &mut transformation_species	[organism_index];
-				let mask:			&mut Mask				= &mut mask_species				[organism_index];
+				let mask:			&mut FullMask			= &mut mask_species				[organism_index];
 				let rotation:		&mut Quat				= &mut rotation_species			[organism_index];
 
 				let reorientation_quat: Quat = *orientation * origin_conj_quat;
@@ -627,7 +668,7 @@ impl Library {
 					rot_array[piece_index] = rot as PieceStateComponent;
 				}
 
-				*mask = Mask::from(&*transformation);
+				*mask = FullMask::from(transformation.arrays());
 				*rotation = reorientation_quat;
 			}
 		}
@@ -663,13 +704,13 @@ impl Library {
 		): (
 			&mut [HalfAddr],
 			&mut Genus<Transformation>,
-			&mut Genus<Mask>,
+			&mut Genus<FullMask>,
 			&mut Genus<FullAddr>,
 			&mut Genus<Quat>
 		) = (
 			&mut self.simples			[0_usize .. Self::ORGANISMS_PER_GENUS],
 			&mut self.transformations	[simple_genus_index],
-			&mut self.masks				[simple_genus_index],
+			&mut self.full_masks		[simple_genus_index],
 			&mut self.inverse_addrs		[simple_genus_index],
 			&mut self.rotations			[simple_genus_index]
 		);
@@ -678,20 +719,20 @@ impl Library {
 			in simple_genus.chunks_mut(Self::ORGANISMS_PER_SPECIES).enumerate()
 		{
 			let transformation_species:	&mut Species<Transformation>	= &mut transformation_genus	[species_index];
-			let mask_species:			&mut Species<Mask>				= &mut mask_genus			[species_index];
+			let mask_species:			&mut Species<FullMask>			= &mut mask_genus			[species_index];
 			let inverse_addr_species:	&mut Species<FullAddr>			= &mut inverse_addr_genus	[species_index];
 			let rotation_species:		&mut Species<Quat>				= &mut rotation_genus		[species_index];
 			let face_data:				&FaceData						= &icosidodecahedron_data.faces[species_index];
-			let face_mask:				Mask							= Mask::from_pentagon_index(species_index);
+			let face_mask:				FullMask							= FullMask::from_pentagon_index(species_index);
 
 			for organism_index in 0_usize .. Self::ORGANISMS_PER_SPECIES {
 				let transformation:	&mut Transformation		= &mut transformation_species	[organism_index];
-				let mask:			&mut Mask				= &mut mask_species				[organism_index];
+				let mask:			&mut FullMask			= &mut mask_species				[organism_index];
 				let inverse_addr:	&mut FullAddr			= &mut inverse_addr_species		[organism_index];
 				let simple:			&mut HalfAddr			= &mut simple_species			[organism_index];
 				let rotation:		&mut Quat				= &mut rotation_species			[organism_index];
 
-				*mask = if organism_index != 0_usize { face_mask } else { Mask::default() };
+				*mask = if organism_index != 0_usize { face_mask } else { FullMask::default() };
 				*inverse_addr = FullAddr::from((
 					usize::from(GenusIndex::SIMPLE),
 					species_index,
@@ -700,7 +741,7 @@ impl Library {
 				*simple = HalfAddr::new(species_index, organism_index);
 				*rotation = face_data.get_rotation_quat(organism_index as u32);
 
-				let mask: Mask = *mask;
+				let mask: FullMask = *mask;
 				let rotation: Quat = *rotation;
 				let (pos_array, rot_array): (&mut PuzzleStateComponent, &mut PuzzleStateComponent) =
 					transformation.arrays_mut();
@@ -811,7 +852,7 @@ impl Library {
 			HalfAddr::default()
 		);
 		self.transformations.push(Genus::<Transformation>::default());
-		self.masks.push(Genus::<Mask>::default());
+		self.full_masks.push(Genus::<FullMask>::default());
 		self.inverse_addrs.push(Genus::<FullAddr>::default());
 	}
 
@@ -920,12 +961,12 @@ impl Library {
 			): (
 				&    [HalfAddr],
 				&mut Genus<Transformation>,
-				&mut Genus<Mask>,
+				&mut Genus<FullMask>,
 				&mut Genus<FullAddr>,
 			) = (
 				&    self.simples			[self.get_simples_range(GenusIndex::from_usize(genus_index_usize)).unwrap()],
 				&mut self.transformations	[genus_index_usize],
-				&mut self.masks				[genus_index_usize],
+				&mut self.full_masks		[genus_index_usize],
 				&mut self.inverse_addrs		[genus_index_usize],
 			);
 
@@ -934,7 +975,7 @@ impl Library {
 				.enumerate()
 			{
 				let transformation_species:	&mut Species<Transformation>	= &mut transformation_genus	[species_index];
-				let mask_species:			&mut Species<Mask>				= &mut mask_genus			[species_index];
+				let mask_species:			&mut Species<FullMask>			= &mut mask_genus			[species_index];
 				let inverse_addr_species:	&mut Species<FullAddr>			= &mut inverse_addr_genus	[species_index];
 
 				for (organism_index, simple_slice) in simples_species
@@ -942,7 +983,7 @@ impl Library {
 					.enumerate()
 				{
 					let transformation:	&mut Transformation	= &mut transformation_species	[organism_index];
-					let mask:			&mut Mask			= &mut mask_species				[organism_index];
+					let mask:			&mut FullMask		= &mut mask_species				[organism_index];
 					let inverse_addr:	&mut FullAddr		= &mut inverse_addr_species		[organism_index];
 
 					let mut puzzle_state: PuzzleState = PuzzleState::SOLVED_STATE;
@@ -952,7 +993,7 @@ impl Library {
 					}
 
 					*transformation	= Transformation(puzzle_state);
-					*mask			= Mask::from(&*transformation);
+					*mask			= FullMask::from(transformation.arrays());
 					*inverse_addr	= FullAddr::from((inverse_genus_index, species_index, organism_index));
 				}
 			}
@@ -1224,7 +1265,7 @@ mod tests {
 				// other direction, so just run the rest how the test was originally conducted
 
 				let word_pack_transformation: &Transformation = library.transformations.get_word(standardization_full_addr);
-				let word_pack_mask: &Mask = library.masks.get_word(standardization_full_addr);
+				let word_pack_mask: &FullMask = library.full_masks.get_word(standardization_full_addr);
 
 				curr_puzzle_state += word_pack_transformation;
 

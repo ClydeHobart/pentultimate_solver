@@ -131,10 +131,12 @@ define_struct_with_default!(
 #[derive(Clone, Default, Deserialize, Inspectable, PartialEq)]
 pub struct SpeedData {
 	#[inspectable(collapse)]
-	pub camera:		CameraSpeedData,
+	pub camera:							CameraSpeedData,
 
 	#[inspectable(collapse)]
-	pub animation:	AnimationSpeedData,
+	pub animation:						AnimationSpeedData,
+
+	pub solver_cycle_duration_millis:	f32
 }
 
 #[derive(Clone, Default, Deserialize, Inspectable, PartialEq)]

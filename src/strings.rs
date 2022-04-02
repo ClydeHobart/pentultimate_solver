@@ -29,7 +29,12 @@ define_struct_with_default!(
 		pub input_run					= "InputPlugin::run()",
 		pub piece_library_startup		= "PieceLibrary::startup()",
 		pub puzzle_run					= "PuzzlePlugin::run()",
-		pub puzzle_startup				= "PuzzlePlugin::startup()"
+		pub puzzle_startup				= "PuzzlePlugin::startup()",
+		pub solver_update				= "SolverPlugin::update()",
+		pub solver_post_update			= "SolverPlugin::post_update()",
+		pub solver_startup				= "SolverPlugin::startup()",
+		pub transformation_startup		= "TransformationPlugin::startup()",
+		pub ui_startup					= "UIPlugin::startup()",
 	}
 );
 

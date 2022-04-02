@@ -19,8 +19,7 @@ use {
 		mem::{
 			MaybeUninit,
 			transmute
-		},
-		sync::Once
+		}
 	},
 	bevy::{
 		prelude::*,

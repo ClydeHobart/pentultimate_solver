@@ -68,13 +68,17 @@ pub mod input;
 #[derive(PartialEq)]
 pub enum View {
 	Main,
-	Preferences(Box<Preferences>)
+	Preferences(Box<Preferences>),
 }
 
 pub struct UIPlugin;
 
 impl UIPlugin {
-	fn startup(mut windows: ResMut<Windows>) -> () {
+	fn startup(
+		mut preferences:	ResMut<Preferences>,
+		mut windows:		ResMut<Windows>
+	) -> () {
+		*preferences = Preferences::from_file_or_default(STRING_DATA.files.preferences.as_ref());
 		debug_expect_some!(windows.get_primary_mut(), |window: &mut Window| -> () { window.set_maximized(true); });
 		log_result_err!(create_dir_all(&STRING_DATA.files.saves));
 	}
@@ -119,6 +123,11 @@ impl UIPlugin {
 
 							if ui.button("Randomize").clicked() {
 								Self::on_randomize_clicked(world, input_state);
+								close_menu = true;
+							}
+
+							if ui.button("Solve").clicked() {
+								Self::on_solve_clicked(world, input_state);
 								close_menu = true;
 							}
 
@@ -207,6 +216,15 @@ impl UIPlugin {
 				))
 			});
 		}
+	}
+
+	fn on_solve_clicked(world: &mut World, input_state: &mut InputState) -> () {
+		world.resource_scope(|world: &mut World, mut solver: Mut<Solver>| -> () {
+			if let Some(extended_puzzle_state) = world.get_resource::<ExtendedPuzzleState>() {
+				solver.init(&extended_puzzle_state.puzzle_state);
+				input_state.is_solving = true;
+			}
+		});
 	}
 
 	fn on_save_clicked(input_state: &mut InputState) -> () {
@@ -631,7 +649,7 @@ impl UIPlugin {
 impl Plugin for UIPlugin {
 	fn build(&self, app: &mut App) {
 		app
-			.insert_resource(Preferences::from_file_or_default(&STRING_DATA.files.preferences))
+			.insert_resource(Preferences::default())
 			.insert_resource(View::Main)
 			.insert_resource(Msaa { samples: 4 })
 			.insert_resource(WindowDescriptor {
@@ -640,7 +658,11 @@ impl Plugin for UIPlugin {
 			})
 			.add_plugin(CameraPlugin)
 			.add_plugin(InputPlugin)
-			.add_startup_system(Self::startup.system())
+			.add_startup_system(Self::startup
+				.system()
+				.label(STRING_DATA.labels.ui_startup.as_ref())
+				.after(STRING_DATA.labels.transformation_startup.as_ref())
+			)
 			.add_system_to_stage(CoreStage::Last, Self::run.exclusive_system());
 	}
 }
