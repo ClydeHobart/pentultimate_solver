@@ -575,14 +575,14 @@ type ToolsInner = u32;
 
 #[derive(Clone, Default)]
 pub struct ToolsData {
-	active_tools:	ToolsInner,
-	tool_data:	Vec<ToolDataBox>
+	active_tools:		ToolsInner,
+	tool_data_boxes:	Vec<ToolDataBox>
 }
 
 const_assert!(TOOL_COUNT <= ToolsInner::BITS as usize);
 
 impl ToolsData {
-	pub fn should_render(&self) -> bool { !self.tool_data.is_empty() }
+	pub fn should_render(&self) -> bool { !self.tool_data_boxes.is_empty() }
 
 	pub fn is_tool_active(&self, tool: Tool) -> bool {
 		self.active_tools.get_bit(tool as usize)
@@ -590,7 +590,7 @@ impl ToolsData {
 
 	pub fn get_tool_data(&self, tool: Tool) -> Option<&ToolDataBox> {
 		if self.is_tool_active(tool) {
-			Some(&self.tool_data[
+			Some(&self.tool_data_boxes[
 				(self.active_tools & ((ToolsInner::one() << tool as u32) - ToolsInner::one()))
 					.count_ones() as usize
 			])
@@ -613,7 +613,7 @@ impl ToolsData {
 							tool.as_str(),
 							|ui: &mut Ui| -> () {
 								self
-									.tool_data
+									.tool_data_boxes
 									[tool_data_index]
 									.invoke_ui(ui, &mut context.with_id(tool_data_index as u64));
 							}
@@ -635,7 +635,7 @@ impl<'de> Deserialize<'de> for ToolsData {
 
 		for tool_index in 0_usize .. TOOL_COUNT {
 			if tools.active_tools.get_bit(tool_index) {
-				tools.tool_data.push(Tool::try_from(tool_index).unwrap().new_data());
+				tools.tool_data_boxes.push(Tool::try_from(tool_index).unwrap().new_data());
 			}
 		}
 
@@ -659,13 +659,13 @@ impl Inspectable for ToolsData {
 
 				if tool_bool {
 					self
-						.tool_data
+						.tool_data_boxes
 						.insert(
 							tool_data_index,
 							tool.new_data()
 						);
 				} else {
-					self.tool_data.remove(tool_data_index);
+					self.tool_data_boxes.remove(tool_data_index);
 				}
 
 				changed = true;
@@ -686,7 +686,7 @@ impl PartialEq for ToolsData {
 			for (
 				self_tool_data,
 				other_tool_data
-			) in self.tool_data.iter().zip(other.tool_data.iter()) {
+			) in self.tool_data_boxes.iter().zip(other.tool_data_boxes.iter()) {
 				if self_tool_data != other_tool_data {
 					return false;
 				}
