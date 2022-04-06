@@ -6,6 +6,7 @@ pub mod simd;
 pub mod prelude {
 	pub use super::{
 		log::prelude::*,
+		AsBitString,
 		FromAlt,
 		FromFile,
 		FromFileOrDefault,
@@ -28,7 +29,6 @@ pub mod inspectable_bit_array;
 pub mod inspectable_num;
 
 use {
-	crate::prelude::*,
 	std::{
 		any::type_name,
 		cmp::min,
@@ -52,10 +52,6 @@ use {
 			Instant
 		}
 	},
-	num_format::{
-		Buffer,
-		Locale
-	},
 	bevy::{
 		app::{
 			AppExit,
@@ -63,14 +59,23 @@ use {
 		},
 		render::color::Color
 	},
+	bit_field::{
+		BitArray,
+		BitField
+	},
 	egui::color::Color32,
 	::log::Level,
 	memmap::Mmap,
+	num_format::{
+		Buffer,
+		Locale
+	},
 	serde::{
 		Deserialize,
 		Serialize
 	},
-	simple_error::SimpleError
+	simple_error::SimpleError,
+	crate::prelude::*
 };
 
 pub trait FromAlt<T> {
@@ -586,6 +591,39 @@ pub fn red_to_green(s: f32) -> Color {
 	};
 
 	Color::hsl(s * 120.0_f32, 1.0_f32, 0.5_f32)
+}
+
+/// The reverse direction of format!("{:0b}")
+pub trait AsBitString {
+	fn as_bit_string(&self) -> String { self.as_bit_string_with_chars('0', '1') }
+
+	fn as_bit_string_with_chars(&self, zero: char, one: char) -> String;
+}
+
+impl<T> AsBitString for T
+	where
+		T: BitField + Clone + Copy + Sized,
+		[T]: BitArray<T>
+{
+	fn as_bit_string_with_chars(&self, zero: char, one: char) -> String {
+		[*self].as_slice().as_bit_string_with_chars(zero, one)
+	}
+}
+
+impl<T> AsBitString for [T]
+	where
+		T: BitField + Clone + Copy + Sized,
+		[T]: BitArray<T>
+{
+	fn as_bit_string_with_chars(&self, zero: char, one: char) -> String {
+		let mut bit_string: String = String::with_capacity(zero.len_utf8().max(one.len_utf8()) * self.bit_length());
+
+		for bit in 0_usize .. self.bit_length() {
+			write!(&mut bit_string, "{}", if self.get_bit(bit) { one } else { zero }).unwrap();
+		}
+
+		bit_string
+	}
 }
 
 #[cfg(debug_assertions)]

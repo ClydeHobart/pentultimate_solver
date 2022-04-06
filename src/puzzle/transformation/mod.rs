@@ -104,6 +104,14 @@ impl FullMask {
 		self.affected_pieces & ((1 as HalfMask) << piece_index) != 0 as HalfMask
 	}
 
+	pub fn affected_poses_string(&self) -> String {
+		self.affected_poses.as_bit_string_with_chars('·', '#')
+	}
+
+	pub fn affected_pieces_string(&self) -> String {
+		self.affected_pieces.as_bit_string_with_chars('·', '#')
+	}
+
 	fn from_pentagon_index(pentagon_index: usize) -> Self {
 		if pentagon_index >= PENTAGON_PIECE_COUNT {
 			log::warn!(
@@ -129,6 +137,16 @@ impl FullMask {
 				affected_pieces:	half_mask
 			}
 		}
+	}
+}
+
+impl Debug for FullMask {
+	fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+		formatter
+			.debug_struct("FullMask")
+			.field("affected_poses ", &self.affected_poses_string())
+			.field("affected_pieces", &self.affected_pieces_string())
+			.finish()
 	}
 }
 

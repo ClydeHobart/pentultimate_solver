@@ -8,7 +8,10 @@ use {
 			Debug,
 			Formatter
 		},
-		iter::DoubleEndedIterator,
+		iter::{
+			DoubleEndedIterator,
+			IntoIterator
+		},
 		mem::{
 			MaybeUninit,
 			take
@@ -18,10 +21,19 @@ use {
 			DerefMut,
 			Range
 		},
+		rc::Rc,
 		sync::Once
 	},
 	bevy::prelude::Quat,
-	bit_field::BitArray,
+	bevy_inspector_egui::{
+		Context,
+		Inspectable
+	},
+	bit_field::{
+		BitArray,
+		BitField
+	},
+	egui::Ui,
 	serde::{
 		Deserialize,
 		Deserializer,
@@ -46,7 +58,13 @@ use {
 				PuzzleStateConsts
 			}
 		},
-		util::StaticDataLibrary
+		util::{
+			inspectable_bit_array::{
+				InspectableBitArrayAttrs,
+				InspectableBitArrayWrapper
+			},
+			StaticDataLibrary
+		}
 	},
 	super::{
 		Addr,
@@ -173,6 +191,7 @@ pub trait GenusIndexBitArrayConsts {
 	const NONE:	GenusIndexBitArray;
 }
 
+#[derive(Clone, Default, PartialEq)]
 pub struct GenusIndexBitArray(pub [<Self as GenusIndexBitArrayConsts>::Block; Self::SIZE]);
 
 impl GenusIndexBitArray {
@@ -184,6 +203,12 @@ impl GenusIndexBitArray {
 		self.0.set_bit(genus_index.into(), enabled)
 	}
 
+	pub fn iter(&self) -> GenusIndexBitArrayIter { GenusIndexBitArrayIter {
+		genus_index_bit_array: self,
+		current_index: 0_usize,
+		current_block: self.0[0_usize]
+	} }
+
 	const fn size() -> usize {
 		(1_usize << GenusIndexType::BITS) / <Self as GenusIndexBitArrayConsts>::Block::BITS as usize
 	}
@@ -194,6 +219,12 @@ impl GenusIndexBitArrayConsts for GenusIndexBitArray {
 	const SIZE:	usize	= Self::size();
 	const ALL:	Self	= GenusIndexBitArray([Self::Block::MAX; Self::SIZE]);
 	const NONE:	Self	= GenusIndexBitArray([Self::Block::MIN; Self::SIZE]);
+}
+
+impl Debug for GenusIndexBitArray {
+	fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+		formatter.debug_list().entries(self.iter()).finish()
+	}
 }
 
 impl<G: Copy + TryInto<GenusIndex>> From<&[G]> for GenusIndexBitArray {
@@ -212,11 +243,105 @@ impl<G: Copy + TryInto<GenusIndex>> From<&[G]> for GenusIndexBitArray {
 	}
 }
 
+impl<'de> Deserialize<'de> for GenusIndexBitArray {
+	fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+		Ok(Vec::<GenusIndexString>::deserialize(deserializer)?
+			.into_iter()
+			.map(|genus_index_string: GenusIndexString| -> GenusIndex { genus_index_string.0 })
+			.collect::<Vec<GenusIndex>>()
+			.as_slice()
+			.into())
+	}
+}
+
+impl Serialize for GenusIndexBitArray {
+	fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+		self
+			.iter()
+			.map(|genus_index: GenusIndex| -> String { format!("{:?}", genus_index) })
+			.collect::<Vec<String>>()
+			.serialize(serializer)
+	}
+}
+
+impl Inspectable for GenusIndexBitArray {
+	type Attributes = ();
+
+	fn ui(&mut self, ui: &mut Ui, _: (), context: &mut Context) -> bool {
+		let mut inspectable_bit_array_wrapper:
+			InspectableBitArrayWrapper<
+				<GenusIndexBitArray as GenusIndexBitArrayConsts>::Block,
+				{ <GenusIndexBitArray as GenusIndexBitArrayConsts>::SIZE }
+			> = InspectableBitArrayWrapper(&mut self.0);
+		inspectable_bit_array_wrapper.ui(
+			ui,
+			InspectableBitArrayAttrs {
+				length: Some(Library::get_genus_count()),
+				fetch_label: Some(Rc::new(|genus_index: usize| -> String {
+					if let Ok(genus_index) =
+						if let Ok(bit_index_genus_index_type) = GenusIndexType::try_from(genus_index) {
+							GenusIndex::try_from(bit_index_genus_index_type)
+						} else {
+							Err(())
+						}
+					{
+						format!("{:?}", genus_index)
+					} else {
+						"[OUT OF RANGE]".into()
+					}
+				}))
+			},
+			context
+		)
+	}
+}
+
 /* With GenusIndexType as a u8, size_of::<GenusIndexBitArray>() == 32_usize. This is acceptable. With GenusIndexType as
 a u16, or some other integer type of greater or equal size, size_of::<GenusIndexBitArray>() >= 8192_usize. This is
 unacceptable. If there's a need to increase the bit count of GenusIndexType to be greater than 8, GenusIndexBitArray
 should be modified to be a dynamically allocated bit vector. */
 assert_type_eq_all!(GenusIndexType, u8);
+
+pub struct GenusIndexBitArrayIter<'a> {
+	genus_index_bit_array: &'a GenusIndexBitArray,
+	current_index: usize,
+	current_block: <GenusIndexBitArray as GenusIndexBitArrayConsts>::Block
+}
+
+impl<'a> Iterator for GenusIndexBitArrayIter<'a> {
+	type Item = GenusIndex;
+
+	fn next(&mut self) -> Option<GenusIndex> {
+		type Block = <GenusIndexBitArray as GenusIndexBitArrayConsts>::Block;
+
+		let block_count: usize = self.genus_index_bit_array.0.len();
+
+		while self.current_index < block_count {
+			let bit_index: usize = self.current_block.trailing_zeros() as usize;
+
+			if bit_index < Block::BITS as usize {
+				self.current_block.set_bit(bit_index, false);
+
+				let genus_index: usize = self.current_index * Block::BITS as usize + bit_index;
+
+				return if genus_index < Library::get_genus_count() {
+					Some(GenusIndex::from_usize(genus_index))
+				} else {
+					None
+				};
+			} else {
+				self.current_index += 1_usize;
+
+				if self.current_index < block_count {
+					self.current_block = self.genus_index_bit_array.0[self.current_index];
+				}
+			}
+		}
+
+		None
+	}
+}
+
 
 pub struct GenusIndexString(pub GenusIndex);
 

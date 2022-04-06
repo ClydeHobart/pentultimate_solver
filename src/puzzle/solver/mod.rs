@@ -1,5 +1,3 @@
-use crate::app::prelude::Preferences;
-
 use {
 	std::{
 		cmp::{
@@ -20,6 +18,14 @@ use {
 	},
 	bevy::prelude::*,
 	bit_field::BitField,
+	egui::{
+		Color32,
+		Grid,
+		RichText,
+		Ui,
+		Vec2,
+		Visuals
+	},
 	crate::{
 		app::prelude::*,
 		math::polyhedra::{
@@ -59,6 +65,8 @@ use {
 	},
 };
 
+pub mod tools;
+
 #[derive(Debug)]
 #[repr(usize)]
 enum SolverGenusIndex {
@@ -76,11 +84,12 @@ const PENTAGON_HALF_MASK:		HalfMask	= ((1 as HalfMask) << PENTAGON_PIECE_COUNT) 
 const TRIANGLE_HALF_MASK:		HalfMask	= !PENTAGON_HALF_MASK;
 const ZERO_HALF_MASK:			HalfMask	= 0 as HalfMask;
 const COMPLETION_TIER_COUNT:	usize		= 4_usize;
-const MAX_DEPTH:				u8			= 2_u8;
+const MAX_DEPTH:				u8			= 1_u8;
 
 #[derive(Default)]
 struct SolverData{
-	completion_half_masks:	[HalfMask; COMPLETION_TIER_COUNT + 1_usize],
+	completed_half_masks:	[HalfMask; COMPLETION_TIER_COUNT + 1_usize],
+	focus_half_masks:		[HalfMask; COMPLETION_TIER_COUNT + 1_usize],
 	genus_ranges:			[GenusRange; SolverGenusIndex::Count as usize]
 }
 
@@ -121,7 +130,7 @@ impl SolverData {
 
 		for (piece_index, dot_product) in dot_products.iter().enumerate() {
 			solver_data
-				.completion_half_masks[
+				.focus_half_masks[
 					(if piece_index < TRIANGLE_INDEX_OFFSET { &pent_dot_products } else { &tri_dot_products })
 						.binary_search(dot_product)
 						.unwrap()
@@ -129,13 +138,14 @@ impl SolverData {
 				.set_bit(piece_index, true);
 		}
 
-		for completion_half_mask_index in 1_usize .. COMPLETION_TIER_COUNT {
-			solver_data.completion_half_masks[completion_half_mask_index] |= solver_data
-				.completion_half_masks
-				[completion_half_mask_index - 1_usize];
-		}
+		solver_data.completed_half_masks = solver_data.focus_half_masks;
+		solver_data.completed_half_masks.rotate_right(1_usize);
 
-		solver_data.completion_half_masks.rotate_right(1_usize);
+		for completion_half_mask_index in 0_usize .. COMPLETION_TIER_COUNT {
+			solver_data.completed_half_masks[completion_half_mask_index + 1_usize] |= solver_data
+				.completed_half_masks
+				[completion_half_mask_index];
+		}
 
 		for solver_genus_index in 0_usize .. SolverGenusIndex::Count as usize {
 			let solver_genus_index_string: String = format!(
@@ -164,7 +174,7 @@ impl StaticDataLibrary for SolverData {
 	fn get() -> &'static Self { &SOLVER_DATA }
 }
 
-#[derive(Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 #[repr(u8)]
 enum SolveStage {
 	PositionPents,
@@ -176,8 +186,13 @@ enum SolveStage {
 
 impl SolveStage {
 	#[inline]
-	const fn get_half_mask(self, full_mask: &FullMask) -> HalfMask {
+	const fn get_focus_affected_half_mask(self, full_mask: &FullMask) -> HalfMask {
 		self.get_piece_half_mask() & self.get_full_mask_field(full_mask)
+	}
+
+	#[inline]
+	const fn get_focus_unaffected_half_mask(self, full_mask: &FullMask) -> HalfMask {
+		self.get_piece_half_mask() & !self.get_full_mask_field(full_mask)
 	}
 
 	#[inline]
@@ -203,9 +218,9 @@ impl Default for SolveStage { fn default() -> Self { Self::PositionPents } }
 
 impl From<FullMask> for SolveStage {
 	fn from(full_mask: FullMask) -> Self {
-		if SolveStage::RotatePents.get_half_mask(&full_mask) != ZERO_HALF_MASK {
+		if SolveStage::RotatePents.get_focus_affected_half_mask(&full_mask) != ZERO_HALF_MASK {
 			// Pentagons haven't been solved
-			if SolveStage::PositionPents.get_half_mask(&full_mask) != ZERO_HALF_MASK {
+			if SolveStage::PositionPents.get_focus_affected_half_mask(&full_mask) != ZERO_HALF_MASK {
 				// Pentagons haven't been positioned
 				Self::PositionPents
 			} else {
@@ -214,12 +229,12 @@ impl From<FullMask> for SolveStage {
 			}
 		} else {
 			// Pentagons have been solved
-			if SolveStage::PositionTris.get_half_mask(&full_mask) != ZERO_HALF_MASK {
+			if SolveStage::PositionTris.get_focus_affected_half_mask(&full_mask) != ZERO_HALF_MASK {
 				// Triangles haven't been positioned
 				Self::PositionTris
 			} else {
 				// Triangles have been positioned
-				if SolveStage::RotateTris.get_half_mask(&full_mask) != ZERO_HALF_MASK {
+				if SolveStage::RotateTris.get_focus_affected_half_mask(&full_mask) != ZERO_HALF_MASK {
 					// Triangles haven't been rotated
 					Self::RotateTris
 				} else {
@@ -235,20 +250,10 @@ impl<'p, 'r> From<PosAndRot<'p, 'r>> for SolveStage {
 	fn from(pos_and_rot: PosAndRot) -> Self { FullMask::from(pos_and_rot).into() }
 }
 
-#[derive(Clone, Copy, Default, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
 struct Completion {
 	solve_stage:	SolveStage,
 	tier:			u8
-}
-
-impl Completion {
-	fn should_explore(self, full_addr: FullAddr) -> bool {
-		if let Some(full_mask) = full_addr.get_full_mask() {
-			SOLVER_DATA.completion_half_masks[self.tier as usize] & self.solve_stage.get_half_mask(full_mask) == 0_u32
-		} else {
-			false
-		}
-	}
 }
 
 impl From<FullMask> for Completion {
@@ -257,10 +262,10 @@ impl From<FullMask> for Completion {
 
 impl From<(FullMask, SolveStage)> for Completion {
 	fn from((full_mask, solve_stage): (FullMask, SolveStage)) -> Self {
-		let solve_stage_half_mask: HalfMask = solve_stage.get_half_mask(&full_mask);
+		let solve_stage_half_mask: HalfMask = solve_stage.get_focus_affected_half_mask(&full_mask);
 
 		for tier in (1_usize .. COMPLETION_TIER_COUNT).rev() {
-			if SOLVER_DATA.completion_half_masks[tier] & solve_stage_half_mask == ZERO_HALF_MASK {
+			if SOLVER_DATA.completed_half_masks[tier] & solve_stage_half_mask == ZERO_HALF_MASK {
 				return Self {
 					solve_stage,
 					tier: tier as u8
@@ -275,7 +280,7 @@ impl From<(FullMask, SolveStage)> for Completion {
 	}
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 struct FullMaskAndCompletion {
 	full_mask:	FullMask,
 	completion:	Completion
@@ -283,12 +288,93 @@ struct FullMaskAndCompletion {
 
 impl FullMaskAndCompletion {
 	#[inline]
-	fn get_half_mask(&self) -> HalfMask {
-		self.completion.solve_stage.get_half_mask(&self.full_mask)
+	fn get_focus_affected_half_mask(&self) -> HalfMask {
+		self.completion.solve_stage.get_focus_affected_half_mask(&self.full_mask)
 	}
 
-	fn get_completed_pieces(&self) -> u32 {
-		(SOLVER_DATA.completion_half_masks[self.completion.tier as usize + 1_usize] & self.get_half_mask()).count_ones()
+	#[inline]
+	fn get_focus_unaffected_half_mask(&self) -> HalfMask {
+		self.completion.solve_stage.get_focus_unaffected_half_mask(&self.full_mask)
+	}
+
+	fn get_incorrect_piece_count(&self) -> u32 {
+		(SOLVER_DATA
+			.completed_half_masks
+			[self.completion.tier as usize + 1_usize]
+			& self
+				.get_focus_affected_half_mask()
+		).count_ones()
+	}
+
+	fn immut_ui(&self, ui: &mut Ui) -> () {
+		ui.collapsing("Full Mask And Completion", |ui: &mut Ui| -> () {
+			ui.label(format!("Solve Stage: {:?}, Tier: {:?}", self.completion.solve_stage, self.completion.tier));
+			ui.scope(|ui: &mut Ui| -> () {
+				let (focus_poses, focus_pieces): (bool, bool) = match self.completion.solve_stage {
+					SolveStage::PositionPents | SolveStage::PositionTris => (true, false),
+					SolveStage::RotatePents | SolveStage::RotateTris => (false, true),
+					_ => (false, false)
+				};
+				let piece_half_mask: HalfMask = self.completion.solve_stage.get_piece_half_mask();
+				let completed_tier_half_mask: HalfMask = SOLVER_DATA
+					.completed_half_masks
+					[self.completion.tier as usize]
+					& piece_half_mask;
+				let focus_tier_half_mask: HalfMask = SOLVER_DATA
+					.completed_half_masks
+					[self.completion.tier as usize + 1_usize]
+					& !completed_tier_half_mask
+					& piece_half_mask;
+				let (strong, normal, weak): (Color32, Color32, Color32) = {
+					let visuals: &Visuals = ui.visuals();
+
+					(visuals.strong_text_color(), visuals.text_color(), visuals.weak_text_color())
+				};
+
+				Grid::new(0).show(ui, |ui: &mut Ui| -> () {
+					for (label, half_mask_string, focus)
+						in [
+							("Affected Poses", self.full_mask.affected_poses_string(), focus_poses),
+							("Affected Pieces", self.full_mask.affected_pieces_string(), focus_pieces)
+						]
+					{
+						ui.label(label);
+						ui.horizontal(|ui: &mut Ui| -> () {
+							ui.spacing_mut().item_spacing = Vec2::ZERO;
+							
+
+							for (bit, bit_char) in half_mask_string.chars().enumerate() {
+								ui.label(RichText::new(bit_char).monospace().color(
+									if focus {
+										if focus_tier_half_mask.get_bit(bit) {
+											strong
+										} else if completed_tier_half_mask.get_bit(bit) {
+											normal
+										} else {
+											weak
+										}
+									} else {
+										weak
+									}
+								));
+							}
+						});
+						ui.end_row();
+					}
+				});
+			});
+		});
+	}
+
+	fn should_explore(&self, full_addr: FullAddr) -> bool {
+		if let Some(full_mask) = full_addr.get_full_mask() {
+			(SOLVER_DATA.completed_half_masks[self.completion.tier as usize]
+				| SOLVER_DATA.focus_half_masks[self.completion.tier as usize]
+				& self.get_focus_unaffected_half_mask()
+			) & self.completion.solve_stage.get_focus_affected_half_mask(full_mask) == ZERO_HALF_MASK
+		} else {
+			false
+		}
 	}
 }
 
@@ -322,7 +408,7 @@ impl<'p, 'r> From<PosAndRot<'p, 'r>> for FullMaskAndCompletion {
 
 impl PartialEq for FullMaskAndCompletion {
 	fn eq(&self, other: &Self) -> bool {
-		self.completion == other.completion && self.get_completed_pieces() == other.get_completed_pieces()
+		self.completion == other.completion && self.get_incorrect_piece_count() == other.get_incorrect_piece_count()
 	}
 }
 
@@ -333,7 +419,7 @@ impl PartialOrd for FullMaskAndCompletion {
 		if completion_partial_cmp.is_none() || completion_partial_cmp.as_ref().unwrap().is_ne() {
 			completion_partial_cmp
 		} else {
-			self.get_completed_pieces().partial_cmp(&other.get_completed_pieces())
+			other.get_incorrect_piece_count().partial_cmp(&self.get_incorrect_piece_count())
 		}
 	}
 }
@@ -390,7 +476,7 @@ macro_rules! define_solve_stage_state {
 }
 
 define_solve_stage_state!{
-	#[derive(Clone, Copy)]
+	#[derive(Clone, Copy, Debug)]
 	#[repr(u8)]
 	enum PositionPentsStage {
 		Simple,
@@ -400,7 +486,7 @@ define_solve_stage_state!{
 }
 
 define_solve_stage_state!{
-	#[derive(Clone, Copy)]
+	#[derive(Clone, Copy, Debug)]
 	#[repr(u8)]
 	enum RotatePentsStage {
 		Rotate2PentPairs,
@@ -410,16 +496,14 @@ define_solve_stage_state!{
 }
 
 define_solve_stage_state!{
-	#[derive(Clone, Copy)]
+	#[derive(Clone, Copy, Debug)]
 	#[repr(u8)]
 	enum PositionTrisStage {
 		CommuteTriTrio
 	}
 }
 
-
-
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum StatefulSolveStage {
 	PositionPents(PositionPentsStage),
 	RotatePents(RotatePentsStage),
@@ -463,7 +547,7 @@ impl<'p> From<(&'p PuzzleState, FullMaskAndCompletion, StatefulSolveStage)> for 
 	)) -> Self { Self {
 		start_state:		puzzle_state,
 		should_explore:		Some(Box::new(move |_: &PuzzleState, full_addr: FullAddr| -> bool {
-			full_mask_and_completion.completion.should_explore(full_addr)
+			full_mask_and_completion.should_explore(full_addr)
 		}) as ShouldExplore),
 		is_end_state:		Box::new(move |puzzle_state: &PuzzleState| -> bool {
 			FullMaskAndCompletion::from(puzzle_state.arrays()) > full_mask_and_completion
@@ -514,6 +598,9 @@ impl SolverState {
 	#[inline(always)]
 	fn is_solving(&self) -> bool { matches!(self, Self::Solving(_)) }
 
+	#[inline(always)]
+	fn is_solved(&self) -> bool { matches!(self, Self::Solved) }
+
 	fn try_get_stateful_solve_stage(self) -> Option<StatefulSolveStage> {
 		match self {
 			Self::Solving(stateful_solve_stage) => Some(stateful_solve_stage),
@@ -539,7 +626,7 @@ impl From<SolveStage> for SolverState {
 
 impl Default for SolverState { fn default() -> Self { SolverState::Idle } }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 #[repr(u8)]
 enum StatType {
 	Total,
@@ -548,22 +635,65 @@ enum StatType {
 	Count
 }
 
-#[derive(Clone, Default)]
-struct CycleStats {
-	solver:		u64,
-	explorer:	u64
+impl From<u8> for StatType {
+	fn from(stat_type: u8) -> Self { unsafe { transmute::<u8, Self>(stat_type.min(Self::Count as u8)) } }
 }
 
-#[derive(Clone, Default)]
+#[derive(Debug, Default)]
+struct CountStats {
+	solver_cycles:		u64,
+	explorer_cycles:	u64,
+	explorer_states:	u64
+}
+
+#[derive(Debug, Default)]
 struct TypeStats {
 	elapsed:	Duration,
-	cycles:		CycleStats
+	counts:		CountStats
 }
 
-#[derive(Clone, Default)]
+impl TypeStats {
+	fn immut_ui(&self, ui: &mut Ui) -> () {
+		Grid::new(0_u32).show(ui, |ui: &mut Ui| -> () {
+			ui.label("Elapsed:");
+			ui.label(String::from_alt(self.elapsed));
+			ui.end_row();
+			ui.label("Solver Cycles:");
+			ui.label(format!("{}", self.counts.solver_cycles));
+			ui.end_row();
+			ui.label("Explorer Cycles:");
+			ui.label(format!("{}", self.counts.explorer_cycles));
+			ui.end_row();
+			ui.label("Explorer States:");
+			ui.label(format!("{}", self.counts.explorer_states));
+			ui.end_row();
+		});
+	}
+}
+
+#[derive(Debug, Default)]
 struct Stats {
 	type_stats_array:			[TypeStats; StatType::Count as usize],
 	full_mask_and_completion:	FullMaskAndCompletion
+}
+
+impl Stats {
+	fn type_stats_array_ui(&self, ui: &mut Ui) -> () {
+		ui.collapsing("Type Stats Array", |ui: &mut Ui| -> () {
+			ui.indent(0_u32, |ui: &mut Ui| -> () {
+				for (stat_type, type_stats) in self.type_stats_array.iter().enumerate() {
+					ui.collapsing(
+						format!("{:?}", StatType::from(stat_type as u8)),
+						|ui: &mut Ui| -> () {
+							ui.indent(stat_type, |ui: &mut Ui| -> () {
+								type_stats.immut_ui(ui);
+							});
+						}
+					);
+				}
+			});
+		});
+	}
 }
 
 #[derive(Default)]
@@ -606,6 +736,9 @@ impl Solver {
 	fn is_done(&self) -> bool { self.solver_state.is_done() }
 
 	#[inline(always)]
+	fn is_solved(&self) -> bool { self.solver_state.is_solved() }
+
+	#[inline(always)]
 	fn is_solving(&self) -> bool { self.solver_state.is_solving() }
 
 	fn run_cycle(&mut self, mut max_cycle_duration: Duration) -> () {
@@ -630,14 +763,17 @@ impl Solver {
 
 		while !max_cycle_duration.is_zero() {
 			let start: Instant = Instant::now();
+			let explorer_state_start: u64 = explorer.get_stats().states;
 			let run_result: RunResult = explorer.run_cycle(
 				Some(max_cycle_duration),
 				false,
 				false
 			);
+			let explorer_state_increase: u64 = explorer.get_stats().states - explorer_state_start;
 
-			for stat_type in 0_usize .. StatType::Count as usize {
-				stats.type_stats_array[stat_type].cycles.explorer += 1_u64;
+			for type_stats in stats.type_stats_array.iter_mut() {
+				type_stats.counts.explorer_cycles += 1_u64;
+				type_stats.counts.explorer_states += explorer_state_increase;
 			}
 
 			macro_rules! update_max_cycle_duration { () => {
@@ -709,6 +845,9 @@ impl Solver {
 					} else {
 						*solver_state = SolverState::DidNotFinish;
 
+						debug_expr!(stateful_solve_stage);
+						log::info!("Did not finish solve:\n{:#?}", stats);
+
 						break;
 					}
 				}
@@ -718,7 +857,7 @@ impl Solver {
 		let end: Instant = Instant::now();
 
 		for (stat_type, type_stats) in stats.type_stats_array.iter_mut().enumerate() {
-			type_stats.cycles.solver += 1_u64;
+			type_stats.counts.solver_cycles += 1_u64;
 			type_stats.elapsed += end - stat_type_starts[stat_type];
 		}
 	}

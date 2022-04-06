@@ -481,11 +481,10 @@ impl UIPlugin {
 			});
 	}
 
-	#[cfg(debug_assertions)]
 	fn render_tools(context: &mut Context) -> () {
 		const OFFSET: f32 = 20.0_f32;
 		const TOOLS_OFFSET: Vec2 = Vec2::new(OFFSET, OFFSET);
-		const FILL_ALPHA: u8 = 0xC0_u8;
+		const FILL_ALPHA: u8 = 0xE0_u8;
 
 		let mut preferences: Mut<Preferences> = log_option_none!(
 			unsafe { context.world_mut() }.and_then(World::get_resource_mut::<Preferences>)

@@ -297,7 +297,7 @@ impl Explorer {
 
 						let state_to_push: InflatedPuzzleState = &state + full_addr;
 
-						if self.seen.insert(DeflatedPuzzleState::from(&*state_to_push.clone().standardize())) {
+						if !self.seen.insert(DeflatedPuzzleState::from(&*state_to_push.clone().standardize())) {
 							continue;
 						}
 

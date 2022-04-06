@@ -81,7 +81,6 @@ use {
 		Context,
 		Inspectable
 	},
-	bit_field::BitArray,
 	rand::{
 		rngs::ThreadRng,
 		Rng,
@@ -362,7 +361,7 @@ impl PendingActions {
 				let mut genus_indices: Vec<GenusIndex> = Vec::<GenusIndex>::new();
 
 				for genus_index_usize in 0_usize .. Library::get_genus_count() {
-					if preferences.file_menu.random_transformation_genera.0.0.get_bit(genus_index_usize) {
+					if preferences.file_menu.random_transformation_genera.get_bit(genus_index_usize) {
 						genus_indices.push(GenusIndex::try_from(genus_index_usize as GenusIndexType).unwrap());
 					}
 				}

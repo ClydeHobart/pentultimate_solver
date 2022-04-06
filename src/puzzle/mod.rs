@@ -84,6 +84,7 @@ pub use {
 
 pub mod explorer;
 pub mod solver;
+pub mod tools;
 pub mod transformation;
 
 pub mod consts {

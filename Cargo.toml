@@ -62,5 +62,8 @@ opt-level = 0
 [[example]]
 name = "transformation_finder"
 
+[[example]]
+name = "egui_playground"
+
 [workspace]
 resolver = "2"
