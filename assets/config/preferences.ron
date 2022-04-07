@@ -22,9 +22,11 @@ Preferences(
 		)
 	),
 	file_menu:			FileMenuData(
-		random_transformation_genera:	[ "Simple" ],
-		random_transformation_count:	30,
-		randomization_type:				FromSolvedNoStack
+		randomization_params:	RandomizationParams(
+			random_transformation_genera:	[ "Simple" ],
+			random_transformation_count:	30,
+			randomization_type:				FromSolvedNoStack
+		)
 	),
 	input:				InputData(
 		default_positions:		(	0,			5,			10,			1,			8,			4		),

@@ -356,12 +356,16 @@ impl PendingActions {
 			.. Self::default()
 		};
 		let (puzzle_state, actions): (InflatedPuzzleState, VecDeque<Action>) = {
-			let random_transformation_count: usize = preferences.file_menu.random_transformation_count as usize;
+			let random_transformation_count: usize = preferences
+				.file_menu
+				.randomization_params
+				.random_transformation_count
+				as usize;
 			let genus_indices: Vec<GenusIndex> = {
 				let mut genus_indices: Vec<GenusIndex> = Vec::<GenusIndex>::new();
 
 				for genus_index_usize in 0_usize .. Library::get_genus_count() {
-					if preferences.file_menu.random_transformation_genera.get_bit(genus_index_usize) {
+					if preferences.file_menu.randomization_params.random_transformation_genera.get_bit(genus_index_usize) {
 						genus_indices.push(GenusIndex::try_from(genus_index_usize as GenusIndexType).unwrap());
 					}
 				}
@@ -370,7 +374,7 @@ impl PendingActions {
 			};
 			let genus_index_count: f32 = genus_indices.len() as f32;
 			let mut puzzle_state: InflatedPuzzleState = if matches!(
-				preferences.file_menu.randomization_type,
+				preferences.file_menu.randomization_params.randomization_type,
 				RandomizationType::FromCurrent
 			) { puzzle_state.clone() } else { InflatedPuzzleState::SOLVED_STATE };
 			let mut camera: HalfAddr = CameraPlugin::compute_camera_addr(camera_orientation);
@@ -420,7 +424,7 @@ impl PendingActions {
 			(puzzle_state, actions)
 		};
 
-		match preferences.file_menu.randomization_type {
+		match preferences.file_menu.randomization_params.randomization_type {
 			RandomizationType::FromCurrent => {
 				pending_actions.actions = actions;
 			},

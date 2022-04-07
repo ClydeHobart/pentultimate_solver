@@ -72,7 +72,8 @@ pub mod tools;
 enum SolverGenusIndex {
 	Simple,
 	Swap2PentPairs,
-	CommutePentTrio,
+	CommutePentTrioTriangle,
+	CommutePentTrioLine,
 	Rotate2PentPairs,
 	RotatePentPair,
 	RotatePent,
@@ -481,7 +482,8 @@ define_solve_stage_state!{
 	enum PositionPentsStage {
 		Simple,
 		Swap2PentPairs,
-		CommutePentTrio
+		CommutePentTrioTriangle,
+		CommutePentTrioLine
 	}
 }
 
@@ -583,7 +585,7 @@ impl From<StatefulSolveStage> for SolveStage {
 	}
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum SolverState {
 	Idle,
 	Solving(StatefulSolveStage),
@@ -777,7 +779,7 @@ impl Solver {
 			}
 
 			macro_rules! update_max_cycle_duration { () => {
-				max_cycle_duration = max_cycle_duration.checked_sub(Instant::now() - start).unwrap_or_default();
+				max_cycle_duration = max_cycle_duration.saturating_sub(Instant::now() - start);
 			} }
 
 			match run_result {
@@ -937,5 +939,88 @@ impl Plugin for SolverPlugin {
 				.system()
 				.label(STRING_DATA.labels.solver_post_update.as_ref())
 			);
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use {
+		crate::{
+			preferences::{
+				FileMenuData,
+				Preferences,
+				RandomizationParams
+			},
+			puzzle::transformation::HalfAddrConsts,
+			ui::input::PendingActions
+		},
+		super::*
+	};
+
+	#[test]
+	fn test_pent_solution() -> () {
+		const SOLVE_ITERATIONS: u32 = 1000_u32;
+		const RANDOM_TRANSFORMATION_COUNT: u8 = 50_u8;
+		const ONE_SECOND: Duration = Duration::from_secs(1_u64);
+
+		init_env_logger();
+		SolverData::build();
+
+		let camera_orientation: Quat = *HalfAddr::ORIGIN.get_orientation().unwrap();
+		let preferences: Preferences = Preferences {
+			file_menu: FileMenuData {
+				randomization_params: RandomizationParams {
+					random_transformation_count: RANDOM_TRANSFORMATION_COUNT,
+					.. RandomizationParams::default()
+				}
+			},
+			.. Preferences::default()
+		};
+		let mut solver: Solver = Solver::default();
+
+		for iteration in 0_u32 .. SOLVE_ITERATIONS {
+			solver.init(&PendingActions::randomize(
+				&preferences,
+				&PuzzleState::SOLVED_STATE,
+				&camera_orientation
+			).puzzle_state);
+
+			fn solve_stage_from_solver(solver: &Solver) -> SolveStage {
+				solver.stats.full_mask_and_completion.completion.solve_stage
+			}
+
+			let mut solve_cycles: u32 = 60_u32;
+
+			while solver.is_solving()
+				&& matches!(solve_stage_from_solver(&solver), SolveStage::PositionPents | SolveStage::RotatePents)
+				&& solve_cycles != 0_u32
+			{
+				solver.run_cycle(ONE_SECOND);
+				solve_cycles -= 1_u32;
+			}
+
+			match solver.solver_state {
+				SolverState::Idle => {
+					unreachable!();
+				},
+				SolverState::Solving(StatefulSolveStage::PositionPents(_) | StatefulSolveStage::RotatePents(_)) => {
+					assert!(solve_cycles == 0_u32);
+					panic!("Couldn't solve pentagons after 1 minute of solve time on iteration {}\n\
+						SolverState: {:#?}\n\
+						SolverStats: {:#?}",
+						iteration, solver.solver_state, solver.stats);
+				},
+				SolverState::DidNotFinish => {
+					// DNF only matters if the solve stage was still pentagons
+					if matches!(solve_stage_from_solver(&solver), SolveStage::PositionPents | SolveStage::RotatePents) {
+						panic!("Did not solve pentagons on iteration {}\n\
+							SolverState: {:#?}\n\
+							SolverStats: {:#?}",
+							iteration, solver.solver_state, solver.stats);
+					}
+				},
+				_ => {}
+			}
+		}
 	}
 }

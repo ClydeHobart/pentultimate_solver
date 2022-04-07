@@ -1,7 +1,11 @@
 use {
 	crate::{
 		prelude::*,
-		puzzle::transformation::GenusIndexBitArray,
+		puzzle::transformation::{
+			GenusIndex,
+			GenusIndexBitArray,
+			GenusIndexConsts
+		},
 		tools::ToolsData
 	},
 	bevy::prelude::World,
@@ -33,7 +37,7 @@ pub enum RandomizationType {
 }
 
 #[derive(Clone, Deserialize, Inspectable, PartialEq)]
-pub struct FileMenuData {
+pub struct RandomizationParams {
 	#[inspectable(collapse)]
 	pub random_transformation_genera:	GenusIndexBitArray,
 	#[inspectable(min = 1_u8, max = 100_u8)]
@@ -41,15 +45,18 @@ pub struct FileMenuData {
 	pub randomization_type:				RandomizationType
 }
 
-impl Default for FileMenuData {
+impl Default for RandomizationParams {
 	fn default() -> Self { Self {
-		random_transformation_genera:	GenusIndexBitArray::default(),
+		random_transformation_genera:	[GenusIndex::SIMPLE].as_slice().into(),
 		random_transformation_count:	30_u8,
 		randomization_type:				RandomizationType::FromSolved
 	} }
 }
 
-
+#[derive(Clone, Default, Deserialize, Inspectable, PartialEq)]
+pub struct FileMenuData {
+	pub randomization_params: RandomizationParams
+}
 
 define_struct_with_default!(
 	#[derive(Clone, Deserialize, Inspectable, PartialEq)]

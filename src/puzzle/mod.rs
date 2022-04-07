@@ -19,7 +19,9 @@ use {
 				ColAndMat,
 				ColorDataWithMat
 			},
-			Preferences
+			Preferences,
+			RandomizationParams,
+			RandomizationType
 		},
 		util::inspectable_bin_map::*,
 		max
@@ -30,10 +32,13 @@ use {
 			Action,
 			Addr,
 			FullAddr,
+			GenusIndexBitArray,
+			GenusIndexType,
 			HalfAddr,
 			HalfAddrConsts,
 			Library,
 			LibraryConsts,
+			RandHalfAddrParams,
 			Transformation
 		}
 	},
@@ -60,6 +65,7 @@ use {
 		app::PluginGroupBuilder,
 		prelude::*
 	},
+	bevy_inspector_egui::Inspectable,
 	libc::{
 		c_void,
 		memcmp
@@ -599,6 +605,15 @@ pub mod inflated {
 
 			transformation
 		}
+	}
+
+	#[derive(Clone, Deserialize, Inspectable, PartialEq)]
+	pub struct RandomizePuzzleStateParams {
+		#[inspectable(collapse)]
+		pub random_transformation_genera:	GenusIndexBitArray,
+		#[inspectable(min = 1_u8, max = 100_u8)]
+		pub random_transformation_count:	u8,
+		pub randomization_type:				RandomizationType
 	}
 
 	#[derive(Clone, Default, Deserialize, Serialize)]

@@ -6,12 +6,23 @@
 		],
 	),
 	(
-		name: "CommutePentTrio",
+		name: "CommutePentTrioTriangle",
 		seed_simples: [
 			(8, 4), (5, 1), (8, 1), (5, 4),
 			(2, 1),
 			(8, 4), (5, 1), (8, 1), (5, 4),
 			(2, 4),
+		],
+	),
+	(
+		name: "CommutePentTrioLine",
+		seed_simples: [
+			(7, 4),
+			(10, 4), (8, 1), (10, 1), (8, 4),
+			(6, 1),
+			(10, 4), (8, 1), (10, 1), (8, 4),
+			(6, 4),
+			(7, 1)
 		],
 	),
 	(
