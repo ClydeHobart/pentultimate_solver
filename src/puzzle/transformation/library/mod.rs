@@ -84,6 +84,8 @@ use {
 	}
 };
 
+pub mod tools;
+
 pub type GenusIndexType = u8;
 
 #[derive(Clone, Copy, Deserialize, Eq, PartialEq, Serialize)]
@@ -386,6 +388,7 @@ pub struct FamilyInput {
 #[derive(Default, Deserialize, Serialize)]
 pub struct OrderInfo(Vec<FamilyInput>);
 
+#[derive(Debug)]
 struct FamilyInfo {
 	name:				String,
 	base_genus:			GenusIndex,
@@ -429,7 +432,7 @@ impl FamilyInfo {
 	}
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct GenusRange(Range<GenusIndexType>);
 
 impl Default for GenusRange { fn default() -> Self { GenusRange(GenusIndex::INVALID.0 .. GenusIndex::INVALID.0) } }
@@ -472,7 +475,7 @@ type SimpleOffsetType = u32;
 type SimpleSliceLenType = u16;
 type FamilyIndexType = u8;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct GenusInfo {
 	name:				String,
 	simple_offset:		SimpleOffsetType,
@@ -507,7 +510,7 @@ pub type LargeGenus<T>	= [Species<T>;	Library::SPECIES_PER_LARGE_GENUS];
 pub type Class<T>		= Vec<Genus<T>>;
 pub type SmallClass<T>	= [Genus<T>;	Library::GENERA_PER_SMALL_CLASS];
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct Library {
 	family_infos:		Vec<FamilyInfo>,
 	genus_infos:		Vec<GenusInfo>,
@@ -1227,6 +1230,14 @@ lazy_static!{
 	/* Used only for updating or reloading the library mid session. Not the most "safe", but it can be done in a safe
 	manner so long as updating and reloading is only done in a single-threaded state */
 	static ref LIBRARY_MUTEX: Mutex<()> = Mutex::<()>::new(());
+}
+
+#[test]
+fn dump_library() -> () {
+	use std::io::Write;
+	Library::build();
+
+	write!(std::fs::File::create(".ignore/rotate_tri_pair_full_masks.ron").unwrap(), "{:#?}", Library::get().full_masks[Library::get_genus_count() - 4_usize]).unwrap();
 }
 
 #[cfg(test)]

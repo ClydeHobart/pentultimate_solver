@@ -77,7 +77,8 @@ enum SolverGenusIndex {
 	Rotate2PentPairs,
 	RotatePentPair,
 	RotatePent,
-	CommuteTriTrio,
+	CommuteTriTrioLine,
+	CommuteTriTrioCorner,
 	RotateTriPair,
 	Count
 }
@@ -86,9 +87,8 @@ const PENTAGON_HALF_MASK:		HalfMask	= ((1 as HalfMask) << PENTAGON_PIECE_COUNT) 
 const TRIANGLE_HALF_MASK:		HalfMask	= !PENTAGON_HALF_MASK;
 const ZERO_HALF_MASK:			HalfMask	= 0 as HalfMask;
 const COMPLETION_TIER_COUNT:	usize		= 4_usize;
-const MAX_DEPTH:				u8			= 1_u8;
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct SolverData{
 	completed_half_masks:	[HalfMask; COMPLETION_TIER_COUNT + 1_usize],
 	focus_half_masks:		[HalfMask; COMPLETION_TIER_COUNT + 1_usize],
@@ -212,6 +212,15 @@ impl SolveStage {
 			Self::PositionPents	| Self::RotatePents	=> PENTAGON_HALF_MASK,
 			Self::PositionTris	| Self::RotateTris	=> TRIANGLE_HALF_MASK,
 			Self::Solved							=> ZERO_HALF_MASK
+		}
+	}
+
+	#[inline]
+	const fn get_max_depth(self) -> u8 {
+		match self {
+			Self::PositionTris	| Self::RotateTris	=> 2_u8,
+			// A max depth of 0 means no max depth, otherwise Solved would have 0
+			_										=> 1_u8
 		}
 	}
 }
@@ -502,7 +511,8 @@ define_solve_stage_state!{
 	#[derive(Clone, Copy, Debug)]
 	#[repr(u8)]
 	enum PositionTrisStage {
-		CommuteTriTrio
+		CommuteTriTrioLine,
+		CommuteTriTrioCorner
 	}
 }
 
@@ -565,7 +575,7 @@ impl<'p> From<(&'p PuzzleState, FullMaskAndCompletion, StatefulSolveStage)> for 
 			FullMaskAndCompletion::from(puzzle_state.arrays()) > full_mask_and_completion
 		}) as IsEndState,
 		candidate_genera:	GenusIndexBitArray::from(GenusRange::from(stateful_solve_stage)),
-		max_depth:			MAX_DEPTH
+		max_depth:			full_mask_and_completion.completion.solve_stage.get_max_depth()
 	} }
 }
 
@@ -575,7 +585,7 @@ impl From<StatefulSolveStage> for GenusRange {
 			StatefulSolveStage::PositionPents(position_pents_stage)=> position_pents_stage.into(),
 			StatefulSolveStage::RotatePents(rotate_pents_stage) => rotate_pents_stage.into(),
 			StatefulSolveStage::PositionTris(position_tris_stage) => position_tris_stage.into(),
-			StatefulSolveStage::RotateTris(_) => GenusRange::default()
+			StatefulSolveStage::RotateTris(rotate_tris_stage) => rotate_tris_stage.into()
 		}
 	}
 }
