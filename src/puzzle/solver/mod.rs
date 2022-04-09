@@ -78,6 +78,7 @@ enum SolverGenusIndex {
 	RotatePentPair,
 	RotatePent,
 	CommuteTriTrio,
+	RotateTriPair,
 	Count
 }
 
@@ -505,12 +506,20 @@ define_solve_stage_state!{
 	}
 }
 
+define_solve_stage_state!{
+	#[derive(Clone, Copy, Debug)]
+	#[repr(u8)]
+	enum RotateTrisStage {
+		RotateTriPair
+	}
+}
+
 #[derive(Clone, Copy, Debug)]
 enum StatefulSolveStage {
 	PositionPents(PositionPentsStage),
 	RotatePents(RotatePentsStage),
 	PositionTris(PositionTrisStage),
-	RotateTris(())
+	RotateTris(RotateTrisStage)
 }
 
 impl StatefulSolveStage {
@@ -522,7 +531,8 @@ impl StatefulSolveStage {
 				rotate_pents_stage.try_get_next().map(Self::RotatePents),
 			Self::PositionTris(position_tris_stage) =>
 				position_tris_stage.try_get_next().map(Self::PositionTris),
-			Self::RotateTris(()) => None
+			Self::RotateTris(rotate_tris_stage) =>
+				rotate_tris_stage.try_get_next().map(Self::RotateTris)
 		}
 	}
 }
@@ -620,7 +630,8 @@ impl From<SolveStage> for SolverState {
 				SolverState::Solving(StatefulSolveStage::RotatePents(RotatePentsStage::default())),
 			SolveStage::PositionTris =>
 				SolverState::Solving(StatefulSolveStage::PositionTris(PositionTrisStage::default())),
-			SolveStage::RotateTris => SolverState::Solving(StatefulSolveStage::RotateTris(())),
+			SolveStage::RotateTris =>
+				SolverState::Solving(StatefulSolveStage::RotateTris(RotateTrisStage::default())),
 			SolveStage::Solved => SolverState::Solved
 		}
 	}
