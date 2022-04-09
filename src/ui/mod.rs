@@ -59,9 +59,14 @@ use {
 pub mod camera;
 pub mod input;
 
-#[derive(PartialEq)]
+pub struct MainData {
+	pub key_and_mouse_input_available: bool
+}
+
+impl Default for MainData { fn default() -> Self { Self { key_and_mouse_input_available: true } }}
+
 pub enum View {
-	Main,
+	Main(MainData),
 	Preferences(Box<Preferences>),
 }
 
@@ -74,7 +79,7 @@ impl UIPlugin {
 	) -> () {
 		*preferences = Preferences::from_file_or_default(STRING_DATA.files.preferences.as_ref());
 		debug_expect_some!(windows.get_primary_mut(), |window: &mut Window| -> () { window.set_maximized(true); });
-		log_result_err!(create_dir_all(&STRING_DATA.files.saves));
+		warn_expect_ok!(create_dir_all(&STRING_DATA.files.saves));
 	}
 
 	fn run(world: &mut World) -> () {
@@ -83,8 +88,8 @@ impl UIPlugin {
 
 			Self::render_menu(&mut context);
 
-			match *log_option_none!(context.world().unwrap().get_resource::<View>()) {
-				View::Main => { Self::render_main(&mut context) },
+			match *warn_expect_some!(context.world().unwrap().get_resource::<View>(), return) {
+				View::Main(_) => { Self::render_main(&mut context) },
 				View::Preferences(_) => { Self::render_preferences(&mut context); }
 			}
 		});
@@ -305,8 +310,6 @@ impl UIPlugin {
 	fn render_main(context: &mut Context) -> () {
 		Self::render_input_state(&mut context.with_id(0_u64));
 		Self::render_action_stack(&mut context.with_id(1_u64));
-
-		#[cfg(debug_assertions)]
 		Self::render_tools(&mut context.with_id(2_u64));
 	}
 
@@ -314,9 +317,9 @@ impl UIPlugin {
 		const OFFSET: f32 = 20.0_f32;
 		const INPUT_STATE_OFFSET: Vec2 = Vec2::new(OFFSET, -OFFSET);
 
-		let world: &World = log_option_none!(context.world());
-		let input_state: &InputState = log_option_none!(world.get_resource::<InputState>());
-		let preferences: &Preferences = log_option_none!(world.get_resource::<Preferences>());
+		let world: &World = warn_expect_some!(context.world(), return);
+		let input_state: &InputState = warn_expect_some!(world.get_resource::<InputState>(), return);
+		let preferences: &Preferences = warn_expect_some!(world.get_resource::<Preferences>(), return);
 
 		egui::Area::new("InputState")
 			.anchor(egui::Align2::LEFT_BOTTOM, INPUT_STATE_OFFSET)
@@ -371,8 +374,9 @@ impl UIPlugin {
 		const OFFSET: f32 = 20.0_f32;
 		const ACTION_STACK_OFFSET: Vec2 = Vec2::new(-OFFSET, -OFFSET);
 
-		let extended_puzzle_state: &ExtendedPuzzleState = log_option_none!(
-			context.world().and_then(World::get_resource::<ExtendedPuzzleState>)
+		let extended_puzzle_state: &ExtendedPuzzleState = warn_expect_some!(
+			context.world().and_then(World::get_resource::<ExtendedPuzzleState>),
+			return
 		);
 
 		egui::Area::new("ActionStack")
@@ -486,8 +490,9 @@ impl UIPlugin {
 		const TOOLS_OFFSET: Vec2 = Vec2::new(OFFSET, OFFSET);
 		const FILL_ALPHA: u8 = 0xE0_u8;
 
-		let mut preferences: Mut<Preferences> = log_option_none!(
-			unsafe { context.world_mut() }.and_then(World::get_resource_mut::<Preferences>)
+		let mut preferences: Mut<Preferences> = warn_expect_some!(
+			unsafe { context.world_mut() }.and_then(World::get_resource_mut::<Preferences>),
+			return
 		);
 
 		if !preferences.tools.should_render() {
@@ -579,8 +584,8 @@ impl UIPlugin {
 	}
 
 	fn render_preferences(context: &mut Context) -> () {
-		let ctx_ref: &CtxRef = log_option_none!(context.ui_ctx);
-		let world: &mut World = log_option_none!(unsafe { context.world_mut() });
+		let ctx_ref: &CtxRef = warn_expect_some!(context.ui_ctx, return);
+		let world: &mut World = warn_expect_some!(unsafe { context.world_mut() }, return);
 
 		if !world.contains_resource::<Preferences>() || !world.contains_resource::<View>() {
 			return;
@@ -627,10 +632,10 @@ impl UIPlugin {
 							(*res_preferences).update(world);
 						});
 
-						*view = View::Main;
+						*view = View::Main(MainData::default());
 					},
 					ClosingAction::Cancel => {
-						*view = View::Main;
+						*view = View::Main(MainData::default());
 					},
 					_ => {}
 				}
@@ -643,7 +648,7 @@ impl Plugin for UIPlugin {
 	fn build(&self, app: &mut App) {
 		app
 			.insert_resource(Preferences::default())
-			.insert_resource(View::Main)
+			.insert_resource(View::Main(MainData::default()))
 			.insert_resource(Msaa { samples: 4 })
 			.insert_resource(WindowDescriptor {
 				title: STRING_DATA.misc.app_title.clone(),

@@ -4,6 +4,7 @@ use {
 			TryFrom,
 			TryInto
 		},
+		error::Error,
 		fmt::{
 			Debug,
 			Formatter
@@ -22,7 +23,11 @@ use {
 			Range
 		},
 		rc::Rc,
-		sync::Once
+		sync::{
+			Mutex,
+			MutexGuard,
+			Once
+		}
 	},
 	bevy::prelude::Quat,
 	bevy_inspector_egui::{
@@ -40,6 +45,7 @@ use {
 		Serialize,
 		Serializer
 	},
+	simple_error::SimpleError,
 	crate::{
 		math::polyhedra::{
 			data::{
@@ -372,9 +378,9 @@ impl Serialize for GenusIndexString {
 }
 
 #[derive(Deserialize, Serialize)]
-struct FamilyInput {
-	name:			String,
-	seed_simples:	Vec<(u8, u8)>
+pub struct FamilyInput {
+	pub name:			String,
+	pub seed_simples:	Vec<(u8, u8)>
 }
 
 #[derive(Default, Deserialize, Serialize)]
@@ -507,7 +513,7 @@ pub struct Library {
 	genus_infos:		Vec<GenusInfo>,
 	simples:			Vec<HalfAddr>,
 	transformations:	Class<Transformation>,
-	full_masks:				Class<FullMask>,
+	full_masks:			Class<FullMask>,
 	inverse_addrs:		Class<FullAddr>,
 	rotations:			SmallClass<Quat>,
 	orientations:		LargeGenus<Quat>,
@@ -572,6 +578,21 @@ impl Library {
 
 	#[inline(always)]
 	pub fn get_genus_count() -> usize { return Library::get().genus_infos.len() }
+
+	pub fn push_family_and_update_file(family_input: FamilyInput) -> Result<(), Box<dyn Error>> {
+		let _: MutexGuard<()> = LIBRARY_MUTEX.lock().ok().unwrap();
+
+		warn_expect!(LIBRARY_ONCE.is_completed());
+		Self::build();
+
+		let library: &mut Self = unsafe { LIBRARY.assume_init_mut() };
+
+		library.push_family(family_input).map_err(|push_family_err: PushFamilyErr| -> Box<dyn Error> {
+			Box::new(SimpleError::new(format!("{:?}", push_family_err)))
+		})?;
+
+		OrderInfo::from(Self::get()).to_file(&STRING_DATA.files.library)
+	}
 
 	fn get_simple_slice_genus(&self, genus_index: GenusIndex) -> Option<Box<Genus<SimpleSlice>>> {
 		let simples_range: Range<usize> = {
@@ -1156,6 +1177,31 @@ impl LibraryConsts for Library {
 	const GENERA_PER_SMALL_CLASS:	usize = GenusIndex::COMPLEX_OFFSET;
 }
 
+impl From<&Library> for OrderInfo {
+	fn from(library: &Library) -> OrderInfo {
+		OrderInfo(library
+			.family_infos
+			.iter()
+			.map(|family_info: &FamilyInfo| -> FamilyInput { FamilyInput {
+				name: family_info.name.clone(),
+				seed_simples: get_simple_slice(
+					library,
+					FullAddr{
+						genus_index:	family_info.base_genus,
+						half_addr:		HalfAddr::ORIGIN
+					}
+				)
+				.iter()
+				.map(|half_addr: &HalfAddr| -> (u8, u8) {
+					(half_addr.get_species_index() as u8, half_addr.get_organism_index() as u8)
+				})
+				.collect()
+			} })
+			.collect()
+		)
+	}
+}
+
 /* Library needs a more complicated setup because Library::initialize() relies on Library::get(), so a lazy_static won't
 suffice */
 impl StaticDataLibrary for Library {
@@ -1176,6 +1222,12 @@ impl StaticDataLibrary for Library {
 
 static mut LIBRARY: MaybeUninit<Library> = MaybeUninit::<Library>::uninit();
 static LIBRARY_ONCE: Once = Once::new();
+
+lazy_static!{
+	/* Used only for updating or reloading the library mid session. Not the most "safe", but it can be done in a safe
+	manner so long as updating and reloading is only done in a single-threaded state */
+	static ref LIBRARY_MUTEX: Mutex<()> = Mutex::<()>::new(());
+}
 
 #[cfg(test)]
 mod tests {

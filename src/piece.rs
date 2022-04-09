@@ -526,7 +526,7 @@ impl Piece {
 		let piece_type: Type = self.piece_type;
 		let index_offset: usize = piece_type.index_offset();
 
-		log_result_err!(self.check_meshes());
+		warn_expect_ok!(self.check_meshes(), return);
 
 		for index in index_offset .. index_offset + piece_type.instance_count() {
 			commands
@@ -689,7 +689,10 @@ impl PiecePlugin {
 impl Plugin for PiecePlugin {
 	fn build(&self, app: &mut App) -> () {
 		app
-			.insert_resource(log_result_err!(PieceLibrary::try_from(STRING_DATA.files.piece_library_data.as_ref())))
+			.insert_resource(warn_expect_ok!(
+				PieceLibrary::try_from(STRING_DATA.files.piece_library_data.as_ref()),
+				return
+			))
 			.add_startup_system(Self::startup_app.system().label(STRING_DATA.labels.piece_library_startup.as_ref()));
 	}
 }

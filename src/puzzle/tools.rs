@@ -10,22 +10,30 @@ use {
 	egui::{
 		Button,
 		Color32,
+		Response,
 		Separator,
+		TextEdit,
 		Ui
 	},
 	super::{
 		consts::*,
-		transformation::HalfAddrAttrs,
+		transformation::{
+			library::FamilyInput,
+			HalfAddrAttrs
+		},
 		HalfAddr,
 		InflatedPieceStateComponent
 	},
 	crate::{
 		app::prelude::*,
 		prelude::*,
-		ui::input::{
-			PendingActions,
-			PuzzleAction,
-			PuzzleActionType
+		ui::{
+			input::{
+				PendingActions,
+				PuzzleAction,
+				PuzzleActionType
+			},
+			View
 		},
 		util::{
 			inspectable_bit_array::InspectableBitArray,
@@ -171,6 +179,7 @@ impl Inspectable for PuzzleState {
 
 #[derive(Clone, Default, PartialEq)]
 pub struct Stack {
+	new_family_name:		String,
 	pub min_focus_index:	usize,
 	pub max_focus_index:	usize,
 	debug_addr:				HalfAddr,
@@ -189,6 +198,29 @@ impl Inspectable for Stack {
 	fn ui(&mut self, ui: &mut Ui, _: (), context: &mut Context) -> bool {
 		let mut changed: bool = false;
 
+		changed |= context.world_scope(
+			ui, "NewFamilyNameViewFetch",
+			|world: &mut World, ui: &mut Ui, _: &mut Context| -> bool {
+				if let View::Main(main_data) = warn_expect_some!(
+					world.get_resource_mut::<View>(),
+					return false
+				).as_mut() {
+					ui.horizontal(|ui: &mut Ui| -> bool {
+						ui.label("New Family Name");
+
+						let response: Response = TextEdit::singleline(&mut self.new_family_name)
+							.show(ui)
+							.response;
+
+						main_data.key_and_mouse_input_available = !response.gained_focus() && !response.has_focus() && !response.hovered();
+
+						response.changed()
+					}).inner
+				} else {
+					false
+				}
+			}
+		);
 		ui.collapsing("Focus Indices", |ui: &mut Ui| -> () {
 			egui::Grid::new(context.id())
 				.min_col_width(0.0_f32)
@@ -240,7 +272,7 @@ impl Inspectable for Stack {
 
 		let mut world: Option<&mut World> = unsafe { context.world_mut() };
 		let focus_range: Range<usize> = self.focus_range();
-		let (can_simplify_actions, can_print_actions, can_set_camera_start, can_reorient_actions):
+		let (can_simplify_actions, can_add_family, can_set_camera_start, can_reorient_actions):
 			(bool, bool, bool, bool) =
 			world
 				.as_ref()
@@ -257,18 +289,20 @@ impl Inspectable for Stack {
 
 					(
 						extended_puzzle_state.can_simplify_actions(&focus_range),
-						extended_puzzle_state.actions_are_simplified(&focus_range),
+						extended_puzzle_state.actions_are_simplified(&focus_range)
+							&& !self.new_family_name.is_empty()
+							&& GenusIndex::try_from(self.new_family_name.as_str()).is_err(),
 						debug_addr_is_valid,
 						debug_addr_is_valid && extended_puzzle_state.can_reorient_actions(&focus_range)
 					)
 				})
 				.map(|
-					(can_simplify_actions, can_print_actions, can_set_camera_start, can_reorient_actions):
+					(can_simplify_actions, can_add_family, can_set_camera_start, can_reorient_actions):
 					(bool, bool, bool, bool)
 				| -> (bool, bool, bool, bool) {
 					(
 						can_simplify_actions,
-						can_print_actions,
+						can_add_family,
 						can_set_camera_start,
 						can_reorient_actions && {
 							/* this part needs to be in its own map() call because immutable resources are still in
@@ -292,27 +326,23 @@ impl Inspectable for Stack {
 			changed = true;
 		}
 
-		if ui.add_enabled(can_print_actions, Button::new("Print Actions")).clicked() {
-			let comprising_simples: Option<Vec<HalfAddr>> = world
-				.as_ref()
-				.unwrap()
-				.get_resource::<ExtendedPuzzleState>()
-				.unwrap()
-				.get_as_comprising_simples(&focus_range);
-
-			if let Some(comprising_simples) = comprising_simples {
-				log::debug!(
-					"Print Actions:\n{:?}",
-					comprising_simples
-						.iter()
-						.map(|simple: &HalfAddr| -> (u32, u32) {
-							(simple.get_species_index() as u32, simple.get_organism_index() as u32)
-						})
-						.collect::<Vec<(u32, u32)>>()
-				);
-			} else {
-				log::debug!("Print Actions: couldn't obtain comprising simples");
-			}
+		if ui.add_enabled(can_add_family, Button::new("Add Actions As Family")).clicked() {
+			warn_expect_some!(
+				world
+					.as_ref()
+					.unwrap()
+					.get_resource::<ExtendedPuzzleState>()
+					.unwrap()
+					.get_as_seed_simples(&focus_range),
+				|seed_simples: Vec<HalfAddr>| -> () {
+					warn_expect_ok!(TransformationLibrary::push_family_and_update_file(FamilyInput {
+						name: self.new_family_name.clone(),
+						seed_simples: seed_simples.iter().map(|simple: &HalfAddr| -> (u8, u8) {
+							(simple.get_species_index() as u8, simple.get_organism_index() as u8)
+						}).collect()
+					}));
+				}
+			);
 		}
 
 		if ui.add_enabled(can_set_camera_start, Button::new("Set Camera Start")).clicked() {

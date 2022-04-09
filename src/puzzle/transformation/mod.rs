@@ -532,7 +532,7 @@ impl FullAddr {
 		if self.is_genus_index_reorientation() {
 			1_u32
 		} else {
-			Self::get_cycles_for_comprising_simples(&self.get_simple_slice())
+			Self::get_simple_slice_cycles(&self.get_simple_slice())
 		}
 	}
 
@@ -637,9 +637,8 @@ impl FullAddr {
 	#[inline(always)]
 	pub fn organism_index_is_valid(&self) -> bool { self.half_addr.organism_index_is_valid() }
 
-	pub fn get_cycles_for_comprising_simples(comprising_simples: &[HalfAddr]) -> u32 {
-		// ZEKE TODO
-		comprising_simples
+	pub fn get_simple_slice_cycles(simple_slice: &[HalfAddr]) -> u32 {
+		simple_slice
 			.iter()
 			.map(|half_addr: &HalfAddr| -> u32 {
 				const CYCLES_LUT: [u8; Library::ORGANISMS_PER_SPECIES] = [0_u8, 1_u8, 2_u8, 2_u8, 1_u8];

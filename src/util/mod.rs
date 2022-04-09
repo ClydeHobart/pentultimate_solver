@@ -344,11 +344,11 @@ pub trait StaticDataLibrary: 'static {
 					{
 						if let Some($stage) = Self::$stage() {
 							let start: Instant = Instant::now();
-	
+
 							$stage();
-	
+
 							let end: Instant = Instant::now();
-				
+
 							::log::info!("StaticDataLibrary::{}() called for {} in {}",
 								stringify!($stage),
 								std::any::type_name::<Self>(),
@@ -358,15 +358,15 @@ pub trait StaticDataLibrary: 'static {
 					}
 				}
 			}
-			
+
 			let start: Instant = Instant::now();
-	
+
 			call_build_stage!(pre_init);
 			call_build_stage!(init);
 			call_build_stage!(post_init);
-	
+
 			let end: Instant = Instant::now();
-	
+
 			::log::info!("StaticDataLibrary::build() called for {} in {}",
 				std::any::type_name::<Self>(),
 				String::from_alt(end - start)
@@ -641,6 +641,11 @@ macro_rules! cond_break {
 			}
 		}
 	}
+}
+
+#[macro_export]
+macro_rules! ignore {
+	($tt:tt) => {};
 }
 
 // Macro adapted from https://stackoverflow.com/questions/66291962/how-do-i-use-macro-rules-to-define-a-struct-with-optional-cfg

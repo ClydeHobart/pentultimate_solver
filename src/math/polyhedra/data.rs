@@ -356,7 +356,7 @@ impl<'a> DataBuilder<'a> {
 	fn generate(&mut self) -> () {
 		self.generate_verts();
 		self.generate_edges();
-		log_result_err!(self.generate_faces());
+		warn_expect_ok!(self.generate_faces());
 	}
 
 	fn generate_verts(&mut self) -> () {
@@ -1054,6 +1054,6 @@ mod tests {
 	#[test]
 	fn test_data() -> () {
 		init_env_logger();
-		log_result_err!(Data::validate_polyhedra(), panic!());
+		assert!(Data::validate_polyhedra().is_ok());
 	}
 }

@@ -2,9 +2,9 @@ use {
 	crate::{
 		math::polyhedra::Polyhedron,
 		preferences::Update,
+		prelude::*,
 		strings::STRING_DATA,
-		util::inspectable_bin_map::*,
-		log_option_none
+		util::inspectable_bin_map::*
 	},
 	super::Preferences,
 	bevy::{
@@ -228,8 +228,9 @@ impl Inspectable for ColorDataWithMat {
 
 impl Update for ColorDataWithMat {
 	fn update(&self, world: &mut World) -> () {
-		let mut mat_assets: Mut<Assets<StandardMaterial>> = log_option_none!(
-			world.get_resource_mut::<Assets<StandardMaterial>>()
+		let mut mat_assets: Mut<Assets<StandardMaterial>> = warn_expect_some!(
+			world.get_resource_mut::<Assets<StandardMaterial>>(),
+			return
 		);
 
 		for (_, col_and_mats) in &self.polyhedron_to_colors {

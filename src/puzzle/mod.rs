@@ -20,7 +20,6 @@ use {
 				ColorDataWithMat
 			},
 			Preferences,
-			RandomizationParams,
 			RandomizationType
 		},
 		util::inspectable_bin_map::*,
@@ -33,12 +32,10 @@ use {
 			Addr,
 			FullAddr,
 			GenusIndexBitArray,
-			GenusIndexType,
 			HalfAddr,
 			HalfAddrConsts,
 			Library,
 			LibraryConsts,
-			RandHalfAddrParams,
 			Transformation
 		}
 	},
@@ -640,7 +637,7 @@ pub mod inflated {
 			})
 		}
 
-		pub fn get_as_comprising_simples(&self, range: &Range<usize>) -> Option<Vec<HalfAddr>> {
+		pub fn get_as_seed_simples(&self, range: &Range<usize>) -> Option<Vec<HalfAddr>> {
 			if !self.actions_are_simplified(range) {
 				return None;
 			}
@@ -852,7 +849,7 @@ impl PuzzlePlugin {
 		piece_library: Res<PieceLibrary>,
 		preferences: Res<Preferences>
 	) -> () {
-		log_result_err!(Self::startup_internal(&mut commands, &piece_library, &preferences));
+		warn_expect_ok!(Self::startup_internal(&mut commands, &piece_library, &preferences));
 	}
 
 	fn startup_internal(

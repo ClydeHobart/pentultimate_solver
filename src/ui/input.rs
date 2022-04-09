@@ -35,6 +35,7 @@ use {
 			InflatedPuzzleState,
 			InflatedPuzzleStateConsts
 		},
+		ui::MainData
 	},
 	super::{
 		Preferences,
@@ -529,7 +530,7 @@ impl PuzzleAction {
 							let mut cycle_count: f32 = 0.0_f32;
 							let mut puzzle_state: InflatedPuzzleState = extended_puzzle_state.puzzle_state.clone();
 							
-							let s: f32 = s * FullAddr::get_cycles_for_comprising_simples(
+							let s: f32 = s * FullAddr::get_simple_slice_cycles(
 								&comprising_simples
 							) as f32;
 
@@ -787,7 +788,7 @@ impl InputPlugin {
 
 		input_state.reset_update_data();
 
-		if !matches!(*view, View::Main) {
+		if !matches!(*view, View::Main(MainData { key_and_mouse_input_available: true })) {
 			return;
 		}
 
@@ -889,7 +890,7 @@ impl InputPlugin {
 					{
 						match file_action.action_type {
 							FileActionType::Save => {
-								log_result_err!(SaveState {
+								warn_expect_ok!(SaveState {
 									extended_puzzle_state:	extended_puzzle_state.clone(),
 									input_toggles:			toggles,
 									camera:					CameraQueryNT(&camera_query)

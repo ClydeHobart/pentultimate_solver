@@ -108,70 +108,6 @@ pub mod macros {
 	}
 
 	#[macro_export(local_inner_macros)]
-	macro_rules! log_dyn_error {
-		($error:expr) => {
-			match (&$error as &dyn std::any::Any).downcast_ref::<LogError>() {
-				Some(log_error) => {
-					log_error.log();
-				},
-				None => {
-					::log::warn!("{:?}", $error);
-				}
-			}
-		};
-	}
-
-	#[macro_export(local_inner_macros)]
-	macro_rules! log_result_err {
-		($result:expr) => {
-			match $result {
-				Ok(value) => value,
-				Err(error) => {
-					log_dyn_error!(error);
-
-					return;
-				}
-			}
-		};
-
-		($result:expr, $default:expr) => {
-			match $result {
-				Ok(value) => value,
-				Err(error) => {
-					log_dyn_error!(error);
-
-					$default
-				}
-			}
-		};
-	}
-
-	#[macro_export(local_inner_macros)]
-	macro_rules! log_option_none {
-		($option:expr) => {
-			match $option {
-				Some(value) => value,
-				None => {
-					::log::warn!("\"{}\" was None", std::stringify!($option));
-
-					return;
-				}
-			}
-		};
-
-		($option:expr, $default:expr) => {
-			match $option {
-				Some(value) => value,
-				None => {
-					::log::warn!("\"{}\" was None", std::stringify!($option));
-
-					$default
-				}
-			}
-		};
-	}
-
-	#[macro_export(local_inner_macros)]
 	macro_rules! __log_expr_literals {
 		($fmt:literal, $_:expr) => {
 			std::concat!("{}: {", $fmt, "}")
@@ -305,116 +241,246 @@ pub mod macros {
 		};
 	}
 
-	#[cfg(debug_assertions)]
 	#[macro_export(local_inner_macros)]
 	macro_rules! log_expect_some {
-		($level:path, $expr:expr, $closure:expr) => {
+		($level:path, $expr:expr, return $($return_expr:expr)?) => {
 			if let Some(some) = $expr {
-				($closure)(some)
+				some
 			} else {
+				#[cfg(debug_assertions)]
 				$level!("\"{}\" was None", std::stringify!($expr));
+
+				return $($return_expr)?;
+			}
+		};
+
+		($level:path, $expr:expr, ?) => {
+			if let Some(some) = $expr {
+				some
+			} else {
+				#[cfg(debug_assertions)]
+				$level!("\"{}\" was None", std::stringify!($expr));
+
+				return None;
+			}
+		};
+
+		($level:path, $expr:expr $(, $some_closure:expr $(, $none_closure:expr)?)?) => {
+			if let Some(_some) = $expr {
+				$(
+					($some_closure)(_some)
+				)?
+			} else {
+				#[cfg(debug_assertions)]
+				$level!("\"{}\" was None", std::stringify!($expr));
+
+				$(
+					crate::ignore!($some_closure);
+
+					$(
+						($none_closure)()
+					)?
+				)?
 			}
 		};
 	}
 
-	#[cfg(not(debug_assertions))]
-	#[macro_export(local_inner_macros)]
-	macro_rules! log_expect_some {
-		($level:path, $expr:expr, $closure:expr) => {
-			if let Some(some) = $expr {
-				($closure)(some)
-			}
-		}
-	}
-
 	#[macro_export(local_inner_macros)]
 	macro_rules! trace_expect_some {
-		($expr:expr, $closure:expr) => {
-			log_expect_some!(::log::trace, $expr, $closure)
+		($expr:expr, return $($return_expr:expr)?) => {
+			log_expect_some!(::log::trace, $expr, return $($return_expr)?)
+		};
+
+		($expr:expr, ?) => {
+			log_expect_some!(::log::trace, $expr, ?)
+		};
+
+		($expr:expr $(, $some_closure:expr $(, $none_closure:expr)?)?) => {
+			log_expect_some!(::log::trace, $expr $(, $some_closure $(, $none_closure)?)?)
 		};
 	}
 
 	#[macro_export(local_inner_macros)]
 	macro_rules! debug_expect_some {
-		($expr:expr, $closure:expr) => {
-			log_expect_some!(::log::debug, $expr, $closure)
+		($expr:expr, return $($return_expr:expr)?) => {
+			log_expect_some!(::log::debug, $expr, return $($return_expr)?)
+		};
+
+		($expr:expr, ?) => {
+			log_expect_some!(::log::debug, $expr, ?)
+		};
+
+		($expr:expr $(, $some_closure:expr $(, $none_closure:expr)?)?) => {
+			log_expect_some!(::log::debug, $expr $(, $some_closure $(, $none_closure)?)?)
 		};
 	}
 
 	#[macro_export(local_inner_macros)]
 	macro_rules! info_expect_some {
-		($expr:expr, $closure:expr) => {
-			log_expect_some!(::log::info, $expr, $closure)
+		($expr:expr, return $($return_expr:expr)?) => {
+			log_expect_some!(::log::info, $expr, return $($return_expr)?)
+		};
+
+		($expr:expr, ?) => {
+			log_expect_some!(::log::info, $expr, ?)
+		};
+
+		($expr:expr $(, $some_closure:expr $(, $none_closure:expr)?)?) => {
+			log_expect_some!(::log::info, $expr $(, $some_closure $(, $none_closure)?)?)
 		};
 	}
 
 	#[macro_export(local_inner_macros)]
 	macro_rules! warn_expect_some {
-		($expr:expr, $closure:expr) => {
-			log_expect_some!(::log::warn, $expr, $closure)
+		($expr:expr, return $($return_expr:expr)?) => {
+			log_expect_some!(::log::warn, $expr, return $($return_expr)?)
+		};
+
+		($expr:expr, ?) => {
+			log_expect_some!(::log::warn, $expr, ?)
+		};
+
+		($expr:expr $(, $some_closure:expr $(, $none_closure:expr)?)?) => {
+			log_expect_some!(::log::warn, $expr $(, $some_closure $(, $none_closure)?)?)
 		};
 	}
 
 	#[macro_export(local_inner_macros)]
 	macro_rules! error_expect_some {
-		($expr:expr, $closure:expr) => {
-			log_expect_some!(::log::error, $expr, $closure)
+		($expr:expr, return $($return_expr:expr)?) => {
+			log_expect_some!(::log::error, $expr, return $($return_expr)?)
+		};
+
+		($expr:expr, ?) => {
+			log_expect_some!(::log::error, $expr, ?)
+		};
+
+		($expr:expr $(, $some_closure:expr $(, $none_closure:expr)?)?) => {
+			log_expect_some!(::log::error, $expr $(, $some_closure $(, $none_closure)?)?)
 		};
 	}
 
-	#[cfg(debug_assertions)]
 	#[macro_export(local_inner_macros)]
 	macro_rules! log_expect_ok {
-		($level:path, $expr:expr, $closure:expr) => {
+		($level:path, $expr:expr, return $($return_expr:expr)?) => {
 			match $expr {
-				Ok(ok) => ($closure)(ok),
-				Err(error) => { $level!("\"{}\" was Err: {:#?}", std::stringify!($expr), error); }
+				Ok(ok) => ok,
+				Err(_error) => {
+					#[cfg(debug_assertions)]
+					$level!("\"{}\" was Err: {:#?}", std::stringify!($expr), _error);
+
+					return $($return_expr)?;
+				}
 			}
 		};
-	}
 
-	#[cfg(not(debug_assertions))]
-	#[macro_export(local_inner_macros)]
-	macro_rules! log_expect_ok {
-		($level:path, $expr:expr, $closure:expr) => {
-			if let Ok(ok) = $expr {
-				($closure)(ok)
+		($level:path, $expr:expr, ?) => {
+			match $expr {
+				Ok(ok) => ok,
+				Err(error) => {
+					#[cfg(debug_assertions)]
+					$level!("\"{}\" was Err: {:#?}", std::stringify!($expr), error);
+
+					return Err(error);
+				}
 			}
-		}
+		};
+
+		($level:path, $expr:expr $(, $ok_closure:expr $(, $err_closure:expr)?)?) => {
+			match $expr {
+				Ok(_ok) => {
+					$(
+						($ok_closure)(_ok)
+					)?
+				},
+				Err(_error) => {
+					#[cfg(debug_assertions)]
+					$level!("\"{}\" was Err: {:#?}", std::stringify!($expr), _error);
+	
+					$(
+						crate::ignore!($ok_closure);
+	
+						$(
+							($err_closure)()
+						)?
+					)?
+				}
+			}
+		};
 	}
 
 	#[macro_export(local_inner_macros)]
 	macro_rules! trace_expect_ok {
-		($expr:expr, $closure:expr) => {
-			log_expect_ok!(::log::trace, $expr, $closure)
+		($expr:expr, return $($return_expr:expr)?) => {
+			log_expect_ok!(::log::trace, $expr, return $($return_expr)?)
+		};
+
+		($expr:expr, ?) => {
+			log_expect_ok!(::log::trace, $expr, ?)
+		};
+
+		($expr:expr $(, $ok_closure:expr $(, $err_closure:expr)?)?) => {
+			log_expect_ok!(::log::trace, $expr $(, $ok_closure $(, $err_closure)?)?)
 		};
 	}
 
 	#[macro_export(local_inner_macros)]
 	macro_rules! debug_expect_ok {
-		($expr:expr, $closure:expr) => {
-			log_expect_ok!(::log::debug, $expr, $closure)
+		($expr:expr, return $($return_expr:expr)?) => {
+			log_expect_ok!(::log::debug, $expr, return $($return_expr)?)
+		};
+
+		($expr:expr, ?) => {
+			log_expect_ok!(::log::debug, $expr, ?)
+		};
+
+		($expr:expr $(, $ok_closure:expr $(, $err_closure:expr)?)?) => {
+			log_expect_ok!(::log::debug, $expr $(, $ok_closure $(, $err_closure)?)?)
 		};
 	}
 
 	#[macro_export(local_inner_macros)]
 	macro_rules! info_expect_ok {
-		($expr:expr, $closure:expr) => {
-			log_expect_ok!(::log::info, $expr, $closure)
+		($expr:expr, return $($return_expr:expr)?) => {
+			log_expect_ok!(::log::info, $expr, return $($return_expr)?)
+		};
+
+		($expr:expr, ?) => {
+			log_expect_ok!(::log::info, $expr, ?)
+		};
+
+		($expr:expr $(, $ok_closure:expr $(, $err_closure:expr)?)?) => {
+			log_expect_ok!(::log::info, $expr $(, $ok_closure $(, $err_closure)?)?)
 		};
 	}
 
 	#[macro_export(local_inner_macros)]
 	macro_rules! warn_expect_ok {
-		($expr:expr, $closure:expr) => {
-			log_expect_ok!(::log::warn, $expr, $closure)
+		($expr:expr, return $($return_expr:expr)?) => {
+			log_expect_ok!(::log::warn, $expr, return $($return_expr)?)
+		};
+
+		($expr:expr, ?) => {
+			log_expect_ok!(::log::warn, $expr, ?)
+		};
+
+		($expr:expr $(, $ok_closure:expr $(, $err_closure:expr)?)?) => {
+			log_expect_ok!(::log::warn, $expr $(, $ok_closure $(, $err_closure)?)?)
 		};
 	}
 
 	#[macro_export(local_inner_macros)]
 	macro_rules! error_expect_ok {
-		($expr:expr, $closure:expr) => {
-			log_expect_ok!(::log::error, $expr, $closure)
+		($expr:expr, return $($return_expr:expr)?) => {
+			log_expect_ok!(::log::error, $expr, return $($return_expr)?)
+		};
+
+		($expr:expr, ?) => {
+			log_expect_ok!(::log::error, $expr, ?)
+		};
+
+		($expr:expr $(, $ok_closure:expr $(, $err_closure:expr)?)?) => {
+			log_expect_ok!(::log::error, $expr $(, $ok_closure $(, $err_closure)?)?)
 		};
 	}
 }
