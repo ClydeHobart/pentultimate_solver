@@ -623,7 +623,10 @@ impl PuzzleAction {
 						}
 
 						match self.action_type {
-							PuzzleActionType::Transformation | PuzzleActionType::Randomize => {
+							PuzzleActionType::Transformation
+								| PuzzleActionType::Randomize
+								| PuzzleActionType::Solve =>
+							{
 								if warn_expect!(action.transformation.is_valid()) {
 									extended_puzzle_state.actions.truncate(extended_puzzle_state.curr_action);
 									extended_puzzle_state.actions.push(action);

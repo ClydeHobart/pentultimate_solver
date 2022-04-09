@@ -8,7 +8,7 @@
 					f: Warn,
 				),
 				"puzzle": (
-					f: Trace,
+					f: Debug,
 				),
 				"ui": (
 					f: Trace,

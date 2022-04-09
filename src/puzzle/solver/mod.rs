@@ -77,9 +77,11 @@ enum SolverGenusIndex {
 	Rotate2PentPairs,
 	RotatePentPair,
 	RotatePent,
-	CommuteTriTrioLine,
-	CommuteTriTrioCorner,
-	RotateTriPair,
+	CommuteTriTrioFar,
+	CommuteTriTrioNear,
+	CommuteTriTrioAcute,
+	RotateTriPairFar,
+	RotateTriPairNear,
 	Count
 }
 
@@ -87,6 +89,7 @@ const PENTAGON_HALF_MASK:		HalfMask	= ((1 as HalfMask) << PENTAGON_PIECE_COUNT) 
 const TRIANGLE_HALF_MASK:		HalfMask	= !PENTAGON_HALF_MASK;
 const ZERO_HALF_MASK:			HalfMask	= 0 as HalfMask;
 const COMPLETION_TIER_COUNT:	usize		= 4_usize;
+const MAX_DEPTH:				u8			= 1_u8;
 
 #[derive(Debug, Default)]
 struct SolverData{
@@ -212,15 +215,6 @@ impl SolveStage {
 			Self::PositionPents	| Self::RotatePents	=> PENTAGON_HALF_MASK,
 			Self::PositionTris	| Self::RotateTris	=> TRIANGLE_HALF_MASK,
 			Self::Solved							=> ZERO_HALF_MASK
-		}
-	}
-
-	#[inline]
-	const fn get_max_depth(self) -> u8 {
-		match self {
-			Self::PositionTris	| Self::RotateTris	=> 2_u8,
-			// A max depth of 0 means no max depth, otherwise Solved would have 0
-			_										=> 1_u8
 		}
 	}
 }
@@ -511,8 +505,9 @@ define_solve_stage_state!{
 	#[derive(Clone, Copy, Debug)]
 	#[repr(u8)]
 	enum PositionTrisStage {
-		CommuteTriTrioLine,
-		CommuteTriTrioCorner
+		CommuteTriTrioFar,
+		CommuteTriTrioNear,
+		CommuteTriTrioAcute
 	}
 }
 
@@ -520,7 +515,8 @@ define_solve_stage_state!{
 	#[derive(Clone, Copy, Debug)]
 	#[repr(u8)]
 	enum RotateTrisStage {
-		RotateTriPair
+		RotateTriPairFar,
+		RotateTriPairNear
 	}
 }
 
@@ -575,7 +571,7 @@ impl<'p> From<(&'p PuzzleState, FullMaskAndCompletion, StatefulSolveStage)> for 
 			FullMaskAndCompletion::from(puzzle_state.arrays()) > full_mask_and_completion
 		}) as IsEndState,
 		candidate_genera:	GenusIndexBitArray::from(GenusRange::from(stateful_solve_stage)),
-		max_depth:			full_mask_and_completion.completion.solve_stage.get_max_depth()
+		max_depth:			MAX_DEPTH
 	} }
 }
 
@@ -937,7 +933,7 @@ impl SolverPlugin {
 		input_state.puzzle_action = Some(PuzzleAction {
 			current_action: None,
 			pending_actions: Some(Box::new(solver.build_pending_actions(&*preferences))),
-			action_type: PuzzleActionType::Load
+			action_type: PuzzleActionType::Solve
 		});
 		input_state.is_solving = false;
 	}
@@ -978,8 +974,7 @@ mod tests {
 		super::*
 	};
 
-	#[test]
-	fn test_pent_solution() -> () {
+	fn test_solve_stage_solution(solve_stage: SolveStage) -> () {
 		const SOLVE_ITERATIONS: u32 = 1000_u32;
 		const RANDOM_TRANSFORMATION_COUNT: u8 = 50_u8;
 		const ONE_SECOND: Duration = Duration::from_secs(1_u64);
@@ -1012,10 +1007,7 @@ mod tests {
 
 			let mut solve_cycles: u32 = 60_u32;
 
-			while solver.is_solving()
-				&& matches!(solve_stage_from_solver(&solver), SolveStage::PositionPents | SolveStage::RotatePents)
-				&& solve_cycles != 0_u32
-			{
+			while solver.is_solving() && solve_stage_from_solver(&solver) == solve_stage && solve_cycles != 0_u32 {
 				solver.run_cycle(ONE_SECOND);
 				solve_cycles -= 1_u32;
 			}
@@ -1024,24 +1016,37 @@ mod tests {
 				SolverState::Idle => {
 					unreachable!();
 				},
-				SolverState::Solving(StatefulSolveStage::PositionPents(_) | StatefulSolveStage::RotatePents(_)) => {
-					assert!(solve_cycles == 0_u32);
-					panic!("Couldn't solve pentagons after 1 minute of solve time on iteration {}\n\
-						SolverState: {:#?}\n\
-						SolverStats: {:#?}",
-						iteration, solver.solver_state, solver.stats);
-				},
-				SolverState::DidNotFinish => {
-					// DNF only matters if the solve stage was still pentagons
-					if matches!(solve_stage_from_solver(&solver), SolveStage::PositionPents | SolveStage::RotatePents) {
-						panic!("Did not solve pentagons on iteration {}\n\
+				SolverState::Solving(stateful_solve_stage) => {
+					if SolveStage::from(stateful_solve_stage) == solve_stage {
+						assert!(solve_cycles == 0_u32);
+						panic!("Couldn't solve {:?} after 1 minute of solve time on iteration {}\n\
 							SolverState: {:#?}\n\
 							SolverStats: {:#?}",
-							iteration, solver.solver_state, solver.stats);
+							solve_stage, iteration, solver.solver_state, solver.stats);
+					}
+				},
+				SolverState::DidNotFinish => {
+					if solve_stage_from_solver(&solver) == solve_stage {
+						panic!("Did not solve {:?} on iteration {}\n\
+							SolverState: {:#?}\n\
+							SolverStats: {:#?}",
+							solve_stage, iteration, solver.solver_state, solver.stats);
 					}
 				},
 				_ => {}
 			}
 		}
 	}
+
+	#[test]
+	fn test_position_pents_solution() -> () { test_solve_stage_solution(SolveStage::PositionPents); }
+
+	#[test]
+	fn test_rotate_pents_solution() -> () { test_solve_stage_solution(SolveStage::RotatePents); }
+
+	#[test]
+	fn test_position_tris_solution() -> () { test_solve_stage_solution(SolveStage::PositionTris); }
+
+	#[test]
+	fn test_rotate_tris_solution() -> () { test_solve_stage_solution(SolveStage::RotateTris); }
 }
