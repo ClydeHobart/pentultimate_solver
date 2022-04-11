@@ -46,12 +46,10 @@ pub mod prelude {
 				HalfAddr,
 				Library as TransformationLibrary,
 				GenusIndex,
-				GenusIndexConsts,
 				TransformationPlugin
 			},
 			ExtendedPuzzleState,
 			InflatedPuzzleState,
-			InflatedPuzzleStateConsts,
 			PuzzlePlugin,
 			PuzzlePluginGroup
 		},

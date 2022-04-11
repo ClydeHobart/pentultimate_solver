@@ -968,7 +968,6 @@ mod tests {
 				Preferences,
 				RandomizationParams
 			},
-			puzzle::transformation::HalfAddrConsts,
 			ui::input::PendingActions
 		},
 		super::*

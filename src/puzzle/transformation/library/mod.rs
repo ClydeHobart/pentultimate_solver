@@ -60,8 +60,7 @@ use {
 			inflated::{
 				PieceStateComponent,
 				PuzzleState,
-				PuzzleStateComponent,
-				PuzzleStateConsts
+				PuzzleStateComponent
 			}
 		},
 		util::{
@@ -78,7 +77,6 @@ use {
 		FindWord,
 		FullAddr,
 		HalfAddr,
-		HalfAddrConsts,
 		FullMask,
 		Transformation
 	}
@@ -92,6 +90,10 @@ pub type GenusIndexType = u8;
 pub struct GenusIndex(GenusIndexType);
 
 impl GenusIndex {
+	pub const INVALID:			GenusIndex	= GenusIndex(GenusIndexType::MAX);
+	pub const REORIENTATION:	GenusIndex	= GenusIndex(0 as GenusIndexType);
+	pub const SIMPLE:			GenusIndex	= GenusIndex(Self::REORIENTATION.0 + 1 as GenusIndexType);
+
 	#[inline(always)]
 	pub fn is_complex(self) -> bool { self.is_valid() && self.0 >= Self::COMPLEX_OFFSET as u8 }
 
@@ -124,22 +126,10 @@ impl GenusIndex {
 		}
 	}
 
+	const COMPLEX_OFFSET:	usize		= Self::SIMPLE.0 as usize + 1_usize;
+
 	#[inline(always)]
 	fn from_usize(genus_index: usize) -> Self { Self(genus_index as GenusIndexType) }
-}
-
-pub trait GenusIndexConsts {
-	const REORIENTATION:	GenusIndex;
-	const SIMPLE:			GenusIndex;
-	const COMPLEX_OFFSET:	usize;
-	const INVALID:			GenusIndex;
-}
-
-impl GenusIndexConsts for GenusIndex {
-	const REORIENTATION:	GenusIndex	= GenusIndex(0 as GenusIndexType);
-	const SIMPLE:			GenusIndex	= GenusIndex(Self::REORIENTATION.0 + 1 as GenusIndexType);
-	const COMPLEX_OFFSET:	usize		= Self::SIMPLE.0 as usize + 1_usize;
-	const INVALID:			GenusIndex	= GenusIndex(GenusIndexType::MAX);
 }
 
 impl Debug for GenusIndex {
@@ -192,17 +182,16 @@ impl TryFrom<GenusIndexType> for GenusIndex {
 	}
 }
 
-pub trait GenusIndexBitArrayConsts {
-	type Block;
-	const SIZE:	usize;
-	const ALL:	GenusIndexBitArray;
-	const NONE:	GenusIndexBitArray;
-}
+pub type GenusIndexBitArrayBlock = u32;
 
 #[derive(Clone, Default, PartialEq)]
-pub struct GenusIndexBitArray(pub [<Self as GenusIndexBitArrayConsts>::Block; Self::SIZE]);
+pub struct GenusIndexBitArray(pub [GenusIndexBitArrayBlock; Self::SIZE]);
 
 impl GenusIndexBitArray {
+	pub const ALL:	Self	= GenusIndexBitArray([GenusIndexBitArrayBlock::MAX; Self::SIZE]);
+	pub const NONE:	Self	= GenusIndexBitArray([GenusIndexBitArrayBlock::MIN; Self::SIZE]);
+	pub const SIZE:	usize	= Self::size();
+
 	#[inline(always)]
 	pub fn get_bit<G: Into<usize>>(&self, genus_index: G) -> bool { self.0.get_bit(genus_index.into()) }
 
@@ -218,15 +207,8 @@ impl GenusIndexBitArray {
 	} }
 
 	const fn size() -> usize {
-		(1_usize << GenusIndexType::BITS) / <Self as GenusIndexBitArrayConsts>::Block::BITS as usize
+		(1_usize << GenusIndexType::BITS) / GenusIndexBitArrayBlock::BITS as usize
 	}
-}
-
-impl GenusIndexBitArrayConsts for GenusIndexBitArray {
-	type Block			= u32;
-	const SIZE:	usize	= Self::size();
-	const ALL:	Self	= GenusIndexBitArray([Self::Block::MAX; Self::SIZE]);
-	const NONE:	Self	= GenusIndexBitArray([Self::Block::MIN; Self::SIZE]);
 }
 
 impl Debug for GenusIndexBitArray {
@@ -278,8 +260,8 @@ impl Inspectable for GenusIndexBitArray {
 	fn ui(&mut self, ui: &mut Ui, _: (), context: &mut Context) -> bool {
 		let mut inspectable_bit_array_wrapper:
 			InspectableBitArrayWrapper<
-				<GenusIndexBitArray as GenusIndexBitArrayConsts>::Block,
-				{ <GenusIndexBitArray as GenusIndexBitArrayConsts>::SIZE }
+				GenusIndexBitArrayBlock,
+				{ GenusIndexBitArray::SIZE }
 			> = InspectableBitArrayWrapper(&mut self.0);
 		inspectable_bit_array_wrapper.ui(
 			ui,
@@ -313,14 +295,14 @@ assert_type_eq_all!(GenusIndexType, u8);
 pub struct GenusIndexBitArrayIter<'a> {
 	genus_index_bit_array: &'a GenusIndexBitArray,
 	current_index: usize,
-	current_block: <GenusIndexBitArray as GenusIndexBitArrayConsts>::Block
+	current_block: GenusIndexBitArrayBlock
 }
 
 impl<'a> Iterator for GenusIndexBitArrayIter<'a> {
 	type Item = GenusIndex;
 
 	fn next(&mut self) -> Option<GenusIndex> {
-		type Block = <GenusIndexBitArray as GenusIndexBitArrayConsts>::Block;
+		type Block = GenusIndexBitArrayBlock;
 
 		let block_count: usize = self.genus_index_bit_array.0.len();
 
@@ -494,14 +476,6 @@ impl GenusInfo {
 	}
 }
 
-pub trait LibraryConsts {
-	const ORGANISMS_PER_SPECIES:	usize;
-	const SPECIES_PER_GENUS:		usize;
-	const ORGANISMS_PER_GENUS:		usize;
-	const SPECIES_PER_LARGE_GENUS:	usize;
-	const GENERA_PER_SMALL_CLASS:	usize;
-}
-
 pub type Organism<T>	= T;
 pub type Species<T>		= [Organism<T>;	Library::ORGANISMS_PER_SPECIES];
 pub type Genus<T>		= [Species<T>;	Library::SPECIES_PER_GENUS];
@@ -537,6 +511,12 @@ pub enum PushFamilyErr {
 pub type SimpleSlice<'a> = Option<&'a [HalfAddr]>;
 
 impl Library {
+	pub const GENERA_PER_SMALL_CLASS:	usize = GenusIndex::COMPLEX_OFFSET;
+	pub const ORGANISMS_PER_GENUS:		usize = Self::ORGANISMS_PER_SPECIES * Self::SPECIES_PER_GENUS;
+	pub const ORGANISMS_PER_SPECIES:	usize = PENTAGON_SIDE_COUNT;
+	pub const SPECIES_PER_GENUS:		usize = PENTAGON_PIECE_COUNT;
+	pub const SPECIES_PER_LARGE_GENUS:	usize = PIECE_COUNT;
+
 	#[inline(always)]
 	pub fn get_transformation(full_addr: FullAddr) -> &'static Transformation {
 		debug_assert!(full_addr.is_valid());
@@ -1170,14 +1150,6 @@ fn get_simple_slice(library: &Library, full_addr: FullAddr) -> &[HalfAddr] {
 		* (Library::ORGANISMS_PER_SPECIES * full_addr.get_species_index() + full_addr.get_organism_index());
 
 	&library.simples[simple_slice_start .. simple_slice_start + simple_slice_len]
-}
-
-impl LibraryConsts for Library {
-	const ORGANISMS_PER_SPECIES:	usize = PENTAGON_SIDE_COUNT;
-	const SPECIES_PER_GENUS:		usize = PENTAGON_PIECE_COUNT;
-	const ORGANISMS_PER_GENUS:		usize = Self::ORGANISMS_PER_SPECIES * Self::SPECIES_PER_GENUS;
-	const SPECIES_PER_LARGE_GENUS:	usize = PIECE_COUNT;
-	const GENERA_PER_SMALL_CLASS:	usize = GenusIndex::COMPLEX_OFFSET;
 }
 
 impl From<&Library> for OrderInfo {

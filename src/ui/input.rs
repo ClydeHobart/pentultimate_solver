@@ -75,7 +75,6 @@ use {
 				Addr,
 				FullAddr,
 				GenusIndex,
-				GenusIndexConsts,
 				GenusIndexType,
 				HalfAddr,
 				Library,
@@ -83,8 +82,7 @@ use {
 				RandHalfAddrParams
 			},
 			ExtendedPuzzleState,
-			InflatedPuzzleState,
-			InflatedPuzzleStateConsts
+			InflatedPuzzleState
 		},
 		ui::MainData
 	},

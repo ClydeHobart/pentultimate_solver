@@ -3,14 +3,11 @@ pub use self::library::{
 	Genus,
 	GenusIndex,
 	GenusIndexBitArray,
-	GenusIndexBitArrayConsts,
-	GenusIndexConsts,
 	GenusIndexString,
 	GenusIndexType,
 	GenusRange,
 	LargeGenus,
 	Library,
-	LibraryConsts,
 	Organism,
 	SmallClass,
 	Species,
@@ -76,8 +73,7 @@ use {
 			PieceStateComponent,
 			MutPosAndRot,
 			PosAndRot,
-			PuzzleState,
-			PuzzleStateConsts
+			PuzzleState
 		}
 	}
 };
@@ -194,18 +190,12 @@ pub trait Addr {
 	}
 }
 
-pub trait HalfAddrConsts {
-	const INVALID:				u8;
-	const SPECIES_INDEX_BITS:	Range<usize>;
-	const ORGANISM_INDEX_BITS:	Range<usize>;
-	const ORGANISM_INDEX_MASK:	u8;
-	const ORIGIN:				HalfAddr;
-}
-
 #[derive(Clone, Copy, Deserialize, PartialEq, Serialize)]
 pub struct HalfAddr(u8);
 
 impl HalfAddr {
+	pub const ORIGIN: HalfAddr = HalfAddr::new(0_usize, 0_usize);
+
 	#[inline(always)]
 	pub fn as_reorientation(self) -> FullAddr { FullAddr::from((GenusIndex::REORIENTATION, self)) }
 
@@ -248,19 +238,16 @@ impl HalfAddr {
 		}
 	}
 
+	const INVALID:				u8				= u8::MAX;
+	const SPECIES_INDEX_BITS:	Range<usize>	= 3_usize .. u8::BIT_LENGTH;
+	const ORGANISM_INDEX_BITS:	Range<usize>	= 0_usize .. 3_usize;
+	const ORGANISM_INDEX_MASK:	u8				= (1_u8 << HalfAddr::ORGANISM_INDEX_BITS.end) - 1_u8;
+
 	#[inline(always)]
 	const unsafe fn get_species_index_unchecked(&self) -> usize { (self.0 >> Self::SPECIES_INDEX_BITS.start) as usize }
 
 	#[inline(always)]
 	const unsafe fn get_organism_index_unchecked(&self) -> usize { (self.0 & Self::ORGANISM_INDEX_MASK) as usize }
-}
-
-impl HalfAddrConsts for HalfAddr {
-	const INVALID:				u8				= u8::MAX;
-	const SPECIES_INDEX_BITS:	Range<usize>	= 3_usize .. u8::BIT_LENGTH;
-	const ORGANISM_INDEX_BITS:	Range<usize>	= 0_usize .. 3_usize;
-	const ORGANISM_INDEX_MASK:	u8				= (1_u8 << HalfAddr::ORGANISM_INDEX_BITS.end) - 1_u8;
-	const ORIGIN:				HalfAddr		= HalfAddr::new(0_usize, 0_usize);
 }
 
 impl Add for HalfAddr {

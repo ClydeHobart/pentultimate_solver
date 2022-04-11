@@ -16,14 +16,10 @@ use {
 			FullAddr,
 			GenusIndex,
 			GenusIndexBitArray,
-			GenusIndexBitArrayConsts,
-			GenusIndexConsts,
-			Library,
-			LibraryConsts
+			Library
 		},
 		DeflatedPuzzleState,
-		InflatedPuzzleState,
-		InflatedPuzzleStateConsts
+		InflatedPuzzleState
 	}
 };
 

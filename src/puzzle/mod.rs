@@ -66,9 +66,7 @@ use {
 			FullAddr,
 			GenusIndexBitArray,
 			HalfAddr,
-			HalfAddrConsts,
 			Library,
-			LibraryConsts,
 			Transformation
 		}
 	}
@@ -80,8 +78,7 @@ pub use {
 		ExtendedPuzzleState,
 		PieceStateComponent as InflatedPieceStateComponent,
 		PuzzleState as InflatedPuzzleState,
-		PuzzleStateComponent as InflatedPuzzleStateComponent,
-		PuzzleStateConsts as InflatedPuzzleStateConsts
+		PuzzleStateComponent as InflatedPuzzleStateComponent
 	}
 };
 
@@ -129,11 +126,6 @@ pub mod deflated {
 
 	pub type PieceState = u8;
 
-	pub trait PuzzleStateConsts {
-		const SOLVED_STATE: PuzzleState;
-		const ZERO: PuzzleState;
-	}
-
 	#[derive(Debug, Eq, Hash)]
 	#[repr(align(32))]
 	pub struct PuzzleState {
@@ -141,6 +133,11 @@ pub mod deflated {
 	}
 
 	impl PuzzleState {
+		const SOLVED_STATE: PuzzleState = unsafe { transmute::<[u128; 2_usize], PuzzleState>([
+			0x0F_0E_0D_0C_0B_0A_09_08_07_06_05_04_03_02_01_00_u128 << ROTATION_BIT_COUNT,
+			0x1F_1E_1D_1C_1B_1A_19_18_17_16_15_14_13_12_11_10_u128 << ROTATION_BIT_COUNT
+		]) };
+
 		pub fn naive_deflation(inflated_puzzle_state: &inflated::PuzzleState) -> Self {
 			Self::naive_deflation_inline(inflated_puzzle_state)
 		}
@@ -158,14 +155,6 @@ pub mod deflated {
 
 			deflated_puzzle_state
 		}
-	}
-
-	impl PuzzleStateConsts for PuzzleState {
-		const SOLVED_STATE: PuzzleState = unsafe { transmute::<[u128; 2_usize], PuzzleState>([
-			0x0F_0E_0D_0C_0B_0A_09_08_07_06_05_04_03_02_01_00_u128 << ROTATION_BIT_COUNT,
-			0x1F_1E_1D_1C_1B_1A_19_18_17_16_15_14_13_12_11_10_u128 << ROTATION_BIT_COUNT
-		]) };
-		const ZERO: PuzzleState = PuzzleState { pieces: [0_u8 as PieceState; PIECE_COUNT] };
 	}
 
 	impl Default for PuzzleState { fn default() -> Self { Self::SOLVED_STATE } }
@@ -222,24 +211,6 @@ pub mod inflated {
 	pub type PieceStateComponent = u32;
 
 	pub type PuzzleStateComponent = [PieceStateComponent; PIECE_COUNT];
-
-	pub trait PuzzleStateComponentConsts {
-		const SOLVED_STATE:	PuzzleStateComponent;
-		const ZERO:			PuzzleStateComponent;
-	}
-
-	impl PuzzleStateComponentConsts for PuzzleStateComponent {
-		const SOLVED_STATE:	PuzzleStateComponent = [
-			0x00,	0x01,	0x02,	0x03,	0x04,	0x05,	0x06,	0x07,
-			0x08,	0x09,	0x0A,	0x0B,	0x0C,	0x0D,	0x0E,	0x0F,
-			0x10,	0x11,	0x12,	0x13,	0x14,	0x15,	0x16,	0x17,
-			0x18,	0x19,	0x1A,	0x1B,	0x1C,	0x1D,	0x1E,	0x1F
-		];
-		const ZERO: PuzzleStateComponent = [
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-		];
-	}
-
 	pub type PosAndRot<'p, 'r> = (&'p PuzzleStateComponent, &'r PuzzleStateComponent);
 	pub type MutPosAndRot<'p, 'r> = (&'p mut PuzzleStateComponent, &'r mut PuzzleStateComponent);
 
@@ -251,11 +222,6 @@ pub mod inflated {
 	}
 
 	assert_eq_size!(PuzzleState, [PuzzleStateComponent; 2]);
-
-	pub trait PuzzleStateConsts {
-		const SOLVED_STATE: PuzzleState;
-		const ZERO: PuzzleState;
-	}
 
 	macro_rules! puzzle_state_add {
 		($src_state:ident, $transformation:ident, $dest_state:ident) => {
@@ -296,6 +262,22 @@ pub mod inflated {
 	}
 
 	impl PuzzleState {
+		const SOLVED_COMPONENT:	PuzzleStateComponent = [
+			0x00_u32,	0x01_u32,	0x02_u32,	0x03_u32,	0x04_u32,	0x05_u32,	0x06_u32,	0x07_u32,
+			0x08_u32,	0x09_u32,	0x0A_u32,	0x0B_u32,	0x0C_u32,	0x0D_u32,	0x0E_u32,	0x0F_u32,
+			0x10_u32,	0x11_u32,	0x12_u32,	0x13_u32,	0x14_u32,	0x15_u32,	0x16_u32,	0x17_u32,
+			0x18_u32,	0x19_u32,	0x1A_u32,	0x1B_u32,	0x1C_u32,	0x1D_u32,	0x1E_u32,	0x1F_u32
+		];
+		const ZERO_COMPONENT: PuzzleStateComponent = [0_u32; PIECE_COUNT];
+		pub const SOLVED_STATE: PuzzleState = PuzzleState {
+			pos: Self::SOLVED_COMPONENT,
+			rot: Self::ZERO_COMPONENT
+		};
+		pub const ZERO: PuzzleState = PuzzleState {
+			pos: Self::ZERO_COMPONENT,
+			rot: Self::ZERO_COMPONENT
+		};
+
 		pub fn half_addr(&self, piece_index: usize) -> HalfAddr {
 			HalfAddr::new(self.pos[piece_index] as usize, self.rot[piece_index] as usize)
 		}
@@ -437,17 +419,6 @@ pub mod inflated {
 				transform.rotation = *self.half_addr(piece_component.index).get_orientation().unwrap();
 			}
 		}
-	}
-
-	impl PuzzleStateConsts for PuzzleState {
-		const SOLVED_STATE: PuzzleState = PuzzleState {
-			pos: PuzzleStateComponent::SOLVED_STATE,
-			rot: PuzzleStateComponent::ZERO
-		};
-		const ZERO: PuzzleState = PuzzleState {
-			pos: PuzzleStateComponent::ZERO,
-			rot: PuzzleStateComponent::ZERO
-		};
 	}
 
 	impl<'a, 'b> Add<&'b Transformation> for &'a PuzzleState {

@@ -10,9 +10,7 @@ use pentultimate_solver::{
 		},
 		transformation::{
 			GenusIndex,
-			GenusIndexConsts,
 			GenusIndexBitArray,
-			GenusIndexBitArrayConsts,
 			Library
 		},
 		InflatedPuzzleState
@@ -35,10 +33,8 @@ fn is_end_state(inflated_puzzle_state: &InflatedPuzzleState) -> bool {
 	]) };
 
 	let rot_sum: [u32; 8_usize] = unsafe {
-		let inflated_puzzle_state_m256s: &[[m256; 4_usize]; 2_usize] = transmute::<
-			&InflatedPuzzleState,
-			&[[m256; 4_usize]; 2_usize]
-		>(inflated_puzzle_state);
+		let inflated_puzzle_state_m256s: &[[m256; 4_usize]; 2_usize] =
+			transmute::<&InflatedPuzzleState, &[[m256; 4_usize]; 2_usize]>(inflated_puzzle_state);
 
 		if x86_64::_mm256_movemask_epi8(
 			x86_64::_mm256_and_si256(

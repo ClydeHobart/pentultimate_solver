@@ -6,8 +6,7 @@ use {
 		prelude::*,
 		puzzle::transformation::{
 			GenusIndex,
-			GenusIndexBitArray,
-			GenusIndexConsts
+			GenusIndexBitArray
 		},
 		tools::ToolsData
 	}
