@@ -1,44 +1,4 @@
 use {
-	crate::{
-		prelude::*,
-		app::prelude::*,
-		math::polyhedra::{
-			data::{
-				Data,
-				FaceData
-			},
-			Polyhedron
-		},
-		piece::{
-			PieceLibrary,
-			PiecePair,
-			Type
-		},
-		preferences::{
-			colors::{
-				ColAndMat,
-				ColorDataWithMat
-			},
-			Preferences,
-			RandomizationType
-		},
-		util::inspectable_bin_map::*,
-		max
-	},
-	self::{
-		consts::*,
-		transformation::{
-			Action,
-			Addr,
-			FullAddr,
-			GenusIndexBitArray,
-			HalfAddr,
-			HalfAddrConsts,
-			Library,
-			LibraryConsts,
-			Transformation
-		}
-	},
 	std::{
 		fmt::{
 			Debug,
@@ -71,6 +31,46 @@ use {
 	serde::{
 		Deserialize,
 		Serialize
+	},
+	crate::{
+		app::prelude::*,
+		math::polyhedra::{
+			data::{
+				Data,
+				FaceData
+			},
+			Polyhedron
+		},
+		piece::{
+			PieceLibrary,
+			PiecePair,
+			Type
+		},
+		preferences::{
+			colors::{
+				ColAndMat,
+				ColorDataWithMat
+			},
+			Preferences,
+			RandomizationType
+		},
+		prelude::*,
+		util::inspectable_bin_map::*,
+		max
+	},
+	self::{
+		consts::*,
+		transformation::{
+			Action,
+			Addr,
+			FullAddr,
+			GenusIndexBitArray,
+			HalfAddr,
+			HalfAddrConsts,
+			Library,
+			LibraryConsts,
+			Transformation
+		}
 	}
 };
 

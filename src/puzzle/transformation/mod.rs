@@ -1,5 +1,3 @@
-pub mod library;
-
 pub use self::library::{
 	Class,
 	Genus,
@@ -17,46 +15,8 @@ pub use self::library::{
 	SmallClass,
 	Species,
 };
+
 use {
-	crate::{
-		math::polyhedra::{
-			data::{
-				Data,
-				FaceData
-			},
-			Polyhedron
-		},
-		preferences::AnimationSpeedData,
-		prelude::*,
-		ui::input::PuzzleActionType,
-		util::StaticDataLibrary
-	},
-	super::{
-		consts::*,
-		inflated::{
-			PieceStateComponent,
-			MutPosAndRot,
-			PosAndRot,
-			PuzzleState,
-			PuzzleStateConsts
-		}
-	},
-	bevy::prelude::*,
-	bit_field::BitField,
-	bevy_inspector_egui::{
-		options::NumberAttributes,
-		Context,
-		Inspectable
-	},
-	egui::Ui,
-	rand::{
-		rngs::ThreadRng,
-		Rng
-	},
-	serde::{
-		Deserialize,
-		Serialize
-	},
 	std::{
 		convert::{
 			AsMut,
@@ -80,8 +40,49 @@ use {
 			SubAssign
 		},
 		time::Duration
+	},
+	bevy::prelude::*,
+	bit_field::BitField,
+	bevy_inspector_egui::{
+		options::NumberAttributes,
+		Context,
+		Inspectable
+	},
+	egui::Ui,
+	rand::{
+		rngs::ThreadRng,
+		Rng
+	},
+	serde::{
+		Deserialize,
+		Serialize
+	},
+	crate::{
+		math::polyhedra::{
+			data::{
+				Data,
+				FaceData
+			},
+			Polyhedron
+		},
+		preferences::AnimationSpeedData,
+		prelude::*,
+		ui::input::PuzzleActionType,
+		util::StaticDataLibrary
+	},
+	super::{
+		consts::*,
+		inflated::{
+			PieceStateComponent,
+			MutPosAndRot,
+			PosAndRot,
+			PuzzleState,
+			PuzzleStateConsts
+		}
 	}
 };
+
+pub mod library;
 
 pub type HalfMask = u32;
 

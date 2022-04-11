@@ -1,5 +1,8 @@
 use {
-	crate::define_super_trait,
+	std::ops::{
+		AddAssign,
+		SubAssign
+	},
 	bevy_inspector_egui::{
 		options::NumberAttributes,
 		Context,
@@ -10,10 +13,7 @@ use {
 		Bounded,
 		One
 	},
-	std::ops::{
-		AddAssign,
-		SubAssign
-	}
+	crate::define_super_trait
 };
 
 define_super_trait!(pub trait InspectableNumTrait:

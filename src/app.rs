@@ -1,6 +1,4 @@
 use {
-	crate::prelude::set_rust_log_env_var,
-	self::prelude::*,
 	bevy::{
 		prelude::*,
 		app::PluginGroupBuilder,
@@ -10,7 +8,9 @@ use {
 	serde::{
 		Deserialize,
 		Serialize
-	}
+	},
+	crate::prelude::set_rust_log_env_var,
+	self::prelude::*
 };
 
 pub mod prelude {

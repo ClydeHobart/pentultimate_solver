@@ -1,6 +1,11 @@
 use {
-	crate::{
+	bevy::{
 		prelude::*,
+		render::camera::PerspectiveProjection as BevyPerspectiveProjection
+	},
+	bevy_inspector_egui::Inspectable,
+	serde::Deserialize,
+	crate::{
 		math::polyhedra::{
 			data::{
 				Data,
@@ -13,18 +18,13 @@ use {
 			Preferences,
 			Update
 		},
+		prelude::*,
 		puzzle::{
 			consts::PENTAGON_SIDE_COUNT,
 			transformation::HalfAddr
 		}
 	},
-	super::input::InputState,
-	bevy::{
-		prelude::*,
-		render::camera::PerspectiveProjection as BevyPerspectiveProjection
-	},
-	bevy_inspector_egui::Inspectable,
-	serde::Deserialize
+	super::input::InputState
 };
 
 define_struct_with_default!(

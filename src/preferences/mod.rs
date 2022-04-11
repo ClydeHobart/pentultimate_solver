@@ -1,4 +1,7 @@
 use {
+	bevy::prelude::World,
+	bevy_inspector_egui::Inspectable,
+	serde::Deserialize,
 	crate::{
 		prelude::*,
 		puzzle::transformation::{
@@ -7,10 +10,7 @@ use {
 			GenusIndexConsts
 		},
 		tools::ToolsData
-	},
-	bevy::prelude::World,
-	bevy_inspector_egui::Inspectable,
-	serde::Deserialize
+	}
 };
 
 pub use {

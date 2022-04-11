@@ -1,21 +1,4 @@
 use {
-	crate::{
-		prelude::*,
-		math::{
-			*,
-			polyhedra::{
-				data::{
-					Data,
-					FaceData,
-					VertexData
-				},
-				Polyhedron,
-				properties::ICOSIDODECAHEDRON
-			}
-		},
-		preferences::colors::ColAndMat,
-		strings::STRING_DATA
-	},
 	std::{
 		collections::HashMap,
 		ops::Range
@@ -30,7 +13,24 @@ use {
 			render_resource::PrimitiveTopology
 		}
 	},
-	serde::Deserialize
+	serde::Deserialize,
+	crate::{
+		math::{
+			*,
+			polyhedra::{
+				data::{
+					Data,
+					FaceData,
+					VertexData
+				},
+				Polyhedron,
+				properties::ICOSIDODECAHEDRON
+			}
+		},
+		prelude::*,
+		preferences::colors::ColAndMat,
+		strings::STRING_DATA
+	}
 };
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq)]

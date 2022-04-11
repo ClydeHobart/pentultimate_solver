@@ -62,7 +62,7 @@ use {
 		IsEndState,
 		RunResult,
 		ShouldExplore
-	},
+	}
 };
 
 pub mod tools;

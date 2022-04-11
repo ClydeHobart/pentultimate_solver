@@ -1,29 +1,27 @@
+use self::{
+	data::*,
+	uses::*
+};
+
+pub mod prelude {
+	pub use super::{
+		data::{
+			ToolDataBox,
+			Stack
+		},
+		Tool
+	};
+}
+
 mod uses {
 	pub use {
-		crate::{
-			// app::prelude::{
-			// 	Solver as SolverResource,
-			// 	*
-			// },
-			prelude::*,
-			puzzle::{
-				consts::*,
-				transformation::{
-					Action,
-					HalfAddr,
-					HalfAddrAttrs
-				},
-				InflatedPuzzleState,
-				InflatedPieceStateComponent
-			},
-			ui::input::{
-				PendingActions,
-				PuzzleAction,
-				PuzzleActionType
-			},
-			util::{
-				inspectable_bit_array::InspectableBitArray,
-				inspectable_num::InspectableNum
+		std::{
+			any::Any,
+			convert::TryFrom,
+			mem::transmute,
+			ops::{
+				Deref,
+				Range
 			}
 		},
 		bevy::prelude::*,
@@ -48,32 +46,30 @@ mod uses {
 			Deserialize,
 			Deserializer
 		},
-		std::{
-			any::Any,
-			convert::TryFrom,
-			mem::transmute,
-			ops::{
-				Deref,
-				Range
+		crate::{
+			prelude::*,
+			puzzle::{
+				consts::*,
+				transformation::{
+					Action,
+					HalfAddr,
+					HalfAddrAttrs
+				},
+				InflatedPuzzleState,
+				InflatedPieceStateComponent
+			},
+			ui::input::{
+				PendingActions,
+				PuzzleAction,
+				PuzzleActionType
+			},
+			util::{
+				inspectable_bit_array::InspectableBitArray,
+				inspectable_num::InspectableNum
 			}
 		}
 	};
 }
-
-pub mod prelude {
-	pub use super::{
-		data::{
-			ToolDataBox,
-			Stack
-		},
-		Tool
-	};
-}
-
-use self::{
-	uses::*,
-	data::*
-};
 
 type ToolInner = u8;
 

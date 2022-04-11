@@ -1,4 +1,14 @@
 use {
+	std::{
+		collections::{
+			hash_set::HashSet,
+			VecDeque
+		},
+		time::{
+			Duration,
+			Instant
+		}
+	},
 	crate::util::FromAlt,
 	super::{
 		transformation::{
@@ -14,16 +24,6 @@ use {
 		DeflatedPuzzleState,
 		InflatedPuzzleState,
 		InflatedPuzzleStateConsts
-	},
-	std::{
-		collections::{
-			hash_set::HashSet,
-			VecDeque
-		},
-		time::{
-			Duration,
-			Instant
-		}
 	}
 };
 

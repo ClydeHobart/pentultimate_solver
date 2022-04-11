@@ -1,41 +1,4 @@
 use {
-	self::input::InputToggles,
-	crate::{
-		prelude::*,
-		app::prelude::*,
-		preferences::Update,
-		puzzle::transformation::{
-			Addr,
-			GenusIndex,
-			GenusIndexType,
-			Library
-		},
-		tools::prelude::*,
-		ui::input::{
-			FileAction,
-			FileActionType,
-			PuzzleActionType,
-			PuzzleAction,
-			PendingActions
-		}
-	},
-	bevy::{
-		prelude::*,
-		app::CoreStage,
-		input::keyboard::KeyCode as BevyKeyCode
-	},
-	bevy_egui::EguiContext,
-	bevy_inspector_egui::{
-		Context,
-		Inspectable
-	},
-	egui::{
-		self,
-		Color32,
-		CtxRef,
-		Ui,
-		Vec2
-	},
 	std::{
 		boxed::Box,
 		ffi::{
@@ -53,7 +16,44 @@ use {
 		path::Path,
 		sync::Mutex,
 		time::SystemTime
-	}
+	},
+	bevy::{
+		app::CoreStage,
+		input::keyboard::KeyCode as BevyKeyCode,
+		prelude::*
+	},
+	bevy_egui::EguiContext,
+	bevy_inspector_egui::{
+		Context,
+		Inspectable
+	},
+	egui::{
+		self,
+		Color32,
+		CtxRef,
+		Ui,
+		Vec2
+	},
+	crate::{
+		app::prelude::*,
+		preferences::Update,
+		prelude::*,
+		puzzle::transformation::{
+			Addr,
+			GenusIndex,
+			GenusIndexType,
+			Library
+		},
+		tools::prelude::*,
+		ui::input::{
+			FileAction,
+			FileActionType,
+			PuzzleActionType,
+			PuzzleAction,
+			PendingActions
+		}
+	},
+	self::input::InputToggles
 };
 
 pub mod camera;

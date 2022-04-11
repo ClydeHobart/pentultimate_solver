@@ -1,4 +1,9 @@
 use {
+	std::{
+		cmp::min,
+		ops::Range,
+		rc::Rc
+	},
 	bevy_inspector_egui::{
 		Context,
 		Inspectable
@@ -7,12 +12,7 @@ use {
 		BitField,
 		BitArray
 	},
-	egui::Ui,
-	std::{
-		cmp::min,
-		ops::Range,
-		rc::Rc
-	}
+	egui::Ui
 };
 
 pub trait InspectableBitArraySuperTrait:

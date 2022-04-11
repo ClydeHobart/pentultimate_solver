@@ -1,47 +1,4 @@
-pub mod prelude {
-	pub use {
-		crate::{
-			trace_expr,
-			debug_expr,
-			info_expr,
-			warn_expr,
-			error_expr,
-			trace_expect,
-			debug_expect,
-			info_expect,
-			warn_expect,
-			error_expect,
-			trace_expect_some,
-			debug_expect_some,
-			info_expect_some,
-			warn_expect_some,
-			error_expect_some,
-			trace_expect_ok,
-			debug_expect_ok,
-			info_expect_ok,
-			warn_expect_ok,
-			error_expect_ok
-		},
-		super::{
-			LogError,
-			LogErrorResult,
-			init_env_logger,
-			set_rust_log_env_var
-		}
-	};
-}
-
 use {
-	crate::{
-		prelude::*,
-		strings::STRING_DATA
-	},
-	bevy::prelude::{
-		App,
-		IntoSystem,
-		Plugin,
-		StartupStage
-	},
 	std::{
 		collections::{
 			hash_map::Iter as StdIter,
@@ -51,11 +8,21 @@ use {
 		iter::Peekable,
 		sync::Once
 	},
+	bevy::prelude::{
+		App,
+		IntoSystem,
+		Plugin,
+		StartupStage
+	},
 	::log::{
 		Level,
 		LevelFilter
 	},
-	serde::Deserialize
+	serde::Deserialize,
+	crate::{
+		prelude::*,
+		strings::STRING_DATA
+	}
 };
 
 pub mod macros {
@@ -483,6 +450,39 @@ pub mod macros {
 			log_expect_ok!(::log::error, $expr $(, $ok_closure $(, $err_closure)?)?)
 		};
 	}
+}
+
+pub mod prelude {
+	pub use {
+		crate::{
+			debug_expect,
+			debug_expect_ok,
+			debug_expect_some,
+			debug_expr,
+			error_expect,
+			error_expect_ok,
+			error_expect_some,
+			error_expr,
+			info_expect,
+			info_expect_ok,
+			info_expect_some,
+			info_expr,
+			trace_expect,
+			trace_expect_ok,
+			trace_expect_some,
+			trace_expr,
+			warn_expect,
+			warn_expect_ok,
+			warn_expect_some,
+			warn_expr
+		},
+		super::{
+			LogError,
+			LogErrorResult,
+			init_env_logger,
+			set_rust_log_env_var
+		}
+	};
 }
 
 fn usize_to_level(val: usize) -> Level {

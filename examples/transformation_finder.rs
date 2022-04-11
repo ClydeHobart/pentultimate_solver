@@ -1,25 +1,23 @@
-use {
-	pentultimate_solver::{
-		prelude::*,
-		puzzle::{
-			consts::*,
-			explorer::{
-				Explorer,
-				ExplorerParams,
-				IsEndState,
-				RunResult
-			},
-			transformation::{
-				GenusIndex,
-				GenusIndexConsts,
-				GenusIndexBitArray,
-				GenusIndexBitArrayConsts,
-				Library
-			},
-			InflatedPuzzleState
+use pentultimate_solver::{
+	prelude::*,
+	puzzle::{
+		consts::*,
+		explorer::{
+			Explorer,
+			ExplorerParams,
+			IsEndState,
+			RunResult
 		},
-		util::StaticDataLibrary
-	}
+		transformation::{
+			GenusIndex,
+			GenusIndexConsts,
+			GenusIndexBitArray,
+			GenusIndexBitArrayConsts,
+			Library
+		},
+		InflatedPuzzleState
+	},
+	util::StaticDataLibrary
 };
 
 

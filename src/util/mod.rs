@@ -1,33 +1,3 @@
-mod log;
-
-#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-pub mod simd;
-
-pub mod prelude {
-	pub use super::{
-		log::prelude::*,
-		AsBitString,
-		FromAlt,
-		FromFile,
-		FromFileOrDefault,
-		IntoAlt,
-		SerFmt,
-		ShortSlerp,
-		StaticDataLibrary,
-		ToFile,
-		ToOption,
-		ToResult,
-		debug_break,
-		red_to_green,
-		untracked_ref,
-		untracked_ref_mut
-	};
-}
-
-pub mod inspectable_bin_map;
-pub mod inspectable_bit_array;
-pub mod inspectable_num;
-
 use {
 	std::{
 		any::type_name,
@@ -77,6 +47,36 @@ use {
 	simple_error::SimpleError,
 	crate::prelude::*
 };
+
+#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+pub mod simd;
+
+pub mod prelude {
+	pub use super::{
+		log::prelude::*,
+		AsBitString,
+		FromAlt,
+		FromFile,
+		FromFileOrDefault,
+		IntoAlt,
+		SerFmt,
+		ShortSlerp,
+		StaticDataLibrary,
+		ToFile,
+		ToOption,
+		ToResult,
+		debug_break,
+		red_to_green,
+		untracked_ref,
+		untracked_ref_mut
+	};
+}
+
+pub mod inspectable_bin_map;
+pub mod inspectable_bit_array;
+pub mod inspectable_num;
+
+mod log;
 
 pub trait FromAlt<T> {
 	fn from_alt(value: T) -> Self;

@@ -1,26 +1,16 @@
 pub use {
+	std::convert::TryFrom,
+	::log::Level,
 	crate::{
 		strings::STRING_DATA,
 		util::prelude::*,
 		cond_break,
 		define_struct_with_default,
 		define_super_trait,
-		option_to_result,
+		ignore,
 		log_concat,
 		log_error,
 		log_path,
-		ignore,
-		trace_expr,
-		debug_expr,
-		info_expr,
-		warn_expr,
-		error_expr,
-		trace_expect,
-		debug_expect,
-		info_expect,
-		warn_expect,
-		error_expect
-	},
-	std::convert::TryFrom,
-	::log::Level
+		option_to_result
+	}
 };

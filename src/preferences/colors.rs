@@ -1,12 +1,4 @@
 use {
-	crate::{
-		math::polyhedra::Polyhedron,
-		preferences::Update,
-		prelude::*,
-		strings::STRING_DATA,
-		util::inspectable_bin_map::*
-	},
-	super::Preferences,
 	bevy::{
 		prelude::*,
 		render::color::{
@@ -29,7 +21,15 @@ use {
 		},
 		Deserialize,
 		Deserializer
-	}
+	},
+	crate::{
+		math::polyhedra::Polyhedron,
+		preferences::Update,
+		prelude::*,
+		strings::STRING_DATA,
+		util::inspectable_bin_map::*
+	},
+	super::Preferences
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

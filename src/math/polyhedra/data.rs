@@ -1,19 +1,4 @@
 use {
-	crate::{
-		math::{
-			*,
-			polyhedra::{
-				properties::{
-					self,
-					Properties
-				},
-				Polyhedron,
-				PolyhedronOption
-			}
-		},
-		prelude::*,
-		util::StaticDataLibrary
-	},
 	std::{
 		f32::consts::TAU,
 		mem::{
@@ -31,7 +16,22 @@ use {
 			render_resource::PrimitiveTopology
 		}
 	},
-	log::Level
+	log::Level,
+	crate::{
+		math::{
+			*,
+			polyhedra::{
+				properties::{
+					self,
+					Properties
+				},
+				Polyhedron,
+				PolyhedronOption
+			}
+		},
+		prelude::*,
+		util::StaticDataLibrary
+	}
 };
 
 #[derive(Debug, Default)]

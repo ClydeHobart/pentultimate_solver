@@ -1,19 +1,3 @@
-pub mod prelude {
-	pub use {
-		core::arch::x86_64::{
-			self,
-			__m128i as m128,
-			__m256i as m256
-		},
-		std::mem::{
-			size_of,
-			transmute,
-			transmute_copy,
-			MaybeUninit
-		}
-	};
-}
-
 use prelude::*;
 
 macro_rules! m256_from_array {
@@ -699,4 +683,22 @@ pub mod inflated {
 			}
 		};
 	}
+}
+
+pub mod prelude {
+	pub use {
+		std::{
+			arch::x86_64::{
+				self,
+				__m128i as m128,
+				__m256i as m256
+			},
+			mem::{
+				size_of,
+				transmute,
+				transmute_copy,
+				MaybeUninit
+			}
+		}
+	};
 }

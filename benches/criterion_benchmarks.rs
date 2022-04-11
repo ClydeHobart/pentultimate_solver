@@ -1,23 +1,21 @@
 use {
+	std::time::Duration,
 	criterion::{
-		black_box,
-		criterion_group,
-		criterion_main,
 		BatchSize,
 		Bencher,
-		Criterion
+		Criterion,
+		black_box,
+		criterion_group,
+		criterion_main
 	},
-	core::time::Duration,
 	pentultimate_solver::{
 		puzzle::{
 			DeflatedPuzzleState,
 			InflatedPuzzleState
 		},
 		util::simd,
-		util_simd_deflated_deflate_puzzle_state				as deflate_puzzle_state_current,
-		util_simd_inflated_inflate_puzzle_state				as inflate_puzzle_state_current,
-		// util_simd_inflated_inflate_puzzle_state_no_init		as inflate_puzzle_state_no_init,
-		// util_simd_inflated_inflate_puzzle_state_no_arrays	as inflate_puzzle_state_no_arrays
+		util_simd_deflated_deflate_puzzle_state as deflate_puzzle_state_current,
+		util_simd_inflated_inflate_puzzle_state as inflate_puzzle_state_current,
 	},
 	rand::prelude::*
 };

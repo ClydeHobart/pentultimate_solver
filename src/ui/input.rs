@@ -1,46 +1,4 @@
 use {
-	crate::{
-		prelude::*,
-		app::{
-			prelude::*,
-			SaveState
-		},
-		math::polyhedra::{
-			data::{
-				Data,
-				FaceData
-			},
-			Polyhedron
-		},
-		preferences::{
-			AnimationSpeedData,
-			RandomizationType,
-			SpeedData
-		},
-		puzzle::{
-			consts::*,
-			transformation::{
-				Action,
-				Addr,
-				FullAddr,
-				GenusIndex,
-				GenusIndexConsts,
-				GenusIndexType,
-				HalfAddr,
-				Library,
-				FullMask,
-				RandHalfAddrParams
-			},
-			ExtendedPuzzleState,
-			InflatedPuzzleState,
-			InflatedPuzzleStateConsts
-		},
-		ui::MainData
-	},
-	super::{
-		Preferences,
-		View
-	},
 	std::{
 		collections::VecDeque,
 		mem::take,
@@ -66,7 +24,6 @@ use {
 		}
 	},
 	bevy::{
-		prelude::*,
 		app::CoreStage,
 		input::{
 			keyboard::KeyCode as BevyKeyCode,
@@ -75,6 +32,7 @@ use {
 				MouseWheel
 			}
 		},
+		prelude::*,
 		utils::BoxedFuture
 	},
 	bevy_inspector_egui::{
@@ -91,6 +49,48 @@ use {
 	serde::{
 		Deserialize,
 		Serialize
+	},
+	crate::{
+		app::{
+			prelude::*,
+			SaveState
+		},
+		math::polyhedra::{
+			data::{
+				Data,
+				FaceData
+			},
+			Polyhedron
+		},
+		preferences::{
+			AnimationSpeedData,
+			RandomizationType,
+			SpeedData
+		},
+		prelude::*,
+		puzzle::{
+			consts::*,
+			transformation::{
+				Action,
+				Addr,
+				FullAddr,
+				GenusIndex,
+				GenusIndexConsts,
+				GenusIndexType,
+				HalfAddr,
+				Library,
+				FullMask,
+				RandHalfAddrParams
+			},
+			ExtendedPuzzleState,
+			InflatedPuzzleState,
+			InflatedPuzzleStateConsts
+		},
+		ui::MainData
+	},
+	super::{
+		Preferences,
+		View
 	}
 };
 

@@ -39,7 +39,7 @@ use {
 			inspectable_bit_array::InspectableBitArray,
 			inspectable_num::InspectableNum
 		}
-	},
+	}
 };
 
 #[derive(Clone, Default, Inspectable, PartialEq)]
