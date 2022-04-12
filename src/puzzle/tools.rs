@@ -10,7 +10,6 @@ use {
 	egui::{
 		Button,
 		Color32,
-		Response,
 		Separator,
 		TextEdit,
 		Ui
@@ -32,8 +31,7 @@ use {
 				PendingActions,
 				PuzzleAction,
 				PuzzleActionType
-			},
-			View
+			}
 		},
 		util::{
 			inspectable_bit_array::InspectableBitArray,
@@ -198,29 +196,14 @@ impl Inspectable for Stack {
 	fn ui(&mut self, ui: &mut Ui, _: (), context: &mut Context) -> bool {
 		let mut changed: bool = false;
 
-		changed |= context.world_scope(
-			ui, "NewFamilyNameViewFetch",
-			|world: &mut World, ui: &mut Ui, _: &mut Context| -> bool {
-				if let View::Main(main_data) = warn_expect_some!(
-					world.get_resource_mut::<View>(),
-					return false
-				).as_mut() {
-					ui.horizontal(|ui: &mut Ui| -> bool {
-						ui.label("New Family Name");
+		ui.horizontal(|ui: &mut Ui| -> () {
+			ui.label("New Family Name");
 
-						let response: Response = TextEdit::singleline(&mut self.new_family_name)
-							.show(ui)
-							.response;
-
-						main_data.key_and_mouse_input_available = !response.gained_focus() && !response.has_focus() && !response.hovered();
-
-						response.changed()
-					}).inner
-				} else {
-					false
-				}
-			}
-		);
+			changed |= TextEdit::singleline(&mut self.new_family_name)
+				.show(ui)
+				.response
+				.changed();
+		});
 		ui.collapsing("Focus Indices", |ui: &mut Ui| -> () {
 			egui::Grid::new(context.id())
 				.min_col_width(0.0_f32)

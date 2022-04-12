@@ -22,7 +22,10 @@ use {
 		input::keyboard::KeyCode as BevyKeyCode,
 		prelude::*
 	},
-	bevy_egui::EguiContext as BevyEguiContext,
+	bevy_egui::{
+		EguiContext as BevyEguiContext,
+		EguiSystem
+	},
 	bevy_inspector_egui::{
 		Context,
 		Inspectable
@@ -59,14 +62,8 @@ use {
 pub mod camera;
 pub mod input;
 
-pub struct MainData {
-	pub key_and_mouse_input_available: bool
-}
-
-impl Default for MainData { fn default() -> Self { Self { key_and_mouse_input_available: true } }}
-
 pub enum View {
-	Main(MainData),
+	Main,
 	Preferences(Box<Preferences>),
 }
 
@@ -89,7 +86,7 @@ impl UIPlugin {
 			Self::render_menu(&mut context);
 
 			match *warn_expect_some!(context.world().unwrap().get_resource::<View>(), return) {
-				View::Main(_) => { Self::render_main(&mut context) },
+				View::Main => { Self::render_main(&mut context) },
 				View::Preferences(_) => { Self::render_preferences(&mut context); }
 			}
 		});
@@ -632,10 +629,10 @@ impl UIPlugin {
 							(*res_preferences).update(world);
 						});
 
-						*view = View::Main(MainData::default());
+						*view = View::Main;
 					},
 					ClosingAction::Cancel => {
-						*view = View::Main(MainData::default());
+						*view = View::Main;
 					},
 					_ => {}
 				}
@@ -648,7 +645,7 @@ impl Plugin for UIPlugin {
 	fn build(&self, app: &mut App) {
 		app
 			.insert_resource(Preferences::default())
-			.insert_resource(View::Main(MainData::default()))
+			.insert_resource(View::Main)
 			.insert_resource(Msaa { samples: 4 })
 			.insert_resource(WindowDescriptor {
 				title: STRING_DATA.misc.app_title.clone(),
@@ -661,6 +658,11 @@ impl Plugin for UIPlugin {
 				.label(STRING_DATA.labels.ui_startup.as_ref())
 				.after(STRING_DATA.labels.transformation_startup.as_ref())
 			)
-			.add_system_to_stage(CoreStage::Last, Self::run.exclusive_system());
+			.add_system_to_stage(
+				CoreStage::PostUpdate,
+				Self::run
+					.exclusive_system()
+					.before(EguiSystem::ProcessOutput)
+			);
 	}
 }

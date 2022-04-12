@@ -35,11 +35,16 @@ use {
 		prelude::*,
 		utils::BoxedFuture
 	},
+	bevy_egui::{
+		EguiContext as BevyEguiContext,
+		EguiSystem
+	},
 	bevy_inspector_egui::{
 		egui,
 		Context,
 		Inspectable
 	},
+	egui::Context as EguiContext,
 	rand::{
 		rngs::ThreadRng,
 		Rng,
@@ -83,8 +88,7 @@ use {
 			},
 			ExtendedPuzzleState,
 			InflatedPuzzleState
-		},
-		ui::MainData
+		}
 	},
 	super::{
 		Preferences,
@@ -777,100 +781,106 @@ impl InputPlugin {
 		extended_puzzle_state:		Res<ExtendedPuzzleState>,
 		keyboard_input:				Res<Input<BevyKeyCode>>,
 		mouse_button_input:			Res<Input<MouseButton>>,
+		preferences:				Res<Preferences>,
 		view:						Res<View>,
 		time:						Res<Time>,
-		preferences:				Res<Preferences>,
 		camera_query:				CameraQuery,
 		mut mouse_motion_events:	EventReader<MouseMotion>,
 		mut mouse_wheel_events:		EventReader<MouseWheel>,
+		mut bevy_egui_context:		ResMut<BevyEguiContext>,
 		mut input_state:			ResMut<InputState>
 	) -> () {
 		let input_state: &mut InputState = input_state.deref_mut();
 
 		input_state.reset_update_data();
 
-		if !matches!(*view, View::Main(MainData { key_and_mouse_input_available: true })) {
+		if !matches!(*view, View::Main) {
 			return;
 		}
 
+		let egui_context: &EguiContext = bevy_egui_context.ctx_mut();
 		let input_data: &InputData = &preferences.input;
 		let mut toggles: InputToggles = input_state.toggles;
 
-		macro_rules! check_toggle {
-			($toggle:ident) => {
-				if keyboard_input.just_pressed(input_data.$toggle.into()) { toggles.$toggle = !toggles.$toggle; }
+		if !egui_context.wants_keyboard_input() {
+			macro_rules! check_toggle {
+				($toggle:ident) => {
+					if keyboard_input.just_pressed(input_data.$toggle.into()) { toggles.$toggle = !toggles.$toggle; }
+				}
+			}
+	
+			check_toggle!(enable_modifiers);
+			check_toggle!(rotate_twice);
+			check_toggle!(counter_clockwise);
+			check_toggle!(alt_hemi);
+			check_toggle!(disable_recentering);
+	
+			if keyboard_input.just_pressed(input_data.cycle_genus_index_up.into()) {
+				toggles.genus_index = GenusIndex::try_from(
+					if usize::from(toggles.genus_index) == 0_usize {
+						Library::get_genus_count() as GenusIndexType
+					} else {
+						*toggles.genus_index
+					} - 1 as GenusIndexType
+				).unwrap();
+			}
+	
+			if keyboard_input.just_pressed(input_data.cycle_genus_index_down.into()) {
+				toggles.genus_index = GenusIndex::try_from(
+					if usize::from(toggles.genus_index) == Library::get_genus_count() - 1_usize {
+						0 as GenusIndexType
+					} else {
+						*toggles.genus_index + 1 as GenusIndexType
+					}
+				).unwrap();
 			}
 		}
 
-		check_toggle!(enable_modifiers);
-		check_toggle!(rotate_twice);
-		check_toggle!(counter_clockwise);
-		check_toggle!(alt_hemi);
-		check_toggle!(disable_recentering);
-
-		if keyboard_input.just_pressed(input_data.cycle_genus_index_up.into()) {
-			toggles.genus_index = GenusIndex::try_from(
-				if usize::from(toggles.genus_index) == 0_usize {
-					Library::get_genus_count() as GenusIndexType
-				} else {
-					*toggles.genus_index
-				} - 1 as GenusIndexType
-			).unwrap();
-		}
-
-		if keyboard_input.just_pressed(input_data.cycle_genus_index_down.into()) {
-			toggles.genus_index = GenusIndex::try_from(
-				if usize::from(toggles.genus_index) == Library::get_genus_count() - 1_usize {
-					0 as GenusIndexType
-				} else {
-					*toggles.genus_index + 1 as GenusIndexType
-				}
-			).unwrap();
-		}
-
-		let (camera_rotation, has_camera_rotation): (Quat, bool) = {
-			const PAN_SCALING_FACTOR: f32 = 500_000.0_f32;
-			const ROLL_SCALING_FACTOR: f32 = 5_000.0_f32;
-
-			let (mouse_motion_delta, mouse_wheel_delta): (Vec2, f32) = {
-				let time_delta: f32 = time.delta_seconds();
-
-				(
-					if mouse_button_input.pressed(MouseButton::Middle) {
-						mouse_motion_events
+		if !egui_context.wants_pointer_input() {
+			let (camera_rotation, has_camera_rotation): (Quat, bool) = {
+				const PAN_SCALING_FACTOR: f32 = 500_000.0_f32;
+				const ROLL_SCALING_FACTOR: f32 = 5_000.0_f32;
+	
+				let (mouse_motion_delta, mouse_wheel_delta): (Vec2, f32) = {
+					let time_delta: f32 = time.delta_seconds();
+	
+					(
+						if mouse_button_input.pressed(MouseButton::Middle) {
+							mouse_motion_events
+								.iter()
+								.map(|mouse_motion: &MouseMotion| -> &Vec2 {
+									&mouse_motion.delta
+								})
+								.sum::<Vec2>() / time_delta
+						} else {
+							Vec2::ZERO
+						},
+						mouse_wheel_events
 							.iter()
-							.map(|mouse_motion: &MouseMotion| -> &Vec2 {
-								&mouse_motion.delta
+							.map(|mouse_wheel: &MouseWheel| -> f32 {
+								mouse_wheel.y
 							})
-							.sum::<Vec2>() / time_delta
-					} else {
-						Vec2::ZERO
-					},
-					mouse_wheel_events
-						.iter()
-						.map(|mouse_wheel: &MouseWheel| -> f32 {
-							mouse_wheel.y
-						})
-						.sum::<f32>() / time_delta
-				)
+							.sum::<f32>() / time_delta
+					)
+				};
+	
+				if !mouse_motion_delta.abs_diff_eq(Vec2::ZERO, f32::EPSILON) { (
+					Quat::from_axis_angle(
+						Vec3::new(mouse_motion_delta.x, -mouse_motion_delta.y, 0.0_f32).cross(Vec3::Z).normalize(),
+						mouse_motion_delta.length() / PAN_SCALING_FACTOR * preferences.speed.camera.pan_speed as f32
+					),
+					true
+				) } else if mouse_wheel_delta.abs() > f32::EPSILON { (
+					Quat::from_rotation_z(
+						mouse_wheel_delta / ROLL_SCALING_FACTOR * preferences.speed.camera.roll_speed as f32
+					),
+					true
+				) } else { (Quat::IDENTITY, false) }
 			};
 
-			if !mouse_motion_delta.abs_diff_eq(Vec2::ZERO, f32::EPSILON) { (
-				Quat::from_axis_angle(
-					Vec3::new(mouse_motion_delta.x, -mouse_motion_delta.y, 0.0_f32).cross(Vec3::Z).normalize(),
-					mouse_motion_delta.length() / PAN_SCALING_FACTOR * preferences.speed.camera.pan_speed as f32
-				),
-				true
-			) } else if mouse_wheel_delta.abs() > f32::EPSILON { (
-				Quat::from_rotation_z(
-					mouse_wheel_delta / ROLL_SCALING_FACTOR * preferences.speed.camera.roll_speed as f32
-				),
-				true
-			) } else { (Quat::IDENTITY, false) }
-		};
-
-		input_state.camera_rotation = camera_rotation;
-		input_state.has_camera_rotation = has_camera_rotation;
+			input_state.camera_rotation = camera_rotation;
+			input_state.has_camera_rotation = has_camera_rotation;
+		}
 
 		match (&mut input_state.puzzle_action, &mut input_state.file_action) {
 			(None, None) => {
@@ -1044,6 +1054,12 @@ impl Plugin for InputPlugin {
 	fn build(&self, app: &mut App) -> () {
 		app
 			.insert_resource(InputState::default())
-			.add_system_to_stage(CoreStage::PreUpdate, Self::run.system());
+			.add_system_to_stage(
+				CoreStage::PreUpdate,
+				Self::run
+					.system()
+					// .after(InputSystem)
+					.after(EguiSystem::BeginFrame)
+			);
 	}
 }
