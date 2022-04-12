@@ -22,7 +22,7 @@ use {
 		input::keyboard::KeyCode as BevyKeyCode,
 		prelude::*
 	},
-	bevy_egui::EguiContext,
+	bevy_egui::EguiContext as BevyEguiContext,
 	bevy_inspector_egui::{
 		Context,
 		Inspectable
@@ -30,7 +30,7 @@ use {
 	egui::{
 		self,
 		Color32,
-		CtxRef,
+		Context as EguiContext,
 		Ui,
 		Vec2
 	},
@@ -83,8 +83,8 @@ impl UIPlugin {
 	}
 
 	fn run(world: &mut World) -> () {
-		world.resource_scope(|world: &mut World, mut egui_context: Mut<EguiContext>| -> () {
-			let mut context: Context = Context::new_world_access(Some(egui_context.ctx_mut()), world);
+		world.resource_scope(|world: &mut World, mut bevy_egui_context: Mut<BevyEguiContext>| -> () {
+			let mut context: Context = Context::new_world_access(Some(bevy_egui_context.ctx_mut()), world);
 
 			Self::render_menu(&mut context);
 
@@ -510,8 +510,8 @@ impl UIPlugin {
 			)
 		}
 
-		let ctx_ref: &CtxRef = context.ui_ctx.unwrap();
-		let prev_style: egui::Style = (*ctx_ref.style()).clone();
+		let egui_context: &EguiContext = context.ui_ctx.unwrap();
+		let prev_style: egui::Style = (*egui_context.style()).clone();
 		let mut curr_style: egui::Style = prev_style.clone();
 
 		macro_rules! style {
@@ -573,18 +573,18 @@ impl UIPlugin {
 
 		curr_style.visuals.window_shadow = epaint::Shadow::default();
 		curr_style.wrap = Some(false);
-		ctx_ref.set_style(curr_style);
+		egui_context.set_style(curr_style);
 		egui::Window::new("Tools")
 			.anchor(egui::Align2::LEFT_TOP, TOOLS_OFFSET)
 			.title_bar(false)
-			.show(ctx_ref, |ui: &mut Ui| -> () {
+			.show(egui_context, |ui: &mut Ui| -> () {
 				preferences.tools.render(ui, context);
 			});
 		context.ui_ctx.unwrap().set_style(prev_style);
 	}
 
 	fn render_preferences(context: &mut Context) -> () {
-		let ctx_ref: &CtxRef = warn_expect_some!(context.ui_ctx, return);
+		let egui_context: &EguiContext = warn_expect_some!(context.ui_ctx, return);
 		let world: &mut World = warn_expect_some!(unsafe { context.world_mut() }, return);
 
 		if !world.contains_resource::<Preferences>() || !world.contains_resource::<View>() {
@@ -603,7 +603,7 @@ impl UIPlugin {
 		world.resource_scope(|world: &mut World, mut view: Mut<View>| -> () {
 			if let View::Preferences(preferences) = &mut (*view) {
 				egui::CentralPanel::default()
-					.show(ctx_ref, |ui: &mut egui::Ui| -> () {
+					.show(egui_context, |ui: &mut egui::Ui| -> () {
 						egui::ScrollArea::vertical().show(ui, |ui: &mut Ui| -> () {
 							preferences.ui(ui, (), &mut context.with_id(0_u64));
 							ui.horizontal(|ui: &mut Ui| -> () {
