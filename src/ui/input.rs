@@ -458,7 +458,7 @@ impl Inspectable for KeyPress {
 								.show_ui(ui, |ui: &mut Ui| -> () {
 									for key_code in 0_u32 .. Self::KEY_CODE_COUNT {
 										let key_code: KeyCode = key_code.into_key_code();
-	
+
 										if !Modifier::is_modifier(key_code)
 											&& ui.selectable_label(
 												key_code == self_key_code,
@@ -489,20 +489,20 @@ impl Inspectable for KeyPress {
 									| -> () {
 										ui.centered_and_justified(|ui: &mut Ui| -> () {
 											let mask: u16 = mask(modifier);
-		
+
 											ui.visuals_mut().override_text_color = Some(if key_press.0 & mask != 0_u16 {
 												ui.visuals().text_color()
 											} else {
 												ui.visuals().weak_text_color()
 											});
-		
+
 											if ui.button(format!("{:?}", key_code(modifier))).clicked() {
 												key_press.0 ^= mask;
 												changed = true;
 											}
 										});
 									};
-		
+
 									button(self, ui, &Modifier::left_mask, &Modifier::left_key_code);
 									button(self, ui, &Modifier::right_mask, &Modifier::right_key_code);
 									ui.end_row();

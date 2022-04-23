@@ -370,6 +370,7 @@ impl UIPlugin {
 	fn render_action_stack(context: &mut Context) -> () {
 		const OFFSET: f32 = 20.0_f32;
 		const ACTION_STACK_OFFSET: Vec2 = Vec2::new(-OFFSET, -OFFSET);
+		const ACTION_STACK_SCALE: f32 = 0.75_f32;
 
 		let extended_puzzle_state: &ExtendedPuzzleState = warn_expect_some!(
 			context.world().and_then(World::get_resource::<ExtendedPuzzleState>),
@@ -379,106 +380,111 @@ impl UIPlugin {
 		egui::Area::new("ActionStack")
 			.anchor(egui::Align2::RIGHT_BOTTOM, ACTION_STACK_OFFSET)
 			.show(context.ui_ctx.unwrap(), |ui: &mut Ui| -> () {
-				egui::ScrollArea::vertical().show(ui, |ui: &mut Ui| -> () {
-					egui::Grid::new("ActionStackGrid")
-						.min_col_width(0.0_f32)
-						.spacing(ui.spacing().item_spacing * Vec2::Y)
-						.show(ui, |ui: &mut Ui| -> () {
-							#[cfg(debug_assertions)]
-							let stack_debug: Option<&Stack> = context
-								.world()
-								.and_then(World::get_resource::<Preferences>)
-								.and_then(|preferences: &Preferences| -> Option<&ToolDataBox> {
-									preferences.tools.get_tool_data(Tool::Stack)
-								})
-								.and_then(|tool_data_box: &ToolDataBox| -> Option<&Stack> {
-									tool_data_box.as_any().downcast_ref::<Stack>()
-								});
-
-							for (action_index, action)
-								in extended_puzzle_state.actions.iter().enumerate()
-							{
-								let camera_half_addr:			HalfAddr = action.camera_start;
-								let transformation:				FullAddr = action.transformation - camera_half_addr;
-								let transformation_half_addr:	HalfAddr = *transformation.get_half_addr();
-
-								ui.visuals_mut().widgets.noninteractive.fg_stroke.color =
-									if action_index + 1_usize == extended_puzzle_state.curr_action {
-										Color32::WHITE
-									} else {
-										Color32::GRAY
-									};
-
-								#[cfg(debug_assertions)]
-								if let Some(stack_debug) = stack_debug {
-									ui.label(match (
-										action_index == stack_debug.min_focus_index,
-										action_index == stack_debug.max_focus_index
-									) {
-										(true,	true)	=> "= ",
-										(true,	false)	=> "≥ ",
-										(false,	true)	=> "≤ ",
-										(false,	false)	=> ""
+				egui::ScrollArea::vertical()
+					.max_height(ACTION_STACK_SCALE * ui.available_height())
+					.show(ui, |ui: &mut Ui| -> () {
+						egui::Grid::new("ActionStackGrid")
+							.min_col_width(0.0_f32)
+							.spacing(ui.spacing().item_spacing * Vec2::Y)
+							.show(ui, |ui: &mut Ui| -> () {
+								let stack_debug: Option<&Stack> = context
+									.world()
+									.and_then(World::get_resource::<Preferences>)
+									.and_then(|preferences: &Preferences| -> Option<&ToolDataBox> {
+										preferences.tools.get_tool_data(Tool::Stack)
+									})
+									.and_then(|tool_data_box: &ToolDataBox| -> Option<&Stack> {
+										tool_data_box.as_any().downcast_ref::<Stack>()
 									});
-								}
 
-								ui.label(transformation
-									.try_get_genus_index()
-									.map_or_else(
-										|| -> String { "[INVALID]".into() },
-										|genus_index: GenusIndex| -> String {
-											format!("{:?} ", genus_index)
-										}
-									));
+								for (action_index, action)
+									in extended_puzzle_state.actions.iter().enumerate()
+								{
+									let camera_half_addr:			HalfAddr = action.camera_start;
+									let transformation:				FullAddr = action.transformation - camera_half_addr;
+									let transformation_half_addr:	HalfAddr = *transformation.get_half_addr();
 
-								if transformation_half_addr.is_valid() {
-									ui.label(format!("({}, ", transformation_half_addr.get_species_index()));
-									ui.label(format!("{}) ", transformation_half_addr.get_organism_index()));
-								} else {
-									ui.label(format!("(-1, "));
-									ui.label(format!("-1) "));
-								}
+									ui.visuals_mut().widgets.noninteractive.fg_stroke.color =
+										if action_index + 1_usize == extended_puzzle_state.curr_action {
+											Color32::WHITE
+										} else {
+											Color32::GRAY
+										};
 
-								if camera_half_addr.is_valid() {
-									ui.label(format!("@ ({}, ", camera_half_addr.get_species_index()));
-									ui.label(format!("{})", camera_half_addr.get_organism_index()));
-								} else {
-									ui.label(format!("(-1, "));
-									ui.label(format!("-1)"));
-								}
+									if let Some(stack_debug) = stack_debug {
+										ui.label(match (
+											action_index == stack_debug.min_focus_index,
+											action_index == stack_debug.max_focus_index
+										) {
+											(true,	true)	=> "= ",
+											(true,	false)	=> "≥ ",
+											(false,	true)	=> "≤ ",
+											(false,	false)	=> ""
+										});
+									}
 
-								#[cfg(debug_assertions)]
-								if let Some(stack_debug) = stack_debug {
-									if stack_debug.print_true_action {
-										let transformation:				FullAddr = action.transformation;
-										let transformation_half_addr:	HalfAddr = *transformation.get_half_addr();
-
-										ui.label(format!(
-											" (== {}",
-											transformation
-												.try_get_genus_index()
-												.map_or_else(
-													|| -> String { "[INVALID]".into() },
-													|genus_index: GenusIndex| -> String {
-														format!("{:?} ", genus_index)
-													}
-												)
+									ui.label(transformation
+										.try_get_genus_index()
+										.map_or_else(
+											|| -> String { "[INVALID]".into() },
+											|genus_index: GenusIndex| -> String {
+												format!("{:?} ", genus_index)
+											}
 										));
 
-										if transformation_half_addr.is_valid() {
-											ui.label(format!("({}, ", transformation_half_addr.get_species_index()));
-											ui.label(format!("{}) ", transformation_half_addr.get_organism_index()));
-										} else {
-											ui.label(format!("(-1, "));
-											ui.label(format!("-1)"));
+									if transformation_half_addr.is_valid() {
+										ui.label(format!("({}, ", transformation_half_addr.get_species_index()));
+										ui.label(format!("{}) ", transformation_half_addr.get_organism_index()));
+									} else {
+										ui.label(format!("(-1, "));
+										ui.label(format!("-1) "));
+									}
+
+									if camera_half_addr.is_valid() {
+										ui.label(format!("@ ({}, ", camera_half_addr.get_species_index()));
+										ui.label(format!("{})", camera_half_addr.get_organism_index()));
+									} else {
+										ui.label(format!("(-1, "));
+										ui.label(format!("-1)"));
+									}
+
+									if let Some(stack_debug) = stack_debug {
+										if stack_debug.print_true_action {
+											let transformation:				FullAddr = action.transformation;
+											let transformation_half_addr:	HalfAddr = *transformation.get_half_addr();
+
+											ui.label(format!(
+												" (== {}",
+												transformation
+													.try_get_genus_index()
+													.map_or_else(
+														|| -> String { "[INVALID]".into() },
+														|genus_index: GenusIndex| -> String {
+															format!("{:?} ", genus_index)
+														}
+													)
+											));
+
+											if transformation_half_addr.is_valid() {
+												ui.label(format!(
+													"({}, ",
+													transformation_half_addr.get_species_index()
+												));
+												ui.label(format!(
+													"{}) ",
+													transformation_half_addr.get_organism_index()
+												));
+											} else {
+												ui.label(format!("(-1, "));
+												ui.label(format!("-1)"));
+											}
 										}
 									}
-								}
 
-								ui.end_row();
-							}
-						});
-				});
+									ui.end_row();
+								}
+							});
+					});
 			});
 	}
 
