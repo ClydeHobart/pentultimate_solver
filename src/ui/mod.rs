@@ -19,7 +19,6 @@ use {
 	},
 	bevy::{
 		app::CoreStage,
-		input::keyboard::KeyCode as BevyKeyCode,
 		prelude::*
 	},
 	bevy_egui::{
@@ -51,6 +50,7 @@ use {
 		ui::input::{
 			FileAction,
 			FileActionType,
+			KeyPressAction,
 			PuzzleActionType,
 			PuzzleAction,
 			PendingActions
@@ -327,7 +327,7 @@ impl UIPlugin {
 					let input: &InputData = &preferences.input;
 
 					macro_rules! modifier_row {
-						($toggle:ident, $modifier_name:expr) => {
+						($toggle:ident, $action:ident, $modifier_name:expr) => {
 							let text_stroke: &mut egui::Stroke = &mut ui.visuals_mut().widgets.noninteractive.fg_stroke;
 
 							if toggles.$toggle {
@@ -338,17 +338,17 @@ impl UIPlugin {
 								text_stroke.width = 1.0_f32;
 							}
 
-							ui.label(format!("[{:?}]", BevyKeyCode::from(input.$toggle)));
+							ui.label(format!("{:?}", input.key_presses[KeyPressAction::$action]));
 							ui.label($modifier_name);
 							ui.end_row();
 						}
 					}
 
-					modifier_row!(enable_modifiers,		"Enable Modifiers");
-					modifier_row!(rotate_twice,			"Rotate Twice");
-					modifier_row!(counter_clockwise,	"Counter Clockwise");
-					modifier_row!(alt_hemi,				"Alt. Hemi.");
-					modifier_row!(disable_recentering,	"Disable Recentering");
+					modifier_row!(enable_modifiers,		EnableModifiers,	"Enable Modifiers");
+					modifier_row!(rotate_twice,			RotateTwice,		"Rotate Twice");
+					modifier_row!(counter_clockwise,	CounterClockwise,	"Counter Clockwise");
+					modifier_row!(alt_hemi,				AltHemi,			"Alt. Hemi.");
+					modifier_row!(disable_recentering,	DisableRecentering,	"Disable Recentering");
 
 					ui.end_row();
 				});
@@ -485,7 +485,7 @@ impl UIPlugin {
 	fn render_tools(context: &mut Context) -> () {
 		const OFFSET: f32 = 20.0_f32;
 		const TOOLS_OFFSET: Vec2 = Vec2::new(OFFSET, OFFSET);
-		const FILL_ALPHA: u8 = 0xE0_u8;
+		const FILL_ALPHA: u8 = 0xF0_u8;
 
 		let mut preferences: Mut<Preferences> = warn_expect_some!(
 			unsafe { context.world_mut() }.and_then(World::get_resource_mut::<Preferences>),

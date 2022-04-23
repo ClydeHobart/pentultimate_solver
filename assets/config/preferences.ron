@@ -30,18 +30,25 @@ Preferences(
 		)
 	),
 	input:				InputData(
-		default_positions:		(	0,			5,			10,			1,			8,			4		),
-		rotation_keys:			(	Numpad0,	Numpad1,	Numpad4,	Numpad5,	Numpad6,	Numpad3	),
-		recenter_camera:		Space,
-		undo:					Left,
-		redo:					Right,
-		cycle_genus_index_up:	Up,
-		cycle_genus_index_down:	Down,
-		enable_modifiers:		E,
-		rotate_twice:			D,
-		counter_clockwise:		S,
-		alt_hemi:				A,
-		disable_recentering:	X,
+		default_positions:		(0, 5, 10, 1, 8, 4),
+		key_presses:			{
+			Rot0:					"Numpad0",
+			Rot1:					"Numpad1",
+			Rot2:					"Numpad4",
+			Rot3:					"Numpad5",
+			Rot4:					"Numpad6",
+			Rot5:					"Numpad3",
+			RecenterCamera:			"Space",
+			Undo:					"^Z",
+			Redo:					"^Y",
+			CycleGenusIndexUp:		"Up",
+			CycleGenusIndexDown:	"Down",
+			EnableModifiers:		"E",
+			RotateTwice:			"D",
+			CounterClockwise:		"S",
+			AltHemi:				"A",
+			DisableRecentering:		"X"
+		}
 	),
 	light_and_camera:	LightAndCameraData(
 		light_pos:			( 0.0, 0.0, 10.0 ),

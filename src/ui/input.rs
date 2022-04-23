@@ -1,9 +1,26 @@
 use {
 	std::{
-		collections::VecDeque,
-		mem::take,
-		ops::DerefMut,
+		collections::{
+			HashMap,
+			VecDeque
+		},
+		convert::TryFrom,
+		fmt::{
+			Debug,
+			Formatter,
+			Result as FmtResult,
+			Write
+		},
+		mem::{
+			take,
+			transmute
+		},
+		ops::{
+			DerefMut,
+			Index
+		},
 		path::Path,
+		rc::Rc,
 		sync::{
 			atomic::{
 				AtomicBool,
@@ -26,7 +43,7 @@ use {
 	bevy::{
 		app::CoreStage,
 		input::{
-			keyboard::KeyCode as BevyKeyCode,
+			keyboard::KeyCode,
 			mouse::{
 				MouseMotion,
 				MouseWheel
@@ -44,7 +61,15 @@ use {
 		Context,
 		Inspectable
 	},
-	egui::Context as EguiContext,
+	bit_field::BitField,
+	egui::{
+		CollapsingHeader,
+		Color32,
+		ComboBox,
+		Context as EguiContext,
+		Grid,
+		Ui
+	},
 	rand::{
 		rngs::ThreadRng,
 		Rng,
@@ -53,6 +78,7 @@ use {
 	rfd::FileHandle,
 	serde::{
 		Deserialize,
+		Deserializer,
 		Serialize
 	},
 	crate::{
@@ -115,151 +141,706 @@ pub fn generate_default_positions() -> [usize; HALF_PENTAGON_PIECE_COUNT] {
 	positions
 }
 
-#[derive(Clone, Copy, Deserialize, PartialEq)]
-#[serde(from = "bevy::input::keyboard::KeyCode")]
-pub struct KeyCode(BevyKeyCode);
+trait IntoKeyCode: Sized {
+	fn into_key_code(self) -> KeyCode;
+}
 
-impl From<BevyKeyCode> for KeyCode { fn from(bevy_key_code: BevyKeyCode) -> Self { Self(bevy_key_code) } }
-impl From<KeyCode> for BevyKeyCode { fn from(key_code: KeyCode) -> Self { key_code.0 } }
+impl IntoKeyCode for u32 {
+	fn into_key_code(self) -> KeyCode  { unsafe { transmute::<Self, KeyCode>(self) } }
+}
 
-impl Inspectable for KeyCode {
-	type Attributes = ();
+#[test]
+fn key_code_count() -> () {
+	println!("{}", KeyCode::Cut as u32 + 1_u32);
+}
 
-	fn ui(&mut self, ui: &mut egui::Ui, _: Self::Attributes, context: &mut Context) -> bool {
-		let mut changed: bool = false;
+#[derive(Clone, Copy)]
+#[cfg_attr(not(target_os = "macos"), derive(Debug))]
+#[repr(u8)]
+enum Modifier {
+	Alt,
+	Ctrl,
+	Shift,
+	Win
+}
 
-		egui::ComboBox::from_id_source(context.id())
-			.selected_text(format!("{:?}", self.0))
-			.show_ui(ui, |ui: &mut egui::Ui| -> () {
-				macro_rules! ui_for_key_codes {
-					($($variant:ident),*) => {
-						$(
-							if ui.selectable_label(
-									matches!(self.0, BevyKeyCode::$variant),
-									format!("{:?}", BevyKeyCode::$variant)
-							).clicked() {
-								self.0 = BevyKeyCode::$variant;
-								changed = true;
-							}
-						)*
+#[cfg(target_os = "macos")]
+impl Debug for Modifier {
+	fn fmt(&self, f: &mut Formatter) -> FmtResult {
+		match self {
+			Self::Alt => {
+				f.write_str("Opt")
+			},
+			Self::Ctrl => {
+				f.write_str("Ctrl")
+			},
+			Self::Shift => {
+				f.write_str("Shift")
+			},
+			Self::Win => {
+				f.write_str("Cmd")
+			}
+		}
+	}
+}
+
+impl Modifier {
+	const COUNT:		usize = 4_usize;
+	const OFFSET:		usize = 8_usize;
+	const LEFT:			char = '<';
+	const RIGHT:		char = '>';
+	const ALT_CHAR:		char = '!';
+	const CTRL_CHAR:	char = '^';
+	const SHIFT_CHAR:	char = '+';
+	const WIN_CHAR:		char = '#';
+	const KEY_CODES:	[KeyCode; Modifier::COUNT << 1] = [
+		KeyCode::LAlt,
+		KeyCode::LControl,
+		KeyCode::LShift,
+		KeyCode::LWin,
+		KeyCode::RAlt,
+		KeyCode::RControl,
+		KeyCode::RShift,
+		KeyCode::RWin
+	];
+
+	const fn full_mask(self) -> u16 {
+		const FULL_MASKS: [u16; Modifier::COUNT] = Modifier::masks(true, true);
+
+		FULL_MASKS[self as usize]
+	}
+
+	const fn left_key_code(self) -> KeyCode {
+		Modifier::KEY_CODES[self as usize]
+	}
+
+	const fn left_mask(self) -> u16 {
+		const LEFT_MASKS: [u16; Modifier::COUNT] = Modifier::masks(true, false);
+
+		LEFT_MASKS[self as usize]
+	}
+
+	const fn right_mask(self) -> u16 {
+		const RIGHT_MASK: [u16; Modifier::COUNT] = Modifier::masks(false, true);
+
+		RIGHT_MASK[self as usize]
+	}
+
+	const fn right_key_code(self) -> KeyCode {
+		Modifier::KEY_CODES[self as usize + Modifier::COUNT]
+	}
+
+	const fn char(self) -> char {
+		const CHARS: [char; Modifier::COUNT] = [
+			Modifier::WIN_CHAR,
+			Modifier::ALT_CHAR,
+			Modifier::CTRL_CHAR,
+			Modifier::SHIFT_CHAR
+		];
+
+		CHARS[self as usize]
+	}
+
+	const fn masks(left: bool, right: bool) -> [u16; Modifier::COUNT] {
+		let mut masks: [u16; Modifier::COUNT] = [0_u16; Modifier::COUNT];
+		let mut modifier: usize = 0_usize;
+
+		while modifier < Modifier::COUNT {
+			masks[modifier] = Modifier::mask(modifier, left, right);
+			modifier += 1_usize;
+		}
+
+		masks
+	}
+
+	const fn mask(modifier: usize, left: bool, right: bool) -> u16 {
+		let offset: usize = (modifier << 1_usize) + Self::OFFSET;
+		let mut mask: u16 = 0_u16;
+
+		if left {
+			mask |= 1_u16 << offset;
+		}
+
+		if right {
+			mask |= 1_u16 << offset + 1_usize;
+		}
+
+		mask
+	}
+
+	fn is_modifier(key_code: KeyCode) -> bool {
+		Self::KEY_CODES.binary_search(&key_code).is_ok()
+	}
+}
+
+#[cfg(test)]
+#[test]
+fn verify_sorted_key_codes() -> () {
+	for key_code_index in 1_usize .. Modifier::KEY_CODES.len() {
+		assert!(Modifier::KEY_CODES[key_code_index - 1_usize] < Modifier::KEY_CODES[key_code_index]);
+	}
+}
+
+impl From<usize> for Modifier { fn from(modifier: usize) -> Self { unsafe { transmute::<u8, Self>(modifier as u8) } } }
+
+impl TryFrom<char> for Modifier {
+	type Error = ();
+
+	fn try_from(c: char) -> Result<Self, ()> {
+		match c {
+			Self::WIN_CHAR => Ok(Self::Win),
+			Self::ALT_CHAR => Ok(Self::Alt),
+			Self::CTRL_CHAR => Ok(Self::Ctrl),
+			Self::SHIFT_CHAR => Ok(Self::Shift),
+			_ => Err(())
+		}
+	}
+}
+
+#[derive(Clone, Copy, Deserialize, PartialEq, Serialize)]
+#[serde(into = "String", try_from = "&str")]
+pub struct KeyPress(u16);
+
+impl KeyPress {
+	const KEY_CODE_COUNT: u32 = 163_u32;
+	const KEY_CODE_MASK: u16 = (1_u16 << Modifier::OFFSET) - 1_u16;
+	const INVALID: Self = Self(Self::KEY_CODE_MASK);
+
+	fn is_active(self, keyboard_input: &Input<KeyCode>) -> bool {
+		self.is_valid()
+			&& (0_usize .. Modifier::COUNT).all(|modifier: usize| -> bool {
+					let modifier: Modifier = modifier.into();
+
+					self.0 & modifier.full_mask() == 0_u16
+						|| self.0 & modifier.left_mask() != 0_u16
+						&& keyboard_input.pressed(modifier.left_key_code())
+						|| self.0 & modifier.right_mask() != 0_u16
+						&& keyboard_input.pressed(modifier.right_key_code())
+				})
+			&& keyboard_input.just_pressed(self.get_key_code())
+	}
+
+	#[inline(always)]
+	fn is_valid(self) -> bool { self != Self::INVALID }
+
+	#[inline]
+	fn get_key_code(self) -> KeyCode {
+		assert!(self.is_valid());
+
+		((self.0 & Self::KEY_CODE_MASK) as u32).into_key_code()
+	}
+
+	#[inline]
+	fn set_key_code(&mut self, key_code: KeyCode) -> () {
+		self.0 = self.0 & !Self::KEY_CODE_MASK | key_code as u16;
+	}
+
+	#[inline]
+	fn set_modifiers(&mut self, modifiers: u8) -> () {
+		self.0 = self.0 & Self::KEY_CODE_MASK | (modifiers as u16) << Modifier::COUNT;
+	}
+
+	fn clashes(self, other: KeyPress) -> bool {
+		if self.get_key_code() == other.get_key_code() {
+			let mut self_specific_modifier_exists: bool = false;
+			let mut other_specific_modifier_exists: bool = false;
+
+			for modifier in 0_usize .. Modifier::COUNT {
+				let full_mask: u16 = Modifier::from(modifier).full_mask();
+				let self_full_mask: u16 = self.0 & full_mask;
+				let other_full_mask: u16 = other.0 & full_mask;
+				let self_uses_modifier: bool = self_full_mask != 0_u16;
+				let other_uses_modifier: bool = other_full_mask != 0_u16;
+				
+				if self_full_mask ^ other_full_mask != 0_u16
+					&& (self_full_mask != full_mask || !other_uses_modifier)
+					&& (other_full_mask != full_mask || !self_uses_modifier)
+				{
+					self_specific_modifier_exists |= self_uses_modifier;
+					other_specific_modifier_exists |= other_uses_modifier;
+
+					if self_specific_modifier_exists && other_specific_modifier_exists {
+						return false;
 					}
 				}
+			}
 
-				ui_for_key_codes!(
-					Key1, Key2, Key3, Key4, Key5, Key6, Key7, Key8, Key9, Key0,
-					A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
-					Escape,
-					F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
-					F13, F14, F15, F16, F17, F18, F19, F20, F21, F22, F23, F24,
-					Snapshot,
-					Scroll,
-					Pause,
-					Insert,
-					Home,
-					Delete,
-					End,
-					PageDown, PageUp,
-					Left, Up, Right, Down,
-					Back,
-					Return,
-					Space,
-					Compose,
-					Caret,
-					Numlock, Numpad0, Numpad1, Numpad2, Numpad3, Numpad4, Numpad5, Numpad6, Numpad7, Numpad8, Numpad9,
-					NumpadAdd,
-					NumpadSubtract,
-					NumpadMultiply,
-					NumpadDivide,
-					NumpadDecimal,
-					NumpadComma,
-					NumpadEnter,
-					NumpadEquals,
-					AbntC1, AbntC2,
-					Apostrophe,
-					Apps,
-					Asterisk,
-					Plus,
-					At,
-					Ax,
-					Backslash,
-					Calculator,
-					Capital,
-					Colon,
-					Comma,
-					Convert,
-					Equals,
-					Grave,
-					Kana,
-					Kanji,
-					LAlt,
-					LBracket,
-					LControl,
-					LShift,
-					LWin,
-					Mail,
-					MediaSelect,
-					MediaStop,
-					Minus,
-					Mute,
-					MyComputer,
-					NavigateForward,
-					NavigateBackward,
-					NextTrack,
-					NoConvert,
-					Oem102,
-					Period,
-					PlayPause,
-					Power,
-					PrevTrack,
-					RAlt,
-					RBracket,
-					RControl,
-					RShift,
-					RWin,
-					Semicolon,
-					Slash,
-					Sleep,
-					Stop,
-					Sysrq,
-					Tab,
-					Underline,
-					Unlabeled,
-					VolumeDown, VolumeUp,
-					Wake,
-					WebBack, WebFavorites, WebForward, WebHome, WebRefresh, WebSearch, WebStop,
-					Yen,
-					Copy, Paste, Cut
-				);
+			true
+		} else {
+			false
+		}
+	}
+}
+
+impl Debug for KeyPress {
+	fn fmt(&self, f: &mut Formatter) -> FmtResult {
+		for modifier in 0_usize .. Modifier::COUNT {
+			let modifier: Modifier = modifier.into();
+
+			if self.0 & modifier.full_mask() != 0_u16 {
+				if self.0 & modifier.right_mask() == 0_u16 {
+					f.write_str("L")?;
+				} else if self.0 & modifier.left_mask() == 0_u16 {
+					f.write_str("R")?;
+				}
+
+				write!(f, "{:?} + ", modifier)?;
+			}
+		}
+
+		write!(f, "{:?}", self.get_key_code())
+	}
+}
+
+impl Default for KeyPress { fn default() -> Self { Self::INVALID } }
+
+impl From<(u8, KeyCode)> for KeyPress {
+	fn from((modifiers, key_code): (u8, KeyCode)) -> Self {
+		let mut key_press: KeyPress = KeyPress::default();
+
+		key_press.set_modifiers(modifiers);
+		key_press.set_key_code(key_code);
+
+		key_press
+	}
+}
+
+impl From<KeyPress> for String {
+	fn from(key_press: KeyPress) -> Self {
+		let mut string: String = String::new();
+
+		for modifier in 0_usize .. Modifier::COUNT {
+			let modifier: Modifier = modifier.into();
+
+			if key_press.0 & modifier.full_mask() != 0_u16 {
+				if key_press.0 & modifier.right_mask() == 0_u16 {
+					write!(&mut string, "{}", Modifier::LEFT).unwrap();
+				} else if key_press.0 & modifier.left_mask() == 0_u16 {
+					write!(&mut string, "{}", Modifier::RIGHT).unwrap();
+				}
+
+				write!(&mut string, "{}", modifier.char()).unwrap();
+			}
+		}
+
+		write!(
+			&mut string,
+			"{:?}",
+			unsafe { transmute::<u32, KeyCode>((key_press.0 & KeyPress::KEY_CODE_MASK) as u32) }
+		).unwrap();
+
+		string
+	}
+}
+
+impl Inspectable for KeyPress {
+	type Attributes = Option<Rc<dyn Fn(KeyPress) -> Result<(), String>>>;
+
+	fn ui(&mut self, ui: &mut Ui, is_valid: Self::Attributes, context: &mut Context) -> bool {
+		let mut changed: bool = false;
+
+		CollapsingHeader::new(format!("{:?}", self))
+			.id_source(context.id())
+			.show(ui, |ui: &mut Ui| -> () {
+				const MIN_COL_WIDTH_SCALE: f32 = 2.0_f32;
+				let col_width: f32 = MIN_COL_WIDTH_SCALE * ui.spacing().interact_size.x;
+
+				Grid::new(0_u64)
+					.num_columns(1_usize)
+					.min_col_width(2.0_f32 * col_width)
+					.show(ui, |ui: &mut Ui| -> () {
+						let mut self_key_code: KeyCode = self.get_key_code();
+
+						ui.centered_and_justified(|ui: &mut Ui| -> () {
+							ComboBox::from_id_source(0_u64)
+								.width(2.0_f32 * col_width)
+								.selected_text(format!("{:?}", self_key_code))
+								.show_ui(ui, |ui: &mut Ui| -> () {
+									for key_code in 0_u32 .. Self::KEY_CODE_COUNT {
+										let key_code: KeyCode = key_code.into_key_code();
+	
+										if !Modifier::is_modifier(key_code)
+											&& ui.selectable_label(
+												key_code == self_key_code,
+												format!("{:?}", key_code)
+											).clicked()
+										{
+											self.set_key_code(key_code);
+											self_key_code = key_code;
+											changed = true;
+										}
+									}
+								});
+						});
+
+						ui.end_row();
+
+						Grid::new(1_u64)
+							.num_columns(2_usize)
+							.min_col_width(col_width)
+							.show(ui, |ui: &mut Ui| -> () {
+								for modifier in 0_usize .. Modifier::COUNT {
+									let modifier: Modifier = modifier.into();
+									let mut button = |
+										key_press: &mut KeyPress,
+										ui: &mut Ui,
+										mask: &dyn Fn(Modifier) -> u16,
+										key_code: &dyn Fn(Modifier) -> KeyCode
+									| -> () {
+										ui.centered_and_justified(|ui: &mut Ui| -> () {
+											let mask: u16 = mask(modifier);
+		
+											ui.visuals_mut().override_text_color = Some(if key_press.0 & mask != 0_u16 {
+												ui.visuals().text_color()
+											} else {
+												ui.visuals().weak_text_color()
+											});
+		
+											if ui.button(format!("{:?}", key_code(modifier))).clicked() {
+												key_press.0 ^= mask;
+												changed = true;
+											}
+										});
+									};
+		
+									button(self, ui, &Modifier::left_mask, &Modifier::left_key_code);
+									button(self, ui, &Modifier::right_mask, &Modifier::right_key_code);
+									ui.end_row();
+								}
+							});
+
+						ui.end_row();
+
+						if let Err(string) = is_valid.map(|
+							is_valid: Rc<dyn Fn(KeyPress) -> Result<(), String>>
+						| -> Result<(), String> {
+							is_valid(*self)
+						}).unwrap_or(Ok(())) {
+							ui.colored_label(Color32::RED, string);
+							ui.end_row();
+						}
+					});
 			});
 
 		changed
 	}
 }
 
-macro_rules! bkc {
-	($variant:ident) => {
-		KeyCode::from(BevyKeyCode::$variant)
+impl TryFrom<&str> for KeyPress {
+	type Error = String;
+
+	fn try_from(str_slice: &str) -> Result<Self, String> {
+		struct LeftRight {
+			left: bool,
+			right: bool
+		}
+
+		let mut key_press: Self = Self(0_u16);
+		let mut curr_byte: usize = 0_usize;
+		let mut left_right: LeftRight = LeftRight {
+			left: true,
+			right: true
+		};
+
+		for c in str_slice.chars() {
+			if let Ok(modifier) = Modifier::try_from(c) {
+				if !left_right.left && !left_right.right {
+					return Err(format!("Modifier {:?} has both left and right keys disabled", modifier));
+				}
+
+				key_press.0 |= Modifier::mask(modifier as usize, left_right.left, left_right.right);
+				left_right = LeftRight {
+					left: true,
+					right: true
+				};
+			} else if c == Modifier::LEFT {
+				left_right.right = false;
+			} else if c == Modifier::RIGHT {
+				left_right.left = false;
+			} else {
+				break;
+			}
+
+			curr_byte += c.len_utf8();
+		}
+
+		if let Some(key_code_str) = str_slice.get(curr_byte .. str_slice.len()) {
+			match ron::de::from_str::<KeyCode>(&key_code_str) {
+				Ok(key_code) => {
+					key_press.set_key_code(key_code);
+
+					Ok(key_press)
+				},
+				Err(err) => {
+					Err(format!("{:?}", err))
+				}
+			}
+		} else {
+			Err(format!("couldn't grab slice starting at byte {}", curr_byte))
+		}
 	}
 }
 
+impl TryFrom<KeyCode> for KeyPress {
+	type Error = ();
+
+	fn try_from(key_code: KeyCode) -> Result<Self, ()> {
+		if Modifier::is_modifier(key_code) {
+			Err(())
+		} else {
+			let mut key_press: KeyPress = KeyPress(0_u16);
+
+			key_press.set_key_code(key_code);
+
+			Ok(key_press)
+		}
+	}
+}
+
+macro_rules! key_presses {
+	($($action:ident: $key_press:literal),*) => {
+		#[derive(Debug, Deserialize, Eq, Hash, PartialEq)]
+		#[repr(u8)]
+		pub enum KeyPressAction {
+			$($action,)*
+		}
+
+		pub const KEY_PRESS_ACTION_COUNT: usize = {
+			let mut count: usize = 0_usize;
+
+			$(
+				crate::ignore!($action);
+				count += 1_usize;
+			)*
+
+			count
+		};
+
+		impl Default for KeyPresses {
+			fn default() -> Self { Self::from({
+				const KEY_PRESS_STR_ARRAY: [&'static str; KEY_PRESS_ACTION_COUNT] = [
+					$(
+						$key_press,
+					)*
+				];
+
+				&KEY_PRESS_STR_ARRAY
+			}) }
+		}
+	}
+}
+
+key_presses!(
+	Rot0:					"Numpad0",
+	Rot1:					"Numpad1",
+	Rot2:					"Numpad4",
+	Rot3:					"Numpad5",
+	Rot4:					"Numpad6",
+	Rot5:					"Numpad3",
+	RecenterCamera:			"Space",
+	Undo:					"^Z",
+	Redo:					"^Y",
+	CycleGenusIndexUp:		"Up",
+	CycleGenusIndexDown:	"Down",
+	EnableModifiers:		"E",
+	RotateTwice:			"D",
+	CounterClockwise:		"S",
+	AltHemi:				"A",
+	DisableRecentering:		"X"
+);
+
+impl KeyPressAction {
+	fn from_usize(action: usize) -> Self {
+		assert!(action < KEY_PRESS_ACTION_COUNT);
+
+		unsafe { transmute::<u8, Self>(action as u8) }
+	}
+}
+
+pub type ActionsBitField = u32;
+
+const_assert!(KEY_PRESS_ACTION_COUNT <= ActionsBitField::BITS as usize);
+
+#[derive(Clone, PartialEq)]
+pub struct KeyCodeWithActions {
+	key_code:	KeyCode,
+	actions:	ActionsBitField
+}
+
+impl KeyCodeWithActions {
+	fn key_code(&self) -> KeyCode { self.key_code }
+}
+
+#[derive(Clone, PartialEq)]
+pub struct KeyPresses {
+	action_to_key_press: [KeyPress; KEY_PRESS_ACTION_COUNT],
+	key_code_to_actions: Vec<KeyCodeWithActions>
+}
+
+impl KeyPresses {
+	fn try_get_key_code_index(&self, key_code: &KeyCode) -> Result<usize, usize> {
+		self.key_code_to_actions.binary_search_by_key(key_code, KeyCodeWithActions::key_code)
+	}
+
+	fn update_key_press_for_action(
+		&mut self,
+		action_index:	usize,
+		key_press:	KeyPress
+	) -> () {
+		let mut_key_press: &mut KeyPress = &mut self.action_to_key_press[action_index];
+		let old_key_code: KeyCode = mut_key_press.get_key_code();
+		let new_key_code: KeyCode = key_press.get_key_code();
+
+		*mut_key_press = key_press;
+
+		if old_key_code != new_key_code {
+			self.remove_action_from_key_code(action_index, old_key_code);
+			self.add_action_to_key_code(action_index, new_key_code);
+		}
+	}
+
+	fn add_action_to_key_code(&mut self, action_index: usize, key_code: KeyCode) -> () {
+		match self.try_get_key_code_index(&key_code) {
+			Ok(key_code_index) => {
+				self.key_code_to_actions[key_code_index].actions.set_bit(action_index, true);
+			},
+			Err(key_code_index) => {
+				self.key_code_to_actions.insert(
+					key_code_index,
+					KeyCodeWithActions {
+						key_code,
+						actions: (1 as ActionsBitField) << action_index
+					}
+				)
+			}
+		}
+	}
+
+	fn remove_action_from_key_code(&mut self, action_index: usize, key_code: KeyCode) -> () {
+		if let Ok(key_code_index) = self.try_get_key_code_index(&key_code) {
+			let actions: &mut ActionsBitField = &mut self.key_code_to_actions[key_code_index].actions;
+	
+			actions.set_bit(action_index, false);
+	
+			if *actions == 0 as ActionsBitField {
+				self.key_code_to_actions.remove(key_code_index);
+			}
+		}
+	}
+}
+
+impl<'de> Deserialize<'de> for KeyPresses {
+	fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+		let hash_map: HashMap<KeyPressAction, KeyPress> =
+			HashMap::<KeyPressAction, KeyPress>::deserialize(deserializer)?;
+		let mut key_presses: KeyPresses = KeyPresses::default();
+
+		for action_index in 0_usize .. KEY_PRESS_ACTION_COUNT {
+			if let Some(key_press) = hash_map.get(&KeyPressAction::from_usize(action_index)) {
+				key_presses.update_key_press_for_action(action_index, *key_press);
+			}
+		}
+
+		Ok(key_presses)
+	}
+}
+
+impl From<&[&str; KEY_PRESS_ACTION_COUNT]> for KeyPresses {
+	fn from(key_press_str_array: &[&str; KEY_PRESS_ACTION_COUNT]) -> Self {
+		let mut key_presses: Self = Self {
+			action_to_key_press: <[KeyPress; KEY_PRESS_ACTION_COUNT]>::default(),
+			key_code_to_actions: Vec::<KeyCodeWithActions>::with_capacity(KEY_PRESS_ACTION_COUNT)
+		};
+
+		for (action_index, key_press_str) in key_press_str_array.iter().enumerate() {
+			let key_press: KeyPress = KeyPress::try_from(*key_press_str).unwrap();
+
+			key_presses.action_to_key_press[action_index] = key_press;
+			key_presses.add_action_to_key_code(action_index, key_press.get_key_code());
+		}
+
+		key_presses
+	}
+}
+
+impl<'a> From<&'a Rc<*mut KeyPresses>> for &'a mut KeyPresses {
+	fn from(rc_self: &Rc<*mut KeyPresses>) -> Self { unsafe { (*rc_self).as_mut() }.unwrap() }
+}
+
+impl Index<KeyPressAction> for KeyPresses {
+	type Output = KeyPress;
+
+	fn index(&self, action: KeyPressAction) -> &KeyPress { &self.action_to_key_press[action as usize]}
+}
+
+impl Inspectable for KeyPresses {
+	type Attributes = ();
+
+	fn ui(&mut self, ui: &mut Ui, _: (), context: &mut Context) -> bool {
+		let mut action_to_key_press: [KeyPress; KEY_PRESS_ACTION_COUNT] = self.action_to_key_press.clone();
+		let rc_self: Rc<*mut Self> = Rc::<*mut Self>::new(self);
+		let mut changed: bool = false;
+
+		Grid::new(self as *const Self as usize).show(ui, |ui: &mut Ui| -> () {
+			for (action_index, key_press) in action_to_key_press.iter_mut().enumerate() {
+				let closure_rc_self: Rc<*mut Self> = rc_self.clone();
+	
+				ui.label(format!("{:?}", KeyPressAction::from_usize(action_index)));
+
+				if key_press.ui(
+					ui,
+					Some(Rc::new(move |key_press: KeyPress| -> Result<(), String> {
+						let key_code: KeyCode = key_press.get_key_code();
+						let key_presses: &mut KeyPresses = (&closure_rc_self).into();
+
+						if let Ok(key_code_index) = key_presses.try_get_key_code_index(&key_code) {
+							let mut actions: ActionsBitField = key_presses
+								.key_code_to_actions
+								[key_code_index]
+								.actions;
+							let mut clashing_action_index: usize = actions.trailing_zeros() as usize;
+
+							while clashing_action_index < KEY_PRESS_ACTION_COUNT {
+								let clashing_key_press: KeyPress = key_presses
+									.action_to_key_press
+									[clashing_action_index];
+								if clashing_action_index != action_index && clashing_key_press.clashes(key_press) {
+									return Err(format!(
+										"Clashes with {:?}: {:?}",
+										KeyPressAction::from_usize(clashing_action_index),
+										clashing_key_press
+									));
+								}
+
+								actions.set_bit(clashing_action_index, false);
+								clashing_action_index = actions.trailing_zeros() as usize;
+							}
+						}
+
+						Ok(())
+					})),
+					&mut context.with_id(action_index as u64)
+				) {
+					changed = true;
+
+					<&mut KeyPresses>::from(&rc_self).update_key_press_for_action(action_index, *key_press);
+				}
+
+				ui.end_row();
+			}
+		});
+
+		changed
+	}
+}
 
 define_struct_with_default!(
 	#[derive(Clone, Deserialize, Inspectable, PartialEq)]
 	pub struct InputData {
-		#[inspectable(collapse)]
+		#[inspectable(collapse, max = Some(PENTAGON_PIECE_COUNT - 1_usize))]
 		pub default_positions:		[usize; HALF_PENTAGON_PIECE_COUNT]		= generate_default_positions(),
 		#[inspectable(collapse)]
-		pub rotation_keys:			[KeyCode; HALF_PENTAGON_PIECE_COUNT]	= [bkc!(Numpad0), bkc!(Numpad1), bkc!(Numpad4), bkc!(Numpad5), bkc!(Numpad6), bkc!(Numpad3)],
-		pub recenter_camera:		KeyCode									= bkc!(Space),
-		pub undo:					KeyCode									= bkc!(Left),
-		pub redo:					KeyCode									= bkc!(Right),
-		pub cycle_genus_index_up:	KeyCode									= bkc!(Up),
-		pub cycle_genus_index_down:	KeyCode									= bkc!(Down),
-		pub enable_modifiers:		KeyCode									= bkc!(E),
-		pub rotate_twice:			KeyCode									= bkc!(D),
-		pub counter_clockwise:		KeyCode									= bkc!(S),
-		pub alt_hemi:				KeyCode									= bkc!(A),
-		pub disable_recentering:	KeyCode									= bkc!(X)
+		pub key_presses:			KeyPresses								= KeyPresses::default()
 	}
 );
 
@@ -779,7 +1360,7 @@ pub struct InputPlugin;
 impl InputPlugin {
 	fn run(
 		extended_puzzle_state:		Res<ExtendedPuzzleState>,
-		keyboard_input:				Res<Input<BevyKeyCode>>,
+		keyboard_input:				Res<Input<KeyCode>>,
 		mouse_button_input:			Res<Input<MouseButton>>,
 		preferences:				Res<Preferences>,
 		view:						Res<View>,
@@ -803,19 +1384,25 @@ impl InputPlugin {
 		let mut toggles: InputToggles = input_state.toggles;
 
 		if !egui_context.wants_keyboard_input() {
+			use KeyPressAction as KPA;
+
+			let keyboard_input: &Input<KeyCode> = &*keyboard_input;
+
 			macro_rules! check_toggle {
-				($toggle:ident) => {
-					if keyboard_input.just_pressed(input_data.$toggle.into()) { toggles.$toggle = !toggles.$toggle; }
+				($toggle:ident, $action:ident) => {
+					if input_data.key_presses[KeyPressAction::$action].is_active(keyboard_input) {
+						toggles.$toggle = !toggles.$toggle;
+					}
 				}
 			}
-	
-			check_toggle!(enable_modifiers);
-			check_toggle!(rotate_twice);
-			check_toggle!(counter_clockwise);
-			check_toggle!(alt_hemi);
-			check_toggle!(disable_recentering);
-	
-			if keyboard_input.just_pressed(input_data.cycle_genus_index_up.into()) {
+
+			check_toggle!(enable_modifiers,		EnableModifiers);
+			check_toggle!(rotate_twice,			RotateTwice);
+			check_toggle!(counter_clockwise,	CounterClockwise);
+			check_toggle!(alt_hemi,				AltHemi);
+			check_toggle!(disable_recentering,	DisableRecentering);
+
+			if input_data.key_presses[KPA::CycleGenusIndexUp].is_active(keyboard_input) {
 				toggles.genus_index = GenusIndex::try_from(
 					if usize::from(toggles.genus_index) == 0_usize {
 						Library::get_genus_count() as GenusIndexType
@@ -824,8 +1411,8 @@ impl InputPlugin {
 					} - 1 as GenusIndexType
 				).unwrap();
 			}
-	
-			if keyboard_input.just_pressed(input_data.cycle_genus_index_down.into()) {
+
+			if input_data.key_presses[KPA::CycleGenusIndexDown].is_active(keyboard_input) {
 				toggles.genus_index = GenusIndex::try_from(
 					if usize::from(toggles.genus_index) == Library::get_genus_count() - 1_usize {
 						0 as GenusIndexType
@@ -947,33 +1534,35 @@ impl InputPlugin {
 
 	fn update_action(
 		extended_puzzle_state:	&ExtendedPuzzleState,
-		keyboard_input:			&Input<BevyKeyCode>,
+		keyboard_input:			&Input<KeyCode>,
 		preferences:			&Preferences,
 		camera_query:			&CameraQuery,
 		input_state:			&mut InputState
 	) -> () {
+		use KeyPressAction as KPA;
+
 		let input_data:				&InputData					= &preferences.input;
 		let speed_data:				&SpeedData					= &preferences.speed;
 		let mut puzzle_action_type:	Option<PuzzleActionType>	= None;
 		let mut default_position:	Option<usize>				= None;
 
-		for (index, key_code) in input_data.rotation_keys.iter().enumerate() {
-			if keyboard_input.just_pressed((*key_code).into()) {
+		for rot_action_index in 0_usize .. HALF_PENTAGON_PIECE_COUNT {
+			if input_data.key_presses[KPA::from_usize(rot_action_index)].is_active(keyboard_input) {
 				puzzle_action_type = Some(PuzzleActionType::Transformation);
-				default_position = Some(input_data.default_positions[index]);
+				default_position = Some(input_data.default_positions[rot_action_index]);
 
 				break;
 			}
 		}
 
 		if puzzle_action_type.is_none() {
-			if keyboard_input.just_pressed(input_data.recenter_camera.into()) {
+			if input_data.key_presses[KPA::RecenterCamera].is_active(keyboard_input) {
 				puzzle_action_type = Some(PuzzleActionType::RecenterCamera);
-			} else if keyboard_input.just_pressed(input_data.undo.into())
+			} else if input_data.key_presses[KPA::Undo].is_active(keyboard_input)
 				&& extended_puzzle_state.curr_action > 0_usize
 			{
 				puzzle_action_type = Some(PuzzleActionType::Undo);
-			} else if keyboard_input.just_pressed(input_data.redo.into())
+			} else if input_data.key_presses[KPA::Redo].is_active(keyboard_input)
 				&& extended_puzzle_state.curr_action < extended_puzzle_state.actions.len()
 			{
 				puzzle_action_type = Some(PuzzleActionType::Redo);

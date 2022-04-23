@@ -73,10 +73,10 @@ define_struct_with_default!(
 	#[derive(Clone, Deserialize, Inspectable, PartialEq)]
 	pub struct CameraSpeedData {
 		#[inspectable(min = 1_u32, max = 100_u32)]
-		pub pan_speed:							u32		= 50_u32,
+		pub pan_speed:	u32	= 50_u32,
 
 		#[inspectable(min = 1_u32, max = 100_u32)]
-		pub roll_speed:							u32		= 50_u32
+		pub roll_speed:	u32	= 50_u32
 	}
 );
 

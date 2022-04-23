@@ -1,4 +1,8 @@
 use {
+	std::sync::{
+		Arc,
+		Mutex
+	},
 	bevy::prelude::*,
 	bevy_egui::{
 		EguiContext,
@@ -6,39 +10,92 @@ use {
 	},
 	egui::{
 		style::Spacing,
+		Button,
 		Color32,
+		ComboBox,
+		Grid,
 		RichText,
 		Ui,
 		Vec2
-	}
+	},
+	lazy_static::*
+};
+
+struct DebugState {
+	index: u32,
+	error_message: bool
+}
+
+static mut DEBUG_STATE: DebugState = DebugState {
+	index: 0_u32,
+	error_message: false
 };
 
 fn run(mut egui_context: ResMut<EguiContext>) -> () {
+	let debug_state: &mut DebugState = unsafe { &mut DEBUG_STATE };
+
 	egui::CentralPanel::default().show(egui_context.ctx_mut(), |ui: &mut Ui| -> () {
-		let spacing: &mut Spacing = ui.spacing_mut();
+		const MIN_COL_WIDTH_SCALE: f32 = 2.0_f32;
+		let col_width: f32 = ui.spacing().interact_size.x * MIN_COL_WIDTH_SCALE;
+		Grid::new(0_u64)
+			.num_columns(1_usize)
+			.min_col_width(2.0_f32 * col_width)
+			.show(ui, |ui: &mut Ui| -> () {
+				const STRS: [&'static str; 4_usize] = [
+					"Alt",
+					"Ctrl",
+					"Shift",
+					"Win"
+				];
 
-		spacing.item_spacing = Vec2::ZERO;
-		spacing.interact_size = Vec2::ZERO;
+				ui.centered_and_justified(|ui: &mut Ui| -> () {
+					ComboBox::from_id_source(0_u64)
+						.width(2.0_f32 * col_width)
+						.selected_text(format!("{}", STRS[debug_state.index as usize]))
+						.show_ui(ui, |ui: &mut Ui| -> () {
+							for index in 0_u32 .. STRS.len() as u32 {
+								if ui.selectable_label(index == debug_state.index, format!("{}", index)).clicked() {
+									debug_state.index = index;
+								}
+							}
+						});
+				});
 
-		for y in 0_u32 .. 10_u32 {
-			let ten_y: u32 = 10_u32 * y;
-			let y_is_even: bool = y & 1_u32 == 0_u32;
+				ui.end_row();
 
-			ui.horizontal(|ui: &mut Ui| -> () {
-				for x in 0_u32 .. 10_u32 {
-					let x_is_even: bool = x & 1_u32 == 0_u32;
-					let color: Color32 = if x_is_even && y_is_even {
-						Color32::RED
-					} else if x_is_even || y_is_even {
-						Color32::BLUE
-					} else {
-						ui.style().visuals.text_color()
-					};
+				Grid::new(1_u64)
+					.num_columns(2_usize)
+					.min_col_width(col_width)
+					.show(ui, |ui: &mut Ui| -> () {
+						for modifier in 0_usize .. STRS.len() {
+							let mut button = |
+								ui: &mut Ui,
+								s: &str
+							| -> () {
+								// ui.centered_and_justified(|ui: &mut Ui| -> () {
+									if ui.add_sized(
+										ui.spacing().interact_size
+											* egui::Vec2::new(MIN_COL_WIDTH_SCALE, 1.0_f32),
+										Button::new(format!("{}{}", s, STRS[modifier]))
+									).clicked() {
+										debug_state.error_message = !debug_state.error_message;
+									}
+								// });
+							};
+		
+							button(ui, "L");
+							button(ui, "R");
+							ui.end_row();
+						}
+					});
 
-					ui.label(RichText::new(format!("{:02}", ten_y + x)).monospace().color(color));
+				ui.end_row();
+
+				if debug_state.error_message {
+					ui.colored_label(Color32::RED, "Error message, error error");
+					ui.end_row();
 				}
 			});
-		}
 	});
 }
 

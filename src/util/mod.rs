@@ -67,6 +67,7 @@ pub mod prelude {
 		ToResult,
 		debug_break,
 		red_to_green,
+		to_pretty_string,
 		untracked_ref,
 		untracked_ref_mut
 	};
