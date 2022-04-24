@@ -631,22 +631,24 @@ macro_rules! key_presses {
 }
 
 key_presses!(
-	Rot0:					"Numpad0",
-	Rot1:					"Numpad1",
-	Rot2:					"Numpad4",
-	Rot3:					"Numpad5",
-	Rot4:					"Numpad6",
-	Rot5:					"Numpad3",
-	RecenterCamera:			"Space",
-	Undo:					"^Z",
-	Redo:					"^Y",
-	CycleGenusIndexUp:		"Up",
-	CycleGenusIndexDown:	"Down",
-	EnableModifiers:		"E",
-	RotateTwice:			"D",
-	CounterClockwise:		"S",
-	AltHemi:				"A",
-	DisableRecentering:		"X"
+	Rot0:						"Numpad0",
+	Rot1:						"Numpad1",
+	Rot2:						"Numpad4",
+	Rot3:						"Numpad5",
+	Rot4:						"Numpad6",
+	Rot5:						"Numpad3",
+	RecenterCamera:				"Space",
+	Undo:						"^Z",
+	Redo:						"^Y",
+	CycleFamilyUp:				"Up",
+	CycleFamilyDown:			"Down",
+	CycleGenusUpWithinFamily:	"Right",
+	CycleGenusDownWithinFamily:	"Left",
+	EnableModifiers:			"E",
+	RotateTwice:				"D",
+	CounterClockwise:			"S",
+	AltHemi:					"A",
+	DisableRecentering:			"X"
 );
 
 impl KeyPressAction {
@@ -1322,6 +1324,70 @@ impl InputToggles {
 			0_usize
 		}
 	}
+
+	fn update(&mut self, key_presses: &KeyPresses, keyboard_input: &Input<KeyCode>) -> () {
+		use KeyPressAction as KPA;
+
+		macro_rules! update_toggle {
+			($($toggle:ident: $action:ident),*) => {
+				$(
+					if key_presses[KPA::$action].is_active(keyboard_input) {
+						self.$toggle = !self.$toggle;
+					}
+				)*
+			}
+		}
+
+		update_toggle!(
+			enable_modifiers:		EnableModifiers,
+			rotate_twice:			RotateTwice,
+			counter_clockwise:		CounterClockwise,
+			alt_hemi:				AltHemi,
+			disable_recentering:	DisableRecentering
+		);
+
+		if let Some(should_increment) = if key_presses
+			[KPA::CycleFamilyDown]
+			.is_active(keyboard_input)
+		{
+			Some(true)
+		} else if key_presses[KPA::CycleFamilyUp].is_active(keyboard_input) {
+			Some(false)
+		} else {
+			None
+		} {
+			let family_count: usize = Library::get_family_count();
+
+			self.genus_index = Library::get_base_genus_index(
+				(Library::get_family_index(self.genus_index)
+					+ if should_increment { 1_usize } else { family_count - 1_usize }
+				) % family_count
+			);
+		} else if let Some(should_increment) = if key_presses
+			[KPA::CycleGenusUpWithinFamily]
+			.is_active(keyboard_input)
+		{
+			Some(true)
+		} else if key_presses[KPA::CycleGenusDownWithinFamily].is_active(keyboard_input) {
+			Some(false)
+		} else {
+			None
+		} {
+			use GenusIndexType as GIT;
+
+			let family_index: usize = Library::get_family_index(self.genus_index);
+			let base_genus_index: GIT = Library::get_base_genus_index(family_index).into();
+			let family_genus_count: GIT = Library::get_family_genus_count(family_index);
+			let genus_index: GIT = self.genus_index.into();
+
+			self.genus_index = GenusIndex::try_from(
+				(genus_index
+					- base_genus_index
+					+ if should_increment { 1 as GIT } else { family_genus_count - 1 as GIT }
+				) % family_genus_count + base_genus_index
+			).unwrap();
+		}
+	}
 }
 
 impl Default for InputToggles {
@@ -1384,43 +1450,7 @@ impl InputPlugin {
 		let mut toggles: InputToggles = input_state.toggles;
 
 		if !egui_context.wants_keyboard_input() {
-			use KeyPressAction as KPA;
-
-			let keyboard_input: &Input<KeyCode> = &*keyboard_input;
-
-			macro_rules! check_toggle {
-				($toggle:ident, $action:ident) => {
-					if input_data.key_presses[KeyPressAction::$action].is_active(keyboard_input) {
-						toggles.$toggle = !toggles.$toggle;
-					}
-				}
-			}
-
-			check_toggle!(enable_modifiers,		EnableModifiers);
-			check_toggle!(rotate_twice,			RotateTwice);
-			check_toggle!(counter_clockwise,	CounterClockwise);
-			check_toggle!(alt_hemi,				AltHemi);
-			check_toggle!(disable_recentering,	DisableRecentering);
-
-			if input_data.key_presses[KPA::CycleGenusIndexUp].is_active(keyboard_input) {
-				toggles.genus_index = GenusIndex::try_from(
-					if usize::from(toggles.genus_index) == 0_usize {
-						Library::get_genus_count() as GenusIndexType
-					} else {
-						*toggles.genus_index
-					} - 1 as GenusIndexType
-				).unwrap();
-			}
-
-			if input_data.key_presses[KPA::CycleGenusIndexDown].is_active(keyboard_input) {
-				toggles.genus_index = GenusIndex::try_from(
-					if usize::from(toggles.genus_index) == Library::get_genus_count() - 1_usize {
-						0 as GenusIndexType
-					} else {
-						*toggles.genus_index + 1 as GenusIndexType
-					}
-				).unwrap();
-			}
+			toggles.update(&input_data.key_presses, &*keyboard_input);
 		}
 
 		if !egui_context.wants_pointer_input() {

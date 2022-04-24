@@ -108,9 +108,7 @@ impl GenusIndex {
 
 	pub fn invert(self) -> Self {
 		if self.is_valid() {
-			Library::get().get_family_info(self).map(|family_info: &FamilyInfo| -> Self {
-				family_info.invert_genus_index(self)
-			}).unwrap_or(self)
+			Library::get().get_family_info_from_genus_index(self).invert_genus_index(self)
 		} else {
 			GenusIndex::INVALID
 		}
@@ -118,9 +116,7 @@ impl GenusIndex {
 
 	pub fn mirror(self) -> Self {
 		if self.is_valid() {
-			Library::get().get_family_info(self).map(|family_info: &FamilyInfo| -> Self {
-				family_info.mirror_genus_index(self)
-			}).unwrap_or(self)
+			Library::get().get_family_info_from_genus_index(self).mirror_genus_index(self)
 		} else {
 			GenusIndex::INVALID
 		}
@@ -152,6 +148,7 @@ impl Deref for GenusIndex {
 
 impl DerefMut for GenusIndex { fn deref_mut(&mut self) -> &mut GenusIndexType { &mut self.0 } }
 
+impl From<GenusIndex> for GenusIndexType { fn from(genus_index: GenusIndex) -> Self { genus_index.0 } }
 impl From<GenusIndex> for usize { fn from(genus_index: GenusIndex) -> Self { genus_index.0 as Self } }
 
 impl<'a> TryFrom<&'a str> for GenusIndex {
@@ -378,8 +375,22 @@ struct FamilyInfo {
 }
 
 impl FamilyInfo {
+	fn new(name: String, base_genus: GenusIndex, inverse_is_mirror: bool) -> Self { Self {
+		name,
+		base_genus,
+		inverse_is_mirror
+	} }
+
 	#[inline(always)]
-	fn get_genus_count(&self) -> usize { if self.inverse_is_mirror { 2_usize } else { 4_usize } }
+	fn get_genus_count(&self) -> usize {
+		if !self.base_genus.is_complex() {
+			1_usize
+		} else if self.inverse_is_mirror {
+			2_usize
+		} else {
+			4_usize
+		}
+	}
 
 	fn get_genus_range(&self) -> Range<usize> {
 		let genus_index_start: usize = self.base_genus.into();
@@ -390,7 +401,7 @@ impl FamilyInfo {
 	fn invert_genus_index(&self, genus_index: GenusIndex) -> GenusIndex {
 		let genus_range: Range<usize> = self.get_genus_range();
 
-		if genus_range.contains(&usize::from(genus_index)) {
+		if genus_range.contains(&usize::from(genus_index)) && self.base_genus.is_complex() {
 			GenusIndex(((genus_index.0 - genus_range.start as GenusIndexType)
 					^ if self.inverse_is_mirror { 1 as GenusIndexType } else { 2 as GenusIndexType }
 				) + genus_range.start as GenusIndexType
@@ -403,7 +414,7 @@ impl FamilyInfo {
 	fn mirror_genus_index(&self, genus_index: GenusIndex) -> GenusIndex {
 		let genus_range: Range<usize> = self.get_genus_range();
 
-		if genus_range.contains(&usize::from(genus_index)) {
+		if genus_range.contains(&usize::from(genus_index)) && self.base_genus.is_complex() {
 			GenusIndex(((genus_index.0 - genus_range.start as GenusIndexType)
 					^ 1 as GenusIndexType
 				) + genus_range.start as GenusIndexType
@@ -424,15 +435,10 @@ impl TryFrom<&str> for GenusRange {
 
 	fn try_from(base_genus_index_str: &str) -> Result<Self, ()> {
 		if let Ok(base_genus_index) = GenusIndex::try_from(base_genus_index_str) {
-			if let Some(family_info) = Library::get().get_family_info(base_genus_index) {
-				let genus_range: Range<usize> = family_info.get_genus_range();
+			let genus_range: Range<usize> =
+				Library::get().get_family_info_from_genus_index(base_genus_index).get_genus_range();
 
-				Ok(Self(genus_range.start as GenusIndexType .. genus_range.end as GenusIndexType))
-			} else {
-				/* While it's not a full-fledge family, if it's a valid index w/o a family info, it's either
-				REORIENTATION or SIMPLE, which are still valid genera in an of themselves */
-				Ok(Self(base_genus_index.0 .. base_genus_index.0 + 1 as GenusIndexType))
-			}
+			Ok(Self(genus_range.start as GenusIndexType .. genus_range.end as GenusIndexType))
 		} else {
 			Err(())
 		}
@@ -453,24 +459,24 @@ impl From<GenusRange> for GenusIndexBitArray {
 	}
 }
 
-type SimpleOffsetType = u32;
-type SimpleSliceLenType = u16;
-type FamilyIndexType = u8;
+type SimpleOffset = u32;
+type SimpleSliceLen = u16;
+type FamilyIndex = u8;
 
 #[derive(Debug, Clone)]
 struct GenusInfo {
 	name:				String,
-	simple_offset:		SimpleOffsetType,
-	simple_slice_len:	SimpleSliceLenType,
-	family_index:		Option<FamilyIndexType>
+	simple_offset:		SimpleOffset,
+	simple_slice_len:	SimpleSliceLen,
+	family_index:		FamilyIndex
 }
 
 impl GenusInfo {
-	fn new(name: String, simple_slice: &[HalfAddr], family_index: Option<FamilyIndexType>) -> Self {
+	fn new(name: String, simple_slice: &[HalfAddr], family_index: FamilyIndex) -> Self {
 		Self {
 			name,
-			simple_offset:		0 as SimpleOffsetType,
-			simple_slice_len:	simple_slice.len() as SimpleSliceLenType,
+			simple_offset:		0 as SimpleOffset,
+			simple_slice_len:	simple_slice.len() as SimpleSliceLen,
 			family_index
 		}
 	}
@@ -560,7 +566,36 @@ impl Library {
 	}
 
 	#[inline(always)]
-	pub fn get_genus_count() -> usize { return Library::get().genus_infos.len() }
+	pub fn get_genus_count() -> usize { Library::get().genus_infos.len() }
+
+	#[inline(always)]
+	pub fn get_family_count() -> usize { Library::get().family_infos.len() }
+
+	pub fn get_family_index(genus_index: GenusIndex) -> usize {
+		assert!(genus_index.is_valid());
+
+		Self::get().get_genus_info(genus_index).family_index as usize
+	}
+
+	pub fn get_base_genus_index(family_index: usize) -> GenusIndex {
+		assert!(family_index < Self::get_family_count());
+
+		Self::get().family_infos[family_index].base_genus
+	}
+
+	pub fn get_family_genus_count(family_index: usize) -> GenusIndexType {
+		assert!(family_index < Self::get_family_count());
+
+		Self::get().family_infos[family_index].get_genus_count() as GenusIndexType
+	}
+
+	pub fn get_family_genus_range(family_index: usize) -> Range<GenusIndexType> {
+		assert!(family_index < Self::get_family_count());
+
+		let genus_range: Range<usize> = Self::get().family_infos[family_index].get_genus_range();
+
+		genus_range.start as GenusIndexType .. genus_range.end as GenusIndexType
+	}
 
 	pub fn push_family_and_update_file(family_input: FamilyInput) -> Result<(), Box<dyn Error>> {
 		let _: MutexGuard<()> = LIBRARY_MUTEX.lock().ok().unwrap();
@@ -626,12 +661,16 @@ impl Library {
 		return Some(simple_slice_start .. simple_slice_end);
 	}
 
-	fn get_family_info(&self, genus_index: GenusIndex) -> Option<&FamilyInfo> {
-		if let Some(family_index) = self.genus_infos[usize::from(genus_index)].family_index {
-			Some(&self.family_infos[family_index as usize])
-		} else {
-			None
-		}
+	fn get_genus_info(&self, genus_index: GenusIndex) -> &GenusInfo {
+		&self.genus_infos[usize::from(genus_index)]
+	}
+
+	fn get_family_info(&self, family_index: FamilyIndex) -> &FamilyInfo {
+		&self.family_infos[family_index as usize]
+	}
+
+	fn get_family_info_from_genus_index(&self, genus_index: GenusIndex) -> &FamilyInfo {
+		self.get_family_info(self.get_genus_info(genus_index).family_index)
 	}
 
 	fn is_seed_simple_slice_valid(&self, seed_simple_slice: &[HalfAddr]) -> Result<(), PushFamilyErr> {
@@ -641,7 +680,7 @@ impl Library {
 			}
 		}
 
-		if self.family_infos.len() > FamilyIndexType::MAX as usize {
+		if self.family_infos.len() > FamilyIndex::MAX as usize {
 			return Err(PushFamilyErr::FamilyIndexTooLarge);
 		}
 
@@ -649,7 +688,7 @@ impl Library {
 			return Err(PushFamilyErr::GenusIndexTooLarge);
 		}
 
-		if self.simples.len() > SimpleOffsetType::MAX as usize {
+		if self.simples.len() > SimpleOffset::MAX as usize {
 			return Err(PushFamilyErr::SimpleOffsetTooLarge);
 		}
 
@@ -657,7 +696,7 @@ impl Library {
 			return Err(PushFamilyErr::SeedSimpleSliceTooShort);
 		}
 
-		if seed_simple_slice.len() > SimpleSliceLenType::MAX as usize {
+		if seed_simple_slice.len() > SimpleSliceLen::MAX as usize {
 			return Err(PushFamilyErr::SeedSimpleSliceTooLong);
 		}
 
@@ -742,10 +781,17 @@ impl Library {
 	}
 
 	fn initialize_reorientation_genus(&mut self, icosidodecahedron_data: &Data) -> () {
+		const REORIENTATION_STR: &'static str = "Reorientation";
+
 		self.push_genus(GenusInfo::new(
-			"Reorientation".into(),
+			REORIENTATION_STR.into(),
 			&[],
-			None
+			self.family_infos.len() as u8
+		));
+		self.family_infos.push(FamilyInfo::new(
+			REORIENTATION_STR.into(),
+			GenusIndex::REORIENTATION,
+			false
 		));
 
 		let reorientation_genus_index: usize = GenusIndex::REORIENTATION.into();
@@ -817,10 +863,17 @@ impl Library {
 	}
 
 	fn initialize_simple_genus(&mut self, icosidodecahedron_data: &Data) -> () {
+		const SIMPLE_STR: &'static str = "Simple";
+
 		self.push_genus(GenusInfo::new(
-			"Simple".into(),
+			SIMPLE_STR.into(),
 			&[HalfAddr::default()],
-			None
+			self.family_infos.len() as u8
+		));
+		self.family_infos.push(FamilyInfo::new(
+			SIMPLE_STR.into(),
+			GenusIndex::SIMPLE,
+			false
 		));
 
 		let simple_genus_index: usize = GenusIndex::SIMPLE.into();
@@ -974,7 +1027,7 @@ impl Library {
 		let simple_offset:		usize = self.simples.len();
 		let simple_slice_len:	usize = genus_info.simple_slice_len as usize;
 
-		genus_info.simple_offset = simple_offset as SimpleOffsetType;
+		genus_info.simple_offset = simple_offset as SimpleOffset;
 		self.genus_infos.push(genus_info);
 		self.simples.resize(
 			simple_offset + Self::ORGANISMS_PER_GENUS * simple_slice_len,
@@ -985,7 +1038,7 @@ impl Library {
 		self.inverse_addrs.push(Genus::<FullAddr>::default());
 	}
 
-	fn push_family(&mut self, mut family_input: FamilyInput) -> Result<FamilyIndexType, PushFamilyErr> {
+	fn push_family(&mut self, mut family_input: FamilyInput) -> Result<FamilyIndex, PushFamilyErr> {
 		let seed_simples: Vec<HalfAddr> = take(&mut family_input.seed_simples)
 			.iter()
 			.map(|(species_index, organism_index): &(u8, u8)| -> HalfAddr {
@@ -997,7 +1050,7 @@ impl Library {
 		self.is_seed_simple_slice_valid(seed_simple_slice)?;
 
 		let simple_slice_len:		usize			= seed_simple_slice.len();
-		let family_index:			FamilyIndexType	= self.family_infos.len() as FamilyIndexType;
+		let family_index:			FamilyIndex	= self.family_infos.len() as FamilyIndex;
 		let mut family_info:		FamilyInfo		= FamilyInfo {
 			name:				take(&mut family_input.name),
 			base_genus:			GenusIndex::from_usize(self.genus_infos.len()),
@@ -1007,7 +1060,7 @@ impl Library {
 		self.push_genus(GenusInfo::new(
 			family_info.name.clone(),
 			seed_simple_slice,
-			Some(family_index)
+			family_index
 		));
 		self.initialize_simple_slice_genus(
 			family_info.base_genus,
@@ -1018,7 +1071,7 @@ impl Library {
 		self.push_genus(GenusInfo::new(
 			format!("{}'", family_info.name),
 			seed_simple_slice,
-			Some(family_index)
+			family_index
 		));
 		self.initialize_simple_slice_genus(
 			GenusIndex(family_info.base_genus.0 + 1 as GenusIndexType),
@@ -1057,7 +1110,7 @@ impl Library {
 			self.push_genus(GenusInfo::new(
 				format!("{}\"", family_info.name),
 				seed_simple_slice,
-				Some(family_index)
+				family_index
 			));
 			self.initialize_simple_slice_genus(
 				GenusIndex(family_info.base_genus.0 + 2 as GenusIndexType),
@@ -1068,7 +1121,7 @@ impl Library {
 			self.push_genus(GenusInfo::new(
 				format!("{}\"'", family_info.name),
 				seed_simple_slice,
-				Some(family_index)
+				family_index
 			));
 			self.initialize_simple_slice_genus(
 				GenusIndex(family_info.base_genus.0 + 3 as GenusIndexType),

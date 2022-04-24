@@ -13,6 +13,7 @@ use {
 			read_dir
 		},
 		io::Result as IoResult,
+		ops::Range,
 		path::Path,
 		sync::Mutex,
 		time::SystemTime
@@ -321,10 +322,31 @@ impl UIPlugin {
 		egui::Area::new("InputState")
 			.anchor(egui::Align2::LEFT_BOTTOM, INPUT_STATE_OFFSET)
 			.show(context.ui_ctx.unwrap(), |ui: &mut Ui| -> () {
+				use GenusIndexType as GIT;
+
 				let toggles: &InputToggles = &input_state.toggles;
+				let genus_index: GIT = toggles.genus_index.into();
+
+				for family_index in 0_usize .. Library::get_family_count() {
+					let genus_range: Range<GIT> = Library::get_family_genus_range(family_index);
+
+					if genus_range.contains(&genus_index) {
+						ui.colored_label(
+							Color32::WHITE,
+							format!("{:?}", GenusIndex::try_from(toggles.genus_index).unwrap())
+						);
+					} else {
+						ui.colored_label(
+							Color32::GRAY,
+							format!("{:?}", GenusIndex::try_from(genus_range.start).unwrap())
+						);
+					}
+				}
 
 				egui::Grid::new("ModifierTable").show(ui, |ui: &mut Ui| -> () {
 					let input: &InputData = &preferences.input;
+
+					ui.end_row();
 
 					macro_rules! modifier_row {
 						($toggle:ident, $action:ident, $modifier_name:expr) => {
@@ -349,39 +371,29 @@ impl UIPlugin {
 					modifier_row!(counter_clockwise,	CounterClockwise,	"Counter Clockwise");
 					modifier_row!(alt_hemi,				AltHemi,			"Alt. Hemi.");
 					modifier_row!(disable_recentering,	DisableRecentering,	"Disable Recentering");
-
-					ui.end_row();
 				});
-
-				for genus_index_type in 0 as GenusIndexType .. Library::get_genus_count() as GenusIndexType {
-					ui.visuals_mut().widgets.noninteractive.fg_stroke.color = if *toggles.genus_index
-						== genus_index_type
-					{
-						Color32::WHITE
-					} else {
-						Color32::GRAY
-					};
-
-					ui.label(format!("{:?}", GenusIndex::try_from(genus_index_type).unwrap()));
-				}
 			});
 	}
 
 	fn render_action_stack(context: &mut Context) -> () {
 		const OFFSET: f32 = 20.0_f32;
 		const ACTION_STACK_OFFSET: Vec2 = Vec2::new(-OFFSET, -OFFSET);
-		const ACTION_STACK_SCALE: f32 = 0.75_f32;
 
 		let extended_puzzle_state: &ExtendedPuzzleState = warn_expect_some!(
 			context.world().and_then(World::get_resource::<ExtendedPuzzleState>),
 			return
 		);
+		let max_height: f32 = context.ui_ctx.unwrap().available_rect().height() - 2.0_f32 * OFFSET;
 
 		egui::Area::new("ActionStack")
 			.anchor(egui::Align2::RIGHT_BOTTOM, ACTION_STACK_OFFSET)
 			.show(context.ui_ctx.unwrap(), |ui: &mut Ui| -> () {
 				egui::ScrollArea::vertical()
-					.max_height(ACTION_STACK_SCALE * ui.available_height())
+					.max_height(max_height)
+					// This isn't reliable, but if it was, it'd be better than always_show_scroll()
+					// .min_scrolled_height(max_height)
+					.always_show_scroll(true)
+					.stick_to_bottom()
 					.show(ui, |ui: &mut Ui| -> () {
 						egui::Grid::new("ActionStackGrid")
 							.min_col_width(0.0_f32)
