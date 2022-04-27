@@ -1,6 +1,8 @@
 use {
 	std::{
 		collections::HashMap,
+		f64::consts::PI,
+		mem::MaybeUninit,
 		ops::Range
 	},
 	bevy::{
@@ -29,19 +31,22 @@ use {
 		},
 		prelude::*,
 		preferences::colors::ColAndMat,
+		puzzle::consts::*,
 		strings::STRING_DATA
 	}
 };
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq)]
 pub enum Design {
-	Dodecahedron1
+	OriginalSuperDodecahedron,
+	CustomSuperDodecahedron
 }
 
 impl Design {
 	pub fn as_polyhedron(self) -> Polyhedron {
 		match self {
-			Design::Dodecahedron1 => Polyhedron::Dodecahedron
+			Design::OriginalSuperDodecahedron => Polyhedron::Dodecahedron,
+			Design::CustomSuperDodecahedron => Polyhedron::Dodecahedron
 		}
 	}
 }
@@ -53,7 +58,7 @@ pub enum Type {
 }
 
 impl Type {
-	pub const fn side_count(self) -> usize {
+	pub const fn vertex_count(self) -> usize {
 		ICOSIDODECAHEDRON.face_sizes[self as usize].face_size
 	}
 
@@ -66,11 +71,11 @@ impl Type {
 	}
 
 	pub fn next_side_index(&self, index: usize) -> usize {
-		(index + 1) % self.side_count()
+		(index + 1) % self.vertex_count()
 	}
 
 	pub fn prev_side_index(&self, index: usize) -> usize {
-		let side_count: usize = self.side_count();
+		let side_count: usize = self.vertex_count();
 
 		(index + side_count - 1) % side_count
 	}
@@ -85,6 +90,13 @@ impl Type {
 			0..=11	=> Some(Type::Pentagon),
 			12..=31	=> Some(Type::Triangle),
 			_		=> None
+		}
+	}
+
+	pub const fn pyramid_polyhedron(self) -> Polyhedron {
+		match self {
+			Self::Pentagon => Polyhedron::Icosahedron,
+			Self::Triangle => Polyhedron::Dodecahedron
 		}
 	}
 }
@@ -303,217 +315,372 @@ impl Piece {
 	fn from_design_and_type(design: Design, piece_type: Type) -> LogErrorResult<Self> {
 		const PLANAR_OFFSET_RATIO:			f32					= 1.0_f32 / 64.0_f32;
 		const NORMAL_OFFSET_RATIO:			f32					= 1.0_f32 / 256.0_f32;
+		const SHELL_DEPTH_RATIO:			f32					= 0.75_f32;
 		const PLANAR_OFFSET:				f32					= PLANAR_OFFSET_RATIO * ICOSIDODECAHEDRON.edge_length;
 		const NORMAL_OFFSET:				f32					= NORMAL_OFFSET_RATIO * ICOSIDODECAHEDRON.edge_length;
 
+		let pyramid_data:					&Data				= Data::get(piece_type.pyramid_polyhedron());
 		let icosahedron_data:				&Data				= Data::get(Polyhedron::Icosahedron);
-		let dodecahedron_data:				&Data				= Data::get(Polyhedron::Dodecahedron);
+		let _dodecahedron_data:				&Data				= Data::get(Polyhedron::Dodecahedron);
 		let icosidodecahedron_data:			&Data				= Data::get(Polyhedron::Icosidodecahedron);
 		let _rhombic_triacontahedron_data:	&Data				= Data::get(Polyhedron::RhombicTriacontahedron);
 		let icosidodecahedron_verts:		&Vec<VertexData>	= &icosidodecahedron_data.verts;
 		let icosidodecahedron_vert_indices:	&Vec<usize>			= &icosidodecahedron_data.vert_indices;
-		let side_count:						usize				= piece_type.side_count();
-		let double_side_count:				usize				= 2_usize * side_count;
-		let range:							Range<usize>		= 0_usize .. side_count;
-		let transformation:					Mat4				= Mat4::from_quat(icosidodecahedron_data.faces[piece_type.index_offset()].quat.inverse());
+		let icosidodecahedron_faces:		&Vec<FaceData>		= &icosidodecahedron_data.faces;
+		let vert_count:						usize				= piece_type.vertex_count();
+		let index_offset:					usize				= piece_type.index_offset();
+		let double_vert_count:				usize				= 2_usize * vert_count;
+		let vert_range:						Range<usize>		= 0_usize .. vert_count;
+		let face_iter = icosidodecahedron_data
+			.faces
+			[index_offset]
+			.range
+			.clone()
+			.map(|vert_indices_index: usize| -> &Vec3 {
+				&icosidodecahedron_verts[icosidodecahedron_vert_indices[vert_indices_index]].vec
+			});
+		let transformation:					Mat4				= Mat4::from_quat(icosidodecahedron_data.faces[index_offset].quat.inverse());
+		let build_base_mesh = |center: &Vec3, vertices: &Vec<Vec3>| -> Mesh {
+			let mut tris: Vec<Tri> = Vec::with_capacity(double_vert_count);
 
-		let mut vertices: Vec<Vec3>;
-		let center: Vec3;
+			for side_index in vert_range.clone() {
+				let vert_1: Vec3 = vertices[side_index];
+				let vert_2: Vec3 = vertices[piece_type.next_side_index(side_index)];
 
-		match design {
-			Design::Dodecahedron1 => {
-				macro_rules! build_base_mesh {
-					() => {
-						{
-							let mut tris: Vec<Tri> = Vec::with_capacity(double_side_count);
-	
-							for side_index in range.clone() {
-								let vert_1: Vec3 = vertices[side_index];
-								let vert_2: Vec3 = vertices[piece_type.next_side_index(side_index)];
-	
-								tris.push(&transformation * Tri::from([
-									Vec3::ZERO,
-									vert_2,
-									vert_1
-								]));
-								tris.push(&transformation * Tri::from([
-									center,
-									vert_1,
-									vert_2
-								]));
-							}
-	
-							Mesh {
-								tris,
-								.. Default::default()
-							}
-						}
-					};
+				tris.push(&transformation * Tri::from([
+					Vec3::ZERO,
+					vert_2,
+					vert_1
+				]));
+				tris.push(&transformation * Tri::from([
+					*center,
+					vert_1,
+					vert_2
+				]));
+			}
+
+			Mesh {
+				tris,
+				.. Default::default()
+			}
+		};
+		let build_pyramid_piece = || -> LogErrorResult<Piece> {
+			let mut vertices: Vec<Vec3> = Vec::with_capacity(vert_count);
+
+			for vert in face_iter.clone() {
+				vertices.push(*vert);
+			}
+
+			let center: Vec3 = pyramid_data.verts[0].vec;
+			let base_mesh: Mesh = build_base_mesh(&center, &vertices);
+
+			let mut color_meshes: Vec<Mesh> = Vec::with_capacity(vert_count);
+
+			for side_index in vert_range.clone() {
+				let mut tri: Tri = Tri::from([
+					center,
+					vertices[side_index],
+					vertices[piece_type.next_side_index(side_index)]
+				]);
+
+				tri.offset_all_along_plane(-PLANAR_OFFSET);
+				tri.offset_along_normal(NORMAL_OFFSET);
+				color_meshes.push(Mesh {
+					tris: vec![&transformation * tri],
+					face_indices: Some(
+						(0_usize .. piece_type.instance_count()).map(|face_index: usize| -> usize {
+							let mut verts: Vec<Vec3> = icosidodecahedron_data
+								.faces[face_index + index_offset]
+								.get_slice(icosidodecahedron_vert_indices)
+								.iter()
+								.map(|vert_index| -> Vec3 {
+									icosidodecahedron_verts[*vert_index].vec
+								})
+								.collect();
+
+							verts.rotate_left(side_index);
+
+							icosahedron_data.get_closest_vert_index(&(verts[0] + verts[1] - verts[2]), None)
+						})
+						.collect()
+					),
+					.. Default::default()
+				});
+			}
+
+			Ok(Piece {
+				piece_type,
+				base_mesh,
+				color_meshes
+			})
+		};
+		let _build_neighboring_pentagon_face_indices = |vert_index: usize| -> Option<Vec<usize>> {
+			Some(
+				(0_usize .. piece_type.instance_count()).map(|face_index: usize| -> usize {
+					let face_data: &FaceData = &icosidodecahedron_faces[face_index];
+
+					icosahedron_data.get_closest_vert_index(
+						&(Quat::from_axis_angle(
+							icosidodecahedron_verts[
+								face_data.get_slice(icosidodecahedron_vert_indices)[vert_index]
+							].vec,
+							PI as f32
+						) * face_data.norm),
+						None
+					)
+				})
+				.collect()
+			)
+		};
+
+		match (design, piece_type) {
+			(Design::OriginalSuperDodecahedron, Type::Pentagon) => {
+				const PENTAGONAL_RING_THICKNESS_RATIO: f32 = 0.2_f32;
+				const PENTAGONAL_RING_THICKNESS: f32 = PENTAGONAL_RING_THICKNESS_RATIO * ICOSIDODECAHEDRON.edge_length;
+				const _CIRCLE_SUBDIVISION_COUNT: u32 = 16_u32;
+				const VERTEX_RING_COUNT: usize = 4_usize;
+				const PENTAGON_VERTEX_COUNT: usize = usize::PENTAGON_VERTEX_COUNT;
+				const VERTICES_CAPACITY: usize = VERTEX_RING_COUNT * PENTAGON_VERTEX_COUNT;
+				const OUTER_OUTER_OFFSET: usize = 0_usize * PENTAGON_VERTEX_COUNT;
+				const OUTER_INNER_OFFSET: usize = 1_usize * PENTAGON_VERTEX_COUNT;
+				const INNER_INNER_OFFSET: usize = 2_usize * PENTAGON_VERTEX_COUNT;
+				const INNER_OUTER_OFFSET: usize = 3_usize * PENTAGON_VERTEX_COUNT;
+				const TRIS_PER_QUAD: usize = 2_usize;
+				const TRIS_PER_QUAD_RING: usize = TRIS_PER_QUAD * PENTAGON_VERTEX_COUNT;
+				const BASE_MESH_TRIS_CAPACITY: usize = TRIS_PER_QUAD_RING * VERTEX_RING_COUNT;
+				const CURR_TRI_VERT_INDEX: usize = 1_usize;
+				const OFFSET_MASK: [bool; 3_usize] = [true, true, false];
+
+				let mut vertices: Vec<Vec3> = Vec::with_capacity(VERTICES_CAPACITY);
+
+				for vert in face_iter.clone() {
+					vertices.push(*vert);
 				}
 
-				match piece_type {
-					Type::Pentagon => {
-						vertices = Vec::with_capacity(3 * side_count);
+				vertices.resize(VERTICES_CAPACITY, Vec3::ZERO);
 
-						let mut center_sum: Vec3 = Vec3::ZERO;
+				// Safe: we will be writing into these cells, and Tri has no destructor
+				let mut pentagram_tris: [Tri; TRIS_PER_QUAD_RING] = unsafe {
+					MaybeUninit::<[Tri; TRIS_PER_QUAD_RING]>::uninit().assume_init()
+				};
 
-						for vert_indices_index in icosidodecahedron_data.faces[piece_type.index_offset()].range.clone() {
-							let vert: Vec3 = icosidodecahedron_verts[icosidodecahedron_vert_indices[vert_indices_index]].vec;
+				for prev_vert_index in vert_range.clone() {
+					let curr_vert_index: usize = Type::Pentagon.next_side_index(prev_vert_index);
+					let next_vert_index: usize = Type::Pentagon.next_side_index(curr_vert_index);
+					let outer_outer_index: usize = OUTER_OUTER_OFFSET + curr_vert_index;
+					let outer_inner_index: usize = OUTER_INNER_OFFSET + curr_vert_index;
+					let inner_inner_index: usize = INNER_INNER_OFFSET + curr_vert_index;
+					let inner_outer_index: usize = INNER_OUTER_OFFSET + curr_vert_index;
 
-							center_sum += vert;
-							vertices.push(vert);
+					let mut tri: Tri = Tri::from([
+						vertices[prev_vert_index],
+						vertices[curr_vert_index],
+						vertices[next_vert_index]
+					]);
+
+					pentagram_tris[outer_outer_index] = tri;
+					tri.offset_along_plane(-PENTAGONAL_RING_THICKNESS, OFFSET_MASK);
+					pentagram_tris[outer_inner_index] = tri;
+
+					let outer_outer_vert: &Vec3 = &pentagram_tris[outer_outer_index][CURR_TRI_VERT_INDEX];
+					let outer_inner_vert: &Vec3 = &pentagram_tris[outer_inner_index][CURR_TRI_VERT_INDEX];
+					let depth_offset: Vec3 = -SHELL_DEPTH_RATIO * *outer_outer_vert;
+
+					vertices[outer_outer_index] = *outer_outer_vert;
+					vertices[outer_inner_index] = *outer_inner_vert;
+					vertices[inner_inner_index] = *outer_inner_vert + depth_offset;
+					vertices[inner_outer_index] = *outer_outer_vert + depth_offset;
+				}
+
+				let _base_mesh: Mesh = {
+					let mut tris: Vec<Tri> = Vec::<Tri>::with_length_and_capacity(
+						BASE_MESH_TRIS_CAPACITY,
+						BASE_MESH_TRIS_CAPACITY);
+
+					for curr_vert_index in vert_range.clone() {
+						let next_vert_index: usize = Type::Pentagon.next_side_index(curr_vert_index);
+
+						for curr_vert_ring_index in 0_usize .. VERTEX_RING_COUNT {
+							let next_vert_ring_index: usize = (curr_vert_ring_index + 1_usize) % VERTEX_RING_COUNT;
+							let tri_index: usize = TRIS_PER_QUAD_RING * curr_vert_ring_index
+								+ TRIS_PER_QUAD * curr_vert_index;
+							let vert_a: Vec3 = vertices[PENTAGON_VERTEX_COUNT * next_vert_ring_index + curr_vert_index];
+							let vert_b: Vec3 = vertices[PENTAGON_VERTEX_COUNT * curr_vert_ring_index + curr_vert_index];
+							let vert_c: Vec3 = vertices[PENTAGON_VERTEX_COUNT * curr_vert_ring_index + next_vert_index];
+							let vert_d: Vec3 = vertices[PENTAGON_VERTEX_COUNT * next_vert_ring_index + next_vert_index];
+
+							tris[tri_index]				= &transformation * Tri::from([vert_a, vert_b, vert_c]);
+							tris[tri_index + 1_usize]	= &transformation * Tri::from([vert_c, vert_d, vert_a]);
 						}
-
-						for vert_index in range.clone() {
-							vertices.push((vertices[vert_index] + vertices[piece_type.next_side_index(vert_index)]) * 0.5_f32);
-						}
-
-						for vert_index in range.clone() {
-							vertices.push((ONE_OVER_PHI as f32) * vertices[vert_index] + (ONE_OVER_PHI_SQUARED as f32) * vertices[(vert_index + 2) % side_count]);
-						}
-
-						center = center_sum / side_count as f32;
-
-						let base_mesh: Mesh = build_base_mesh!();
-
-						let mut color_meshes: Vec<Mesh> = Vec::with_capacity(side_count);
-
-						// Add the color mesh for the primary piece
-						{
-							let mut tris: Vec<Tri> = Vec::with_capacity(side_count);
-
-							for vert_index in range.clone() {
-								let mut tri: Tri = Tri::from([
-									vertices[vert_index],
-									vertices[vert_index + double_side_count],
-									vertices[piece_type.prev_side_index(vert_index) + double_side_count]
-								]);
-
-								tri.offset_all_along_plane(-PLANAR_OFFSET);
-								tri.offset_along_normal(NORMAL_OFFSET);
-								tris.push(&transformation * tri);
-							}
-
-							color_meshes.push(Mesh {
-								tris,
-								face_indices: Some((0_usize .. piece_type.instance_count()).collect()),
-								.. Default::default()
-							});
-						}
-
-						for vert_index in range.clone() {
-							let prev_vert_index: usize = piece_type.prev_side_index(vert_index);
-							let mut tris: Vec<Tri> = Vec::with_capacity(3);
-
-							for tri_index in 0_usize .. 3 {
-								let mut tri: Tri = match tri_index {
-									0 => Tri::from([
-										vertices[vert_index],
-										vertices[vert_index + side_count],
-										vertices[vert_index + double_side_count]
-									]),
-									1 => Tri::from([
-										center,
-										vertices[prev_vert_index + double_side_count],
-										vertices[vert_index + double_side_count]
-									]),
-									_ => Tri::from([
-										vertices[vert_index],
-										vertices[prev_vert_index + double_side_count],
-										vertices[prev_vert_index + side_count]
-									])
-								};
-
-								tri.offset_all_along_plane(-PLANAR_OFFSET);
-								tri.offset_along_normal(NORMAL_OFFSET);
-								tris.push(&transformation * tri);
-							}
-
-							color_meshes.push(Mesh {
-								tris,
-								face_indices: Some(
-									(0_usize .. piece_type.instance_count()).map(|face_index: usize| -> usize {
-										let face_vec: Vec3 = icosahedron_data.verts[face_index].vec;
-
-										icosahedron_data.get_closest_vert_index(
-											&(face_vec + 2.0_f32 * (
-												icosidodecahedron_data.verts[
-													icosidodecahedron_data.vert_indices[
-														icosidodecahedron_data.faces[
-															face_index
-														].range.start + vert_index
-													]
-												].vec - face_vec
-											)),
-											None
-										)
-									})
-									.collect()
-								),
-								.. Default::default()
-							});
-						}
-
-						Ok(Piece {
-							piece_type,
-							base_mesh,
-							color_meshes
-						})
-					},
-					Type::Triangle => {
-						vertices = Vec::with_capacity(3);
-
-						for vert_indices_index in icosidodecahedron_data.faces[piece_type.index_offset()].range.clone() {
-							vertices.push(icosidodecahedron_verts[icosidodecahedron_vert_indices[vert_indices_index]].vec);
-						}
-
-						center = dodecahedron_data.verts[0].vec;
-
-						let base_mesh: Mesh = build_base_mesh!();
-
-						let mut color_meshes: Vec<Mesh> = Vec::with_capacity(side_count);
-
-						for side_index in range.clone() {
-							let mut tri: Tri = Tri::from([
-								center,
-								vertices[side_index],
-								vertices[piece_type.next_side_index(side_index)]
-							]);
-
-							tri.offset_all_along_plane(-PLANAR_OFFSET);
-							tri.offset_along_normal(NORMAL_OFFSET);
-							color_meshes.push(Mesh {
-								tris: vec![&transformation * tri],
-								face_indices: Some(
-									(0_usize .. piece_type.instance_count()).map(|face_index: usize| -> usize {
-										let mut verts: Vec<Vec3> = icosidodecahedron_data
-											.faces[
-												face_index + piece_type.index_offset()
-											]
-											.get_slice(icosidodecahedron_vert_indices)
-											.iter()
-											.map(|vert_index| -> Vec3 {
-												icosidodecahedron_verts[*vert_index].vec
-											})
-											.collect();
-
-										verts.rotate_left(side_index);
-
-										icosahedron_data.get_closest_vert_index(&(verts[0] + verts[1] - verts[2]), None)
-									})
-									.collect()
-								),
-								.. Default::default()
-							});
-						}
-
-						Ok(Piece {
-							piece_type,
-							base_mesh,
-							color_meshes
-						})
 					}
+
+					Mesh {
+						tris,
+						.. Mesh::default()
+					}
+				};
+
+				let mut color_meshes: Vec<Mesh> = Vec::<Mesh>::with_capacity(1_usize + usize::PENTAGON_VERTEX_COUNT);
+
+				// Add the color mesh for the primary piece
+				color_meshes.push({
+					let mut tris: Vec<Tri> = Vec::<Tri>::with_capacity(TRIS_PER_QUAD_RING);
+
+					// Safe: we will be writing into these cells, and Vec3 has no destructor
+					let mut vertices: [Vec3; VERTICES_CAPACITY / 2_usize] = unsafe {
+						MaybeUninit::<[Vec3; VERTICES_CAPACITY / 2_usize]>::uninit().assume_init()
+					};
+
+					for vert_index in vert_range.clone() {
+						let mut init_verts = |tri_and_vert_index: usize, offset: f32| -> () {
+							let pentagram_tri: &mut Tri = &mut pentagram_tris[tri_and_vert_index];
+
+							pentagram_tri.offset_along_plane(offset, OFFSET_MASK);
+							pentagram_tri.offset_along_normal(NORMAL_OFFSET);
+							vertices[tri_and_vert_index] = pentagram_tri[CURR_TRI_VERT_INDEX];
+						};
+
+						init_verts(OUTER_OUTER_OFFSET + vert_index, -PLANAR_OFFSET);
+						init_verts(OUTER_INNER_OFFSET + vert_index, PLANAR_OFFSET);
+					}
+
+					for curr_vert_index in vert_range.clone() {
+						let next_vert_index: usize = Type::Pentagon.next_side_index(curr_vert_index);
+						let tri_index: usize = TRIS_PER_QUAD * curr_vert_index;
+						let vert_a: Vec3 = vertices[INNER_INNER_OFFSET + curr_vert_index];
+						let vert_b: Vec3 = vertices[OUTER_OUTER_OFFSET + curr_vert_index];
+						let vert_c: Vec3 = vertices[OUTER_OUTER_OFFSET + next_vert_index];
+						let vert_d: Vec3 = vertices[INNER_INNER_OFFSET + next_vert_index];
+
+						tris[tri_index]				= &transformation * Tri::from([vert_a, vert_b, vert_c]);
+						tris[tri_index + 1_usize]	= &transformation * Tri::from([vert_c, vert_d, vert_a]);
+					}
+
+					Mesh {
+						tris,
+						face_indices: Some(PENTAGON_PIECE_RANGE.collect()),
+						.. Mesh::default()
+					}
+				});
+
+				panic!();
+			},
+			(Design::OriginalSuperDodecahedron, Type::Triangle) => {
+				panic!();
+			},
+			(Design::CustomSuperDodecahedron, Type::Pentagon) => {
+				let mut vertices: Vec<Vec3> = Vec::with_capacity(3 * vert_count);
+				let mut center_sum: Vec3 = Vec3::ZERO;
+
+				for vert in face_iter.clone() {
+					center_sum += *vert;
+					vertices.push(*vert);
 				}
+
+				for vert_index in vert_range.clone() {
+					vertices.push(
+						(vertices[vert_index] + vertices[piece_type.next_side_index(vert_index)]) * 0.5_f32
+					);
+				}
+
+				for vert_index in vert_range.clone() {
+					vertices.push(
+						(ONE_OVER_PHI as f32)
+							* vertices[vert_index]
+							+ (ONE_OVER_PHI_SQUARED as f32)
+							* vertices[(vert_index + 2) % vert_count]
+					);
+				}
+
+				let center: Vec3 = center_sum / vert_count as f32;
+				let base_mesh: Mesh = build_base_mesh(&center, &vertices);
+
+				let mut color_meshes: Vec<Mesh> = Vec::with_capacity(vert_count);
+
+				// Add the color mesh for the primary piece
+				{
+					let mut tris: Vec<Tri> = Vec::with_capacity(vert_count);
+
+					for vert_index in vert_range.clone() {
+						let mut tri: Tri = Tri::from([
+							vertices[vert_index],
+							vertices[vert_index + double_vert_count],
+							vertices[piece_type.prev_side_index(vert_index) + double_vert_count]
+						]);
+
+						tri.offset_all_along_plane(-PLANAR_OFFSET);
+						tri.offset_along_normal(NORMAL_OFFSET);
+						tris.push(&transformation * tri);
+					}
+
+					color_meshes.push(Mesh {
+						tris,
+						face_indices: Some(PENTAGON_PIECE_RANGE.collect()),
+						.. Mesh::default()
+					});
+				}
+
+				for vert_index in vert_range.clone() {
+					let prev_vert_index: usize = piece_type.prev_side_index(vert_index);
+					let mut tris: Vec<Tri> = Vec::with_capacity(3);
+
+					for tri_index in 0_usize .. 3 {
+						let mut tri: Tri = match tri_index {
+							0 => Tri::from([
+								vertices[vert_index],
+								vertices[vert_index + vert_count],
+								vertices[vert_index + double_vert_count]
+							]),
+							1 => Tri::from([
+								center,
+								vertices[prev_vert_index + double_vert_count],
+								vertices[vert_index + double_vert_count]
+							]),
+							_ => Tri::from([
+								vertices[vert_index],
+								vertices[prev_vert_index + double_vert_count],
+								vertices[prev_vert_index + vert_count]
+							])
+						};
+
+						tri.offset_all_along_plane(-PLANAR_OFFSET);
+						tri.offset_along_normal(NORMAL_OFFSET);
+						tris.push(&transformation * tri);
+					}
+
+					color_meshes.push(Mesh {
+						tris,
+						face_indices: Some(
+							(0_usize .. piece_type.instance_count()).map(|face_index: usize| -> usize {
+								let face_vec: Vec3 = icosahedron_data.verts[face_index].vec;
+
+								icosahedron_data.get_closest_vert_index(
+									&(face_vec + 2.0_f32 * (
+										icosidodecahedron_data.verts[
+											icosidodecahedron_data.vert_indices[
+												icosidodecahedron_data.faces[
+													face_index
+												].range.start + vert_index
+											]
+										].vec - face_vec
+									)),
+									None
+								)
+							})
+							.collect()
+						),
+						.. Default::default()
+					});
+				}
+
+				Ok(Piece {
+					piece_type,
+					base_mesh,
+					color_meshes
+				})
+			},
+			(Design::CustomSuperDodecahedron, Type::Triangle) => {
+				build_pyramid_piece()
 			}
 		}
 	}

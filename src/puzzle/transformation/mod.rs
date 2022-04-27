@@ -45,7 +45,10 @@ use {
 		Context,
 		Inspectable
 	},
-	egui::Ui,
+	egui::{
+		Grid,
+		Ui
+	},
 	rand::{
 		rngs::ThreadRng,
 		Rng
@@ -391,7 +394,7 @@ impl Inspectable for HalfAddr {
 		let mut changed: bool = false;
 
 		ui.vertical_centered(|ui: &mut Ui| -> () {
-			egui::Grid::new(context.id()).show(ui, |ui: &mut Ui| {
+			Grid::new(context.id()).show(ui, |ui: &mut Ui| {
 				if ui.small_button("Zero").clicked() && *self != Self::ORIGIN {
 					*self = Self::ORIGIN;
 					changed = true;

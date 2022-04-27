@@ -38,7 +38,7 @@ use {
 		BitArray,
 		BitField
 	},
-	egui::Ui,
+	egui::{Ui},
 	serde::{
 		Deserialize,
 		Deserializer,
@@ -519,7 +519,7 @@ pub type SimpleSlice<'a> = Option<&'a [HalfAddr]>;
 impl Library {
 	pub const GENERA_PER_SMALL_CLASS:	usize = GenusIndex::COMPLEX_OFFSET;
 	pub const ORGANISMS_PER_GENUS:		usize = Self::ORGANISMS_PER_SPECIES * Self::SPECIES_PER_GENUS;
-	pub const ORGANISMS_PER_SPECIES:	usize = PENTAGON_SIDE_COUNT;
+	pub const ORGANISMS_PER_SPECIES:	usize = usize::PENTAGON_VERTEX_COUNT;
 	pub const SPECIES_PER_GENUS:		usize = PENTAGON_PIECE_COUNT;
 	pub const SPECIES_PER_LARGE_GENUS:	usize = PIECE_COUNT;
 
@@ -1570,7 +1570,7 @@ mod tests {
 				let mut curr_puzzle_state:		PuzzleState			= PuzzleState::SOLVED_STATE;
 				let mut curr_puzzle_state_alt:	PuzzleState			= PuzzleState::SOLVED_STATE;
 
-				for turn in 1_usize ..= PENTAGON_SIDE_COUNT {
+				for turn in 1_usize ..= usize::PENTAGON_VERTEX_COUNT {
 					let prev_puzzle_state:		PuzzleState = curr_puzzle_state.clone();
 
 					curr_puzzle_state += transformation;

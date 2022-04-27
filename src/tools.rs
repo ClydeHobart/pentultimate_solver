@@ -37,6 +37,7 @@ mod uses {
 		egui::{
 			widgets::Separator,
 			Button,
+			CollapsingHeader,
 			Color32,
 			Ui,
 			Vec2
@@ -251,7 +252,7 @@ impl ToolsData {
 	}
 
 	pub fn render(&mut self, ui: &mut Ui, context: &mut Context) -> () {
-		egui::CollapsingHeader::new("Tools")
+		CollapsingHeader::new("Tools")
 			.default_open(true)
 			.show(ui, |ui: &mut Ui| -> () {
 				let mut tool_data_index: usize = 0_usize;

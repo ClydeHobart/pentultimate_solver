@@ -20,7 +20,7 @@ use {
 		},
 		prelude::*,
 		puzzle::{
-			consts::PENTAGON_SIDE_COUNT,
+			consts::*,
 			transformation::HalfAddr
 		}
 	},
@@ -216,7 +216,7 @@ impl CameraPlugin {
 		Data::get(Polyhedron::Icosidodecahedron).get_pos_and_rot(
 			&quat,
 			Some(Box::new(|face_data: &FaceData| -> bool {
-				face_data.get_size() == PENTAGON_SIDE_COUNT
+				face_data.get_size() == usize::PENTAGON_VERTEX_COUNT
 			}))
 		).into()
 	}

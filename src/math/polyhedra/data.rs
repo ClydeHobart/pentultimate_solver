@@ -4,7 +4,8 @@ use {
 		mem::{
 			MaybeUninit,
 			transmute
-		}
+		},
+		ops::Range
 	},
 	bevy::{
 		prelude::*,
@@ -62,18 +63,18 @@ impl EdgeData {
 	}
 }
 
-type Range = std::ops::Range<usize>;
+pub type EdgeBitArray = [u32; 2_usize];
 
 #[derive(Debug, Default)]
 pub struct FaceData {
-	pub range:	Range,
+	pub quat:	Quat,
 	pub norm:	Vec3,
-	pub quat:	Quat
+	pub range:	Range<usize>,
+	pub edges:	EdgeBitArray
 }
 
 impl FaceData {
-	pub fn new(verts: &Vec<VertexData>, vert_indices: &Vec<usize>, start: usize, end: usize) -> Self {
-		let range: Range = start .. end;
+	pub fn new(verts: &Vec<VertexData>, vert_indices: &Vec<usize>, range: Range<usize>, edges: EdgeBitArray) -> Self {
 		let norm: Vec3 = vert_indices[range.clone()]
 			.iter()
 			.map(|vert_index: &usize| -> &Vec3 {
@@ -83,13 +84,14 @@ impl FaceData {
 			.normalize_or_zero();
 
 		FaceData {
-			range,
+			quat: Quat::IDENTITY,
 			norm,
-			quat: Quat::IDENTITY
+			range,
+			edges
 		}
 	}
 
-	pub fn get_range(&self) -> Range { self.range.start .. self.range.end }
+	pub fn get_range(&self) -> Range<usize> { self.range.clone() }
 
 	pub fn get_slice<'a>(&self, vert_indices: &'a Vec<usize>) -> &'a [usize] { &vert_indices[self.get_range()] }
 
@@ -257,9 +259,8 @@ impl Data {
 				for face_data in self.faces.iter()
 				{
 					let initial_index: u32 = positions.len() as u32;
-					let range: &Range = &face_data.range;
 
-					for vert_index in vert_indices[range.clone()].iter() {
+					for vert_index in vert_indices[face_data.get_range()].iter() {
 						positions.push(self.verts[*vert_index].vec.as_ref().clone());
 						normals.push(face_data.norm.as_ref().clone());
 						uvs.push([0.0, 0.0]);
@@ -747,7 +748,7 @@ impl<'a> DataBuilder<'a> {
 
 			cycle_values!();
 			record_edge!();
-			faces.push(FaceData::new(&verts, &vert_indices, start, end));
+			faces.push(FaceData::new(&verts, &vert_indices, start .. end, EdgeBitArray::default()));
 			log::trace!(target: log_target.as_str(), "Adding face {:?}", faces.last().unwrap());
 			log_edge_status!();
 		}

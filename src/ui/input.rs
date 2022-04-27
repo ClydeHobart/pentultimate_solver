@@ -113,7 +113,8 @@ use {
 				RandHalfAddrParams
 			},
 			ExtendedPuzzleState,
-			InflatedPuzzleState
+			InflatedPuzzleState,
+			InflatedPieceStateComponent as PSC
 		}
 	},
 	super::{
@@ -132,7 +133,7 @@ pub fn generate_default_positions() -> [usize; HALF_PENTAGON_PIECE_COUNT] {
 		positions[rotation as usize - 2] = icosidodecahedron_data
 			.get_closest_face_index(
 				&face_0_data
-					.get_rotation_quat(rotation % PENTAGON_SIDE_COUNT as u32)
+					.get_rotation_quat(rotation % PSC::PENTAGON_VERTEX_COUNT as u32)
 					.mul_vec3(face_1_norm), 
 				None
 			);
@@ -1316,10 +1317,10 @@ impl InputToggles {
 				1_i32
 					* if self.rotate_twice { 2_i32 } else { 1_i32 }
 					* if self.counter_clockwise { -1_i32 } else { 1_i32 }
-					+ PENTAGON_SIDE_COUNT as i32
+					+ PSC::PENTAGON_VERTEX_COUNT as i32
 			)
 				as usize
-				% PENTAGON_SIDE_COUNT
+				% usize::PENTAGON_VERTEX_COUNT
 		} else {
 			0_usize
 		}

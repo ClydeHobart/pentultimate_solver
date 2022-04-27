@@ -1,6 +1,9 @@
-pub use bevy::math::{
-	*,
-	prelude::*
+pub use {
+	std::mem::transmute,
+	bevy::math::{
+		*,
+		prelude::*
+	}
 };
 
 pub mod polyhedra;

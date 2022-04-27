@@ -10,6 +10,7 @@ use {
 	egui::{
 		Button,
 		Color32,
+		Grid,
 		Separator,
 		TextEdit,
 		Ui
@@ -21,7 +22,7 @@ use {
 			HalfAddrAttrs
 		},
 		HalfAddr,
-		InflatedPieceStateComponent
+		InflatedPieceStateComponent as PSC
 	},
 	crate::{
 		app::prelude::*,
@@ -43,9 +44,9 @@ use {
 #[derive(Clone, Default, Inspectable, PartialEq)]
 pub struct StatsOptions {
 	reorientation:			HalfAddr,
-	#[inspectable(collapse, length = PENTAGON_SIDE_COUNT)]
+	#[inspectable(collapse, length = usize::PENTAGON_VERTEX_COUNT)]
 	desired_pent_rot_sums:	InspectableBitArray<u8, 1_usize>,
-	#[inspectable(collapse, length = TRIANGLE_SIDE_COUNT)]
+	#[inspectable(collapse, length = usize::TRIANGLE_VERTEX_COUNT)]
 	desired_tri_rot_sums:	InspectableBitArray<u8, 1_usize>
 }
 
@@ -72,7 +73,7 @@ impl Inspectable for PuzzleState {
 				ui.collapsing("Stats", |ui: &mut Ui| -> () {
 					changed |= self.stats_options.ui(ui, (), context);
 
-					egui::Grid::new("StatsTable").show(ui, |ui: &mut Ui| -> () {
+					Grid::new("StatsTable").show(ui, |ui: &mut Ui| -> () {
 						let InflatedPuzzleState {
 							pos,
 							rot
@@ -86,8 +87,8 @@ impl Inspectable for PuzzleState {
 						let mut correct_tri_pos_count:	u32 = 0_u32;
 						let mut correct_pent_rot_count:	u32 = 0_u32;
 						let mut correct_tri_rot_count:	u32 = 0_u32;
-						let mut pent_rot_sum:			InflatedPieceStateComponent = ZERO_IPSC;
-						let mut tri_rot_sum:			InflatedPieceStateComponent = ZERO_IPSC;
+						let mut pent_rot_sum:			PSC = ZERO_IPSC;
+						let mut tri_rot_sum:			PSC = ZERO_IPSC;
 
 						for pent_index in PENTAGON_PIECE_RANGE {
 							correct_pent_pos_count += (pos[pent_index] as usize == pent_index) as u32;
@@ -95,7 +96,7 @@ impl Inspectable for PuzzleState {
 							pent_rot_sum += rot[pent_index];
 						}
 
-						pent_rot_sum %= PENTAGON_SIDE_COUNT_IPSC;
+						pent_rot_sum %= PSC::PENTAGON_VERTEX_COUNT;
 
 						for tri_index in TRIANGLE_PIECE_RANGE {
 							correct_tri_pos_count += (pos[tri_index] as usize == tri_index) as u32;
@@ -103,7 +104,7 @@ impl Inspectable for PuzzleState {
 							tri_rot_sum += rot[tri_index];
 						}
 
-						tri_rot_sum %= TRIANGLE_SIDE_COUNT_IPSC;
+						tri_rot_sum %= PSC::TRIANGLE_VERTEX_COUNT;
 
 						let desired_pent_rot_sum: bool = self
 							.stats_options
@@ -119,7 +120,7 @@ impl Inspectable for PuzzleState {
 
 						macro_rules! colored_label {
 							($count:expr, $max:ident) => {
-								let count: InflatedPieceStateComponent = $count;
+								let count: PSC = $count;
 
 								ui.colored_label(
 									Color32::from_alt(red_to_green(count as f32 / $max)),
@@ -205,7 +206,7 @@ impl Inspectable for Stack {
 				.changed();
 		});
 		ui.collapsing("Focus Indices", |ui: &mut Ui| -> () {
-			egui::Grid::new(context.id())
+			Grid::new(context.id())
 				.min_col_width(0.0_f32)
 				.show(ui, |ui: &mut Ui| -> () {
 					ui.label("Min");

@@ -67,7 +67,8 @@ pub const DODECAHEDRON: Properties = Properties {
 			PHI as f32,
 			0.0,
 			ONE_OVER_PHI as f32
-		]), const_vec3!([
+		]),
+		const_vec3!([
 			1.0,
 			1.0,
 			1.0
@@ -90,7 +91,8 @@ pub const ICOSIDODECAHEDRON: Properties = Properties {
 			PHI as f32,
 			0.0,
 			0.0
-		]), const_vec3!([
+		]),
+		const_vec3!([
 			(0.5 * PHI * PHI) as f32,
 			0.5,
 			(0.5 * PHI) as f32

@@ -7,12 +7,12 @@ use {
 		}
 	},
 	bevy_inspector_egui::{
-		egui::{
-			self,
-			Ui
-		},
 		Context,
 		Inspectable
+	},
+	egui::{
+		Grid,
+		Ui
 	},
 	serde::{
 		de::{
@@ -152,7 +152,7 @@ impl From<Color> for ColAndMat {
 impl Inspectable for ColAndMat {
 	type Attributes = <Color as Inspectable>::Attributes;
 
-	fn ui(&mut self, ui: &mut egui::Ui, options: Self::Attributes, context: &mut Context) -> bool {
+	fn ui(&mut self, ui: &mut Ui, options: Self::Attributes, context: &mut Context) -> bool {
 		self.col.ui(ui, options, context)
 	}
 }
@@ -203,7 +203,7 @@ impl Inspectable for ColorDataWithMat {
 		let mut changed: bool = false;
 
 		ui.vertical_centered(|ui: &mut Ui| -> () {
-			egui::Grid::new(context.id()).show(ui, |ui: &mut Ui| -> () {
+			Grid::new(context.id()).show(ui, |ui: &mut Ui| -> () {
 				ui.label("polyhedron_to_colors");
 
 				let mut inspectable_bin_map: InspectableBinMapMut<(Polyhedron, Vec<ColAndMat>)> =

@@ -13,7 +13,10 @@ use {
 			BufWriter,
 			Write as IoWrite
 		},
-		mem::transmute,
+		mem::{
+			ManuallyDrop,
+			transmute
+		},
 		path::Path,
 		str,
 		sync::Once,
@@ -33,7 +36,7 @@ use {
 		BitArray,
 		BitField
 	},
-	egui::color::Color32,
+	egui::{Color32},
 	::log::Level,
 	memmap::Mmap,
 	num_format::{
@@ -65,6 +68,7 @@ pub mod prelude {
 		ToFile,
 		ToOption,
 		ToResult,
+		WithLengthAndCapacity,
 		debug_break,
 		red_to_green,
 		to_pretty_string,
@@ -627,6 +631,27 @@ impl<T> AsBitString for [T]
 	}
 }
 
+// Trait from https://stackoverflow.com/questions/45634083/is-there-a-concept-of-pod-types-in-rust
+define_super_trait!(pub trait Pod: 'static, Copy, Send, Sized, Sync);
+
+pub trait WithLengthAndCapacity {
+	fn with_length_and_capacity(length: usize, capacity: usize) -> Self;
+}
+
+impl<T: Pod> WithLengthAndCapacity for Vec<T> {
+	fn with_length_and_capacity(length: usize, capacity: usize) -> Self {
+		let mut vec_with_capacity: ManuallyDrop<Vec<T>> = ManuallyDrop::new(Vec::<T>::with_capacity(capacity));
+		let (ptr, capacity): (*mut T, usize) = (vec_with_capacity.as_mut_ptr(), vec_with_capacity.capacity());
+
+		/* Safe because:
+			* ManuallyDrop guarantees vec_with_capacity's allocated memory won't be freed when it goes out of scope
+			* Pod guarantees there's no harm in incorrectly assuming allocated objects are initialized (other than the
+				fact that they'll contain garbage values, but that's a programmer error)
+			* capacity is the actual allocated capacity */
+		unsafe { Vec::<T>::from_raw_parts(ptr, length.min(capacity), capacity) }
+	}
+}
+
 #[cfg(debug_assertions)]
 pub fn debug_break() -> (){
 	unsafe { core::intrinsics::breakpoint(); }
@@ -711,11 +736,17 @@ macro_rules! define_struct_with_default {
 
 #[macro_export]
 macro_rules! define_super_trait {
+	($vis:vis trait $super_trait:ident : 'static, $sub_trait:path $(, $other_sub_trait:path)*) => {
+		$vis trait $super_trait: 'static + $sub_trait $(+ $other_sub_trait)* {}
+
+		impl<T: 'static + $sub_trait $(+ $other_sub_trait)*> $super_trait for T {}
+	};
+
 	($vis:vis trait $super_trait:ident : $sub_trait:path $(, $other_sub_trait:path)*) => {
 		$vis trait $super_trait: $sub_trait $(+ $other_sub_trait)* {}
 
 		impl<T: $sub_trait $(+ $other_sub_trait)*> $super_trait for T {}
-	}
+	};
 }
 
 /// Returns a copy of an immutable reference that is no longer tracked by the borrow checker

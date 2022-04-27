@@ -8,7 +8,7 @@ use {
 		Context,
 		Inspectable
 	},
-	egui::Ui,
+	egui::{Ui},
 	num_traits::{
 		Bounded,
 		One

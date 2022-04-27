@@ -97,22 +97,36 @@ pub mod consts {
 		std::ops::Range
 	};
 
+	pub trait PolygonVertexCounts: Sized{
+		const PENTAGON_VERTEX_COUNT: Self;
+		const TRIANGLE_VERTEX_COUNT: Self;
+	}
+
+	impl PolygonVertexCounts for usize {
+		const PENTAGON_VERTEX_COUNT: Self = Type::Pentagon.vertex_count();
+		const TRIANGLE_VERTEX_COUNT: Self = Type::Pentagon.vertex_count();
+	}
+
+	impl PolygonVertexCounts for f32 {
+		const PENTAGON_VERTEX_COUNT: Self = Type::Pentagon.vertex_count() as Self;
+		const TRIANGLE_VERTEX_COUNT: Self = Type::Pentagon.vertex_count() as Self;
+	}
+
+	impl PolygonVertexCounts for IPSC {
+		const PENTAGON_VERTEX_COUNT: Self = Type::Pentagon.vertex_count() as Self;
+		const TRIANGLE_VERTEX_COUNT: Self = Type::Pentagon.vertex_count() as Self;
+	}
+
 	pub const PENTAGON_PIECE_COUNT:			usize			= Type::Pentagon.instance_count();				// 12
 	pub const TRIANGLE_PIECE_COUNT:			usize			= Type::Triangle.instance_count();				// 20
 	pub const PIECE_COUNT:					usize			= PENTAGON_PIECE_COUNT + TRIANGLE_PIECE_COUNT;	// 32
-	pub const PENTAGON_SIDE_COUNT:			usize			= Type::Pentagon.side_count();					// 5
-	pub const TRIANGLE_SIDE_COUNT:			usize			= Type::Triangle.side_count();					// 3
 	pub const PENTAGON_INDEX_OFFSET:		usize			= Type::Pentagon.index_offset();				// 0
 	pub const TRIANGLE_INDEX_OFFSET:		usize			= Type::Triangle.index_offset();				// 12
-	pub const ROTATION_BIT_COUNT:			u32				= usize::BITS - max!(PENTAGON_SIDE_COUNT, TRIANGLE_SIDE_COUNT).leading_zeros(); // 3
+	pub const ROTATION_BIT_COUNT:			u32				= usize::BITS - max!(usize::PENTAGON_VERTEX_COUNT, usize::TRIANGLE_VERTEX_COUNT).leading_zeros(); // 3
 	pub const ROTATION_BIT_MASK:			IPSC			= ((1 as IPSC) << ROTATION_BIT_COUNT) - 1;		// 0b111
 	pub const PENTAGON_PIECE_COUNT_F32:		f32				= PENTAGON_PIECE_COUNT as f32;
 	pub const TRIANGLE_PIECE_COUNT_F32:		f32				= TRIANGLE_PIECE_COUNT as f32;
-	pub const PIECE_COUNT_F32:				f32				= PENTAGON_PIECE_COUNT_F32 + TRIANGLE_SIDE_COUNT_F32;
-	pub const PENTAGON_SIDE_COUNT_F32:		f32				= PENTAGON_SIDE_COUNT as f32;
-	pub const TRIANGLE_SIDE_COUNT_F32:		f32				= TRIANGLE_SIDE_COUNT as f32;
-	pub const PENTAGON_SIDE_COUNT_IPSC:		IPSC			= PENTAGON_SIDE_COUNT as IPSC;
-	pub const TRIANGLE_SIDE_COUNT_IPSC:		IPSC			= TRIANGLE_SIDE_COUNT as IPSC;
+	pub const PIECE_COUNT_F32:				f32				= PENTAGON_PIECE_COUNT_F32 + TRIANGLE_PIECE_COUNT_F32;
 	pub const ZERO_IPSC:					IPSC			= 0 as IPSC;
 	pub const PENTAGON_PIECE_RANGE:			Range<usize>	= PENTAGON_INDEX_OFFSET .. PENTAGON_INDEX_OFFSET + PENTAGON_PIECE_COUNT;
 	pub const TRIANGLE_PIECE_RANGE:			Range<usize>	= TRIANGLE_INDEX_OFFSET .. TRIANGLE_INDEX_OFFSET + TRIANGLE_PIECE_COUNT;
@@ -180,11 +194,17 @@ pub mod deflated {
 			let mut puzzle_state: PuzzleState = PuzzleState::default();
 
 			for pent_index in PENTAGON_PIECE_RANGE {
-				puzzle_state.pieces[pent_index] = ((thread_rng.gen::<f32>() * PENTAGON_PIECE_COUNT_F32) as PieceState) << ROTATION_BIT_COUNT | (thread_rng.gen::<f32>() * PENTAGON_SIDE_COUNT_F32) as PieceState;
+				puzzle_state.pieces[pent_index] = ((thread_rng.gen::<f32>() * PENTAGON_PIECE_COUNT_F32) as PieceState)
+					<< ROTATION_BIT_COUNT
+					| (thread_rng.gen::<f32>() * f32::PENTAGON_VERTEX_COUNT)
+					as PieceState;
 			}
 
 			for tri_index in TRIANGLE_PIECE_RANGE {
-				puzzle_state.pieces[tri_index] = ((thread_rng.gen::<f32>() * TRIANGLE_PIECE_COUNT_F32) as PieceState) << ROTATION_BIT_COUNT | (thread_rng.gen::<f32>() * TRIANGLE_SIDE_COUNT_F32) as PieceState;
+				puzzle_state.pieces[tri_index] = ((thread_rng.gen::<f32>() * TRIANGLE_PIECE_COUNT_F32) as PieceState)
+					<< ROTATION_BIT_COUNT
+					| (thread_rng.gen::<f32>() * f32::TRIANGLE_VERTEX_COUNT)
+					as PieceState;
 			}
 
 			puzzle_state
@@ -225,6 +245,8 @@ pub mod inflated {
 
 	macro_rules! puzzle_state_add {
 		($src_state:ident, $transformation:ident, $dest_state:ident) => {
+			use PieceStateComponent as PSC;
+
 			// let transformation_pos: &PuzzleStateComponent = &$transformation.pos;
 			// let transformation_rot: &PuzzleStateComponent = &$transformation.rot;
 			let (transformation_pos, transformation_rot) = $transformation.arrays();
@@ -234,10 +256,10 @@ pub mod inflated {
 
 				$dest_state.pos[pent_index] = transformation_pos[curr_pos];
 				$dest_state.rot[pent_index] = {
-					let rot_sum: PieceStateComponent = $src_state.rot[pent_index] + transformation_rot[curr_pos];
+					let rot_sum: PSC = $src_state.rot[pent_index] + transformation_rot[curr_pos];
 
-					if rot_sum >= PENTAGON_SIDE_COUNT_IPSC {
-						rot_sum - PENTAGON_SIDE_COUNT_IPSC
+					if rot_sum >= PSC::PENTAGON_VERTEX_COUNT {
+						rot_sum - PSC::PENTAGON_VERTEX_COUNT
 					} else {
 						rot_sum
 					}
@@ -251,8 +273,8 @@ pub mod inflated {
 				$dest_state.rot[tri_index] = {
 					let rot_sum: PieceStateComponent = $src_state.rot[tri_index] + transformation_rot[curr_pos];
 
-					if rot_sum >= TRIANGLE_SIDE_COUNT_IPSC {
-						rot_sum - TRIANGLE_SIDE_COUNT_IPSC
+					if rot_sum >= PSC::TRIANGLE_VERTEX_COUNT {
+						rot_sum - PSC::TRIANGLE_VERTEX_COUNT
 					} else {
 						rot_sum
 					}
@@ -328,15 +350,18 @@ pub mod inflated {
 		}
 
 		pub fn is_valid(&self) -> bool {
-			const_assert!(PIECE_COUNT <= u32::BITS as usize);
+			use PieceStateComponent as PSC;
+			const_assert!(PIECE_COUNT <= PSC::BITS as usize);
 
 			let mut present_positions:	u32 = 0_u32;
-			let mut tri_rot_sum:		PieceStateComponent = 0 as PieceStateComponent;
+			let mut tri_rot_sum:		PSC = 0 as PSC;
 
 			for pent_index in PENTAGON_PIECE_RANGE {
-				let pos: PieceStateComponent = self.pos[pent_index];
+				let pos: PSC = self.pos[pent_index];
 
-				if !PENTAGON_PIECE_RANGE.contains(&(pos as usize)) || self.rot[pent_index] >= PENTAGON_SIDE_COUNT_IPSC {
+				if !PENTAGON_PIECE_RANGE.contains(&(pos as usize))
+					|| self.rot[pent_index] >= PSC::PENTAGON_VERTEX_COUNT
+				{
 					return false;
 				}
 
@@ -346,7 +371,9 @@ pub mod inflated {
 			for tri_index in TRIANGLE_PIECE_RANGE {
 				let pos: PieceStateComponent = self.pos[tri_index];
 
-				if !TRIANGLE_PIECE_RANGE.contains(&(pos as usize)) || self.rot[tri_index] >= TRIANGLE_SIDE_COUNT_IPSC {
+				if !TRIANGLE_PIECE_RANGE.contains(&(pos as usize))
+					|| self.rot[tri_index] >= PSC::TRIANGLE_VERTEX_COUNT
+				{
 					return false;
 				}
 
@@ -354,7 +381,7 @@ pub mod inflated {
 				tri_rot_sum += self.rot[tri_index];
 			}
 
-			present_positions == u32::MAX && tri_rot_sum % TRIANGLE_SIDE_COUNT_IPSC == 0
+			present_positions == u32::MAX && tri_rot_sum % PSC::TRIANGLE_VERTEX_COUNT == 0
 		}
 
 		pub fn naive_add(&self, transformation: &Transformation) -> Self {
@@ -509,16 +536,18 @@ pub mod inflated {
 
 	impl From<&mut ThreadRng> for PuzzleState {
 		fn from(thread_rng: &mut ThreadRng) -> Self {
+			use PieceStateComponent as PSC;
+
 			let mut puzzle_state: PuzzleState = PuzzleState::default();
 
 			for pent_index in PENTAGON_PIECE_RANGE {
-				puzzle_state.pos[pent_index] = (thread_rng.gen::<f32>() * PENTAGON_PIECE_COUNT_F32) as PieceStateComponent;
-				puzzle_state.rot[pent_index] = (thread_rng.gen::<f32>() * PENTAGON_SIDE_COUNT_F32) as PieceStateComponent;
+				puzzle_state.pos[pent_index] = (thread_rng.gen::<f32>() * PENTAGON_PIECE_COUNT_F32) as PSC;
+				puzzle_state.rot[pent_index] = (thread_rng.gen::<f32>() * f32::PENTAGON_VERTEX_COUNT) as PSC;
 			}
 
 			for tri_index in TRIANGLE_PIECE_RANGE {
-				puzzle_state.pos[tri_index] = (thread_rng.gen::<f32>() * TRIANGLE_PIECE_COUNT_F32) as PieceStateComponent;
-				puzzle_state.rot[tri_index] = (thread_rng.gen::<f32>() * TRIANGLE_SIDE_COUNT_F32) as PieceStateComponent;
+				puzzle_state.pos[tri_index] = (thread_rng.gen::<f32>() * TRIANGLE_PIECE_COUNT_F32) as PSC;
+				puzzle_state.rot[tri_index] = (thread_rng.gen::<f32>() * f32::TRIANGLE_VERTEX_COUNT) as PSC;
 			}
 
 			puzzle_state
@@ -542,16 +571,18 @@ pub mod inflated {
 
 		#[must_use]
 		fn sub(self, prev_state: &'b PuzzleState) -> Self::Output {
+			use PieceStateComponent as PSC;
+
 			let mut transformation: Transformation = Transformation::default();
 			let (pos_array, rot_array): (&mut PuzzleStateComponent, &mut PuzzleStateComponent) = transformation.arrays_mut();
 
 			for pent_index in PENTAGON_PIECE_RANGE {
 				pos_array[prev_state.pos[pent_index] as usize] = self.pos[pent_index];
 				rot_array[prev_state.pos[pent_index] as usize] = {
-					let rot_sum: PieceStateComponent = PENTAGON_SIDE_COUNT_IPSC + self.rot[pent_index] - prev_state.rot[pent_index];
+					let rot_sum: PSC = PSC::PENTAGON_VERTEX_COUNT + self.rot[pent_index] - prev_state.rot[pent_index];
 
-					if rot_sum >= PENTAGON_SIDE_COUNT_IPSC {
-						rot_sum - PENTAGON_SIDE_COUNT_IPSC
+					if rot_sum >= PSC::PENTAGON_VERTEX_COUNT {
+						rot_sum - PSC::PENTAGON_VERTEX_COUNT
 					} else {
 						rot_sum
 					}
@@ -561,10 +592,10 @@ pub mod inflated {
 			for tri_index in TRIANGLE_PIECE_RANGE {
 				pos_array[prev_state.pos[tri_index] as usize] = self.pos[tri_index];
 				rot_array[prev_state.pos[tri_index] as usize] = {
-					let rot_sum: PieceStateComponent = TRIANGLE_SIDE_COUNT_IPSC + self.rot[tri_index] - prev_state.rot[tri_index];
+					let rot_sum: PSC = PSC::TRIANGLE_VERTEX_COUNT + self.rot[tri_index] - prev_state.rot[tri_index];
 
-					if rot_sum >= TRIANGLE_SIDE_COUNT_IPSC {
-						rot_sum - TRIANGLE_SIDE_COUNT_IPSC
+					if rot_sum >= PSC::TRIANGLE_VERTEX_COUNT {
+						rot_sum - PSC::TRIANGLE_VERTEX_COUNT
 					} else {
 						rot_sum
 					}
@@ -1035,7 +1066,7 @@ mod tests {
 
 		for piece_index in PIECE_RANGE {
 			let piece_index_dps: DPS = piece_index as DPS;
-			let rot: DPS = piece_index_dps % Type::from_index(piece_index).unwrap().side_count() as DPS;
+			let rot: DPS = piece_index_dps % Type::from_index(piece_index).unwrap().vertex_count() as DPS;
 
 			deflated_puzzle_state.pieces[piece_index] = piece_index_dps << ROTATION_BIT_COUNT | rot;
 			inflated_puzzle_state.pos[piece_index] = piece_index_dps as IPSC;
@@ -1085,7 +1116,7 @@ mod tests {
 		let mut puzzle_state:									InflatedPuzzleState			= InflatedPuzzleState::SOLVED_STATE;
 
 		for _ in 0_usize .. ITERATION_COUNT {
-			puzzle_state += &simples[thread_rng.gen_range(PENTAGON_PIECE_RANGE)][thread_rng.gen_range(1_usize .. PENTAGON_SIDE_COUNT)];
+			puzzle_state += &simples[thread_rng.gen_range(PENTAGON_PIECE_RANGE)][thread_rng.gen_range(1_usize .. PENTAGON_VERTEX_COUNT)];
 
 			let mut correct_pos_pent_piece_count:			u32 = 0_u32;
 			let mut correct_pos_tri_piece_count:			u32 = 0_u32;
@@ -1122,8 +1153,8 @@ mod tests {
 			correct_rot_tri_piece_count_counts			[correct_rot_tri_piece_count			as usize]	+= 1;
 			correct_pos_and_rot_pent_piece_count_counts	[correct_pos_and_rot_pent_piece_count	as usize]	+= 1;
 			correct_pos_and_rot_tri_piece_count_counts	[correct_pos_and_rot_tri_piece_count	as usize]	+= 1;
-			all_pent_rot_sums_mod_5_are_zero																&= pent_rot_sum	% PENTAGON_SIDE_COUNT as u32 == 0_u32;
-			all_tri_rot_sums_mod_3_are_zero																	&= tri_rot_sum	% TRIANGLE_SIDE_COUNT as u32 == 0_u32;
+			all_pent_rot_sums_mod_5_are_zero																&= pent_rot_sum	% PENTAGON_VERTEX_COUNT as u32 == 0_u32;
+			all_tri_rot_sums_mod_3_are_zero																	&= tri_rot_sum	% TRIANGLE_VERTEX_COUNT as u32 == 0_u32;
 		}
 
 		trace_expr!(

@@ -31,11 +31,19 @@ use {
 		Inspectable
 	},
 	egui::{
-		self,
+		Align2,
+		Area,
+		CentralPanel,
 		Color32,
 		Context as EguiContext,
+		Grid,
+		ScrollArea,
+		Stroke,
+		Style,
+		TopBottomPanel,
 		Ui,
-		Vec2
+		Vec2,
+		Window as EguiWindow
 	},
 	crate::{
 		app::prelude::*,
@@ -94,9 +102,9 @@ impl UIPlugin {
 	}
 
 	fn render_menu(context: &mut Context) -> () {
-		egui::TopBottomPanel::top("Menu").show(context.ui_ctx.unwrap(), |ui: &mut Ui| -> () {
+		TopBottomPanel::top("Menu").show(context.ui_ctx.unwrap(), |ui: &mut Ui| -> () {
 			egui::menu::bar(ui, |ui: &mut Ui| -> () {
-				ui.menu_button("File", |ui: &mut egui::Ui| -> () {
+				ui.menu_button("File", |ui: &mut Ui| -> () {
 					ui.group(|ui: &mut Ui| -> () {
 						let world: &mut World = unsafe { context.world_mut() }.unwrap();
 						let mut close_menu: bool = false;
@@ -319,8 +327,8 @@ impl UIPlugin {
 		let input_state: &InputState = warn_expect_some!(world.get_resource::<InputState>(), return);
 		let preferences: &Preferences = warn_expect_some!(world.get_resource::<Preferences>(), return);
 
-		egui::Area::new("InputState")
-			.anchor(egui::Align2::LEFT_BOTTOM, INPUT_STATE_OFFSET)
+		Area::new("InputState")
+			.anchor(Align2::LEFT_BOTTOM, INPUT_STATE_OFFSET)
 			.show(context.ui_ctx.unwrap(), |ui: &mut Ui| -> () {
 				use GenusIndexType as GIT;
 
@@ -343,14 +351,14 @@ impl UIPlugin {
 					}
 				}
 
-				egui::Grid::new("ModifierTable").show(ui, |ui: &mut Ui| -> () {
+				Grid::new("ModifierTable").show(ui, |ui: &mut Ui| -> () {
 					let input: &InputData = &preferences.input;
 
 					ui.end_row();
 
 					macro_rules! modifier_row {
 						($toggle:ident, $action:ident, $modifier_name:expr) => {
-							let text_stroke: &mut egui::Stroke = &mut ui.visuals_mut().widgets.noninteractive.fg_stroke;
+							let text_stroke: &mut Stroke = &mut ui.visuals_mut().widgets.noninteractive.fg_stroke;
 
 							if toggles.$toggle {
 								text_stroke.color = Color32::WHITE;
@@ -369,7 +377,7 @@ impl UIPlugin {
 					modifier_row!(enable_modifiers,		EnableModifiers,	"Enable Modifiers");
 					modifier_row!(rotate_twice,			RotateTwice,		"Rotate Twice");
 					modifier_row!(counter_clockwise,	CounterClockwise,	"Counter Clockwise");
-					modifier_row!(alt_hemi,				AltHemi,			"Alt. Hemi.");
+					modifier_row!(alt_hemi,				AltHemi,			"Alternate Hemisphere");
 					modifier_row!(disable_recentering,	DisableRecentering,	"Disable Recentering");
 				});
 			});
@@ -385,17 +393,17 @@ impl UIPlugin {
 		);
 		let max_height: f32 = context.ui_ctx.unwrap().available_rect().height() - 2.0_f32 * OFFSET;
 
-		egui::Area::new("ActionStack")
-			.anchor(egui::Align2::RIGHT_BOTTOM, ACTION_STACK_OFFSET)
+		Area::new("ActionStack")
+			.anchor(Align2::RIGHT_BOTTOM, ACTION_STACK_OFFSET)
 			.show(context.ui_ctx.unwrap(), |ui: &mut Ui| -> () {
-				egui::ScrollArea::vertical()
+				ScrollArea::vertical()
 					.max_height(max_height)
 					// This isn't reliable, but if it was, it'd be better than always_show_scroll()
 					// .min_scrolled_height(max_height)
-					.always_show_scroll(true)
+					.always_show_scroll(!extended_puzzle_state.actions.is_empty())
 					.stick_to_bottom()
 					.show(ui, |ui: &mut Ui| -> () {
-						egui::Grid::new("ActionStackGrid")
+						Grid::new("ActionStackGrid")
 							.min_col_width(0.0_f32)
 							.spacing(ui.spacing().item_spacing * Vec2::Y)
 							.show(ui, |ui: &mut Ui| -> () {
@@ -526,8 +534,8 @@ impl UIPlugin {
 		}
 
 		let egui_context: &EguiContext = context.ui_ctx.unwrap();
-		let prev_style: egui::Style = (*egui_context.style()).clone();
-		let mut curr_style: egui::Style = prev_style.clone();
+		let prev_style: Style = (*egui_context.style()).clone();
+		let mut curr_style: Style = prev_style.clone();
 
 		macro_rules! style {
 			($($color_type:ident, $color32_func:path =>
@@ -589,8 +597,8 @@ impl UIPlugin {
 		curr_style.visuals.window_shadow = epaint::Shadow::default();
 		curr_style.wrap = Some(false);
 		egui_context.set_style(curr_style);
-		egui::Window::new("Tools")
-			.anchor(egui::Align2::LEFT_TOP, TOOLS_OFFSET)
+		EguiWindow::new("Tools")
+			.anchor(Align2::LEFT_TOP, TOOLS_OFFSET)
 			.title_bar(false)
 			.show(egui_context, |ui: &mut Ui| -> () {
 				preferences.tools.render(ui, context);
@@ -617,9 +625,9 @@ impl UIPlugin {
 
 		world.resource_scope(|world: &mut World, mut view: Mut<View>| -> () {
 			if let View::Preferences(preferences) = &mut (*view) {
-				egui::CentralPanel::default()
-					.show(egui_context, |ui: &mut egui::Ui| -> () {
-						egui::ScrollArea::vertical().show(ui, |ui: &mut Ui| -> () {
+				CentralPanel::default()
+					.show(egui_context, |ui: &mut Ui| -> () {
+						ScrollArea::vertical().show(ui, |ui: &mut Ui| -> () {
 							preferences.ui(ui, (), &mut context.with_id(0_u64));
 							ui.horizontal(|ui: &mut Ui| -> () {
 								if ui.button("Reset").clicked() {

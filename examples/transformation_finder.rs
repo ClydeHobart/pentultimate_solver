@@ -13,6 +13,7 @@ use pentultimate_solver::{
 			GenusIndexBitArray,
 			Library
 		},
+		InflatedPieceStateComponent as PSC,
 		InflatedPuzzleState
 	},
 	util::StaticDataLibrary
@@ -67,7 +68,7 @@ fn is_end_state(inflated_puzzle_state: &InflatedPuzzleState) -> bool {
 
 	(rot_sum[0_usize] + rot_sum[1_usize] + rot_sum[2_usize] + rot_sum[3_usize]
 		+ rot_sum[4_usize] + rot_sum[5_usize] + rot_sum[6_usize] + rot_sum[7_usize]
-	) % PENTAGON_SIDE_COUNT_IPSC as u32 != 0_u32
+	) % PSC::PENTAGON_VERTEX_COUNT as u32 != 0_u32
 }
 
 #[cfg(not(all(target_arch = "x86_64", target_feature = "avx2")))]
@@ -88,7 +89,7 @@ fn is_end_state(inflated_puzzle_state: &InflatedPuzzleState) -> bool {
 		pent_rots += rot[pentagon_index] as u32;
 	}
 
-	pent_rots % PENTAGON_SIDE_COUNT as u32 != 0_u32
+	pent_rots % PENTAGON_VERTEX_COUNT as u32 != 0_u32
 }
 
 fn main() -> () {

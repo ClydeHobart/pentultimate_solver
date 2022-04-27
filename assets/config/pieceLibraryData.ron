@@ -1,6 +1,6 @@
 (
-	default_design: Dodecahedron1,
+	default_design: CustomSuperDodecahedron,
 	designs: [
-		Dodecahedron1
+		CustomSuperDodecahedron
 	]
 )

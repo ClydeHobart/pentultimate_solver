@@ -1,3 +1,4 @@
+#[allow(unused_imports)]
 use {
 	std::sync::{
 		Arc,
@@ -11,6 +12,7 @@ use {
 	egui::{
 		style::Spacing,
 		Button,
+		CentralPanel,
 		Color32,
 		ComboBox,
 		Grid,
@@ -34,7 +36,7 @@ static mut DEBUG_STATE: DebugState = DebugState {
 fn run(mut egui_context: ResMut<EguiContext>) -> () {
 	let debug_state: &mut DebugState = unsafe { &mut DEBUG_STATE };
 
-	egui::CentralPanel::default().show(egui_context.ctx_mut(), |ui: &mut Ui| -> () {
+	CentralPanel::default().show(egui_context.ctx_mut(), |ui: &mut Ui| -> () {
 		const MIN_COL_WIDTH_SCALE: f32 = 2.0_f32;
 		let col_width: f32 = ui.spacing().interact_size.x * MIN_COL_WIDTH_SCALE;
 		Grid::new(0_u64)
@@ -75,7 +77,7 @@ fn run(mut egui_context: ResMut<EguiContext>) -> () {
 								// ui.centered_and_justified(|ui: &mut Ui| -> () {
 									if ui.add_sized(
 										ui.spacing().interact_size
-											* egui::Vec2::new(MIN_COL_WIDTH_SCALE, 1.0_f32),
+											* Vec2::new(MIN_COL_WIDTH_SCALE, 1.0_f32),
 										Button::new(format!("{}{}", s, STRS[modifier]))
 									).clicked() {
 										debug_state.error_message = !debug_state.error_message;
