@@ -104,17 +104,17 @@ pub mod consts {
 
 	impl PolygonVertexCounts for usize {
 		const PENTAGON_VERTEX_COUNT: Self = Type::Pentagon.vertex_count();
-		const TRIANGLE_VERTEX_COUNT: Self = Type::Pentagon.vertex_count();
+		const TRIANGLE_VERTEX_COUNT: Self = Type::Triangle.vertex_count();
 	}
 
 	impl PolygonVertexCounts for f32 {
 		const PENTAGON_VERTEX_COUNT: Self = Type::Pentagon.vertex_count() as Self;
-		const TRIANGLE_VERTEX_COUNT: Self = Type::Pentagon.vertex_count() as Self;
+		const TRIANGLE_VERTEX_COUNT: Self = Type::Triangle.vertex_count() as Self;
 	}
 
 	impl PolygonVertexCounts for IPSC {
 		const PENTAGON_VERTEX_COUNT: Self = Type::Pentagon.vertex_count() as Self;
-		const TRIANGLE_VERTEX_COUNT: Self = Type::Pentagon.vertex_count() as Self;
+		const TRIANGLE_VERTEX_COUNT: Self = Type::Triangle.vertex_count() as Self;
 	}
 
 	pub const PENTAGON_PIECE_COUNT:			usize			= Type::Pentagon.instance_count();				// 12

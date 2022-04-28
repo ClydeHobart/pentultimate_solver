@@ -513,42 +513,42 @@ impl Library {
 
 	#[inline(always)]
 	pub fn get_transformation(full_addr: FullAddr) -> &'static Transformation {
-	break_assert!(full_addr.is_valid());
+		break_assert!(full_addr.is_valid());
 
 		Library::get().transformations.get_word(full_addr)
 	}
 
 	#[inline(always)]
 	pub fn get_full_mask(full_addr: FullAddr) -> &'static FullMask {
-	break_assert!(full_addr.is_valid());
+		break_assert!(full_addr.is_valid());
 
 		Library::get().full_masks.get_word(full_addr)
 	}
 
 	#[inline(always)]
 	pub fn get_inverse_addr(full_addr: FullAddr) -> &'static FullAddr {
-	break_assert!(full_addr.is_valid());
+		break_assert!(full_addr.is_valid());
 
 		Library::get().inverse_addrs.get_word(full_addr)
 	}
 
 	#[inline(always)]
 	pub fn get_rotation(full_addr: FullAddr) -> &'static Quat {
-	break_assert!(full_addr.is_valid() && full_addr.get_genus_index() < Self::GENERA_PER_SMALL_CLASS);
+		break_assert!(full_addr.is_valid() && full_addr.get_genus_index() < Self::GENERA_PER_SMALL_CLASS);
 
 		Library::get().rotations.get_word(full_addr)
 	}
 
 	#[inline(always)]
 	pub fn get_orientation(half_addr: HalfAddr) -> &'static Quat {
-	break_assert!(half_addr.is_valid());
+		break_assert!(half_addr.is_valid());
 
 		Library::get().orientations.get_word(half_addr)
 	}
 
 	#[inline(always)]
 	pub fn get_simple_slice(full_addr: FullAddr) -> &'static [HalfAddr] {
-	break_assert!(full_addr.is_valid());
+		break_assert!(full_addr.is_valid());
 
 		get_simple_slice(&Library::get(), full_addr)
 	}
@@ -560,25 +560,25 @@ impl Library {
 	pub fn get_family_count() -> usize { Library::get().family_infos.len() }
 
 	pub fn get_family_index(genus_index: GenusIndex) -> usize {
-	break_assert!(genus_index.is_valid());
+		break_assert!(genus_index.is_valid());
 
 		Self::get().get_genus_info(genus_index).family_index as usize
 	}
 
 	pub fn get_base_genus_index(family_index: usize) -> GenusIndex {
-	break_assert!(family_index < Self::get_family_count());
+		break_assert!(family_index < Self::get_family_count());
 
 		Self::get().family_infos[family_index].base_genus
 	}
 
 	pub fn get_family_genus_count(family_index: usize) -> GenusIndexType {
-	break_assert!(family_index < Self::get_family_count());
+		break_assert!(family_index < Self::get_family_count());
 
 		Self::get().family_infos[family_index].get_genus_count() as GenusIndexType
 	}
 
 	pub fn get_family_genus_range(family_index: usize) -> Range<GenusIndexType> {
-	break_assert!(family_index < Self::get_family_count());
+		break_assert!(family_index < Self::get_family_count());
 
 		let genus_range: Range<usize> = Self::get().family_infos[family_index].get_genus_range();
 

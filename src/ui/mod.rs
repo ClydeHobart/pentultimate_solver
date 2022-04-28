@@ -424,11 +424,6 @@ impl UIPlugin {
 									let transformation:				FullAddr = action.transformation - camera_half_addr;
 									let transformation_half_addr:	HalfAddr = *transformation.get_half_addr();
 
-									cond_break!(
-										!transformation_half_addr.species_index_is_valid()
-											|| !transformation_half_addr.organism_index_is_valid()
-									);
-
 									ui.visuals_mut().widgets.noninteractive.fg_stroke.color =
 										if action_index + 1_usize == extended_puzzle_state.curr_action {
 											Color32::WHITE
