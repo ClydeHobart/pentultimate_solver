@@ -1055,6 +1055,6 @@ mod tests {
 	#[test]
 	fn test_data() -> () {
 		init_env_logger();
-		assert!(Data::validate_polyhedra().is_ok());
+	break_assert!(Data::validate_polyhedra().is_ok());
 	}
 }

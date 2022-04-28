@@ -4,6 +4,7 @@ pub use {
 	crate::{
 		strings::STRING_DATA,
 		util::prelude::*,
+		break_assert,
 		cond_break,
 		define_struct_with_default,
 		define_super_trait,

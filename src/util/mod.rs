@@ -669,6 +669,38 @@ macro_rules! cond_break {
 	}
 }
 
+#[cfg(not(debug_assertions))]
+#[macro_export]
+macro_rules! cond_break { ($cond:expr) => {} }
+
+#[macro_export]
+macro_rules! break_assert {
+	($cond:expr $(, $($arg:tt)*)?) => {
+		{
+			{
+				#[cfg(debug_assertions)]
+				cond_break!(!($cond));
+			}
+
+			assert!($cond $(, $($arg)*)?);
+		}
+	}
+}
+
+#[macro_export]
+macro_rules! debug_break_assert {
+	($cond:expr $(, $($arg:tt)*)?) => {
+		{
+			{
+				#[cfg(debug_assertions)]
+				cond_break!(!($cond));
+			}
+
+			assert!($cond $(, $($arg)*)?);
+		}
+	}
+}
+
 #[macro_export]
 macro_rules! ignore {
 	($tt:tt) => {};
@@ -788,7 +820,7 @@ mod tests {
 	fn to_result() -> () {
 		macro_rules! test_some {
 			($e:expr, $t:ty) => {
-				assert!({
+				break_assert!({
 					let result: LogErrorResult<$t> = Some($e).to_result();
 		
 					result.is_ok() && result.unwrap() == $e
@@ -800,7 +832,7 @@ mod tests {
 		test_some!("foo",		&str);
 		test_some!(15.0_f32,	f32);
 
-		assert!({
+		break_assert!({
 			let result: LogErrorResult = None.to_result();
 
 			result.is_err() && result.unwrap_err().debug == "Option was none"
@@ -810,7 +842,7 @@ mod tests {
 	fn to_option_test_ok() {
 		macro_rules! test_ok {
 			($expr:expr, $t:ty, $e:ty) => {
-				assert!({
+				break_assert!({
 					let option: Option<$t> = Result::<$t, $e>::Ok($expr).to_option();
 
 					option.is_some() && option.unwrap() == $expr
@@ -825,7 +857,7 @@ mod tests {
 
 	macro_rules! test_err {
 		($expr:expr, $t:ty, $e:ty) => {
-			assert!({
+			break_assert!({
 				println!("\n******** BEGIN EXPECT ********\n{:#?}\n******** END EXPECT ********\n******** BEGIN ERROR ********", $expr);
 
 				let option: Option<$t> = Result::<$t, $e>::Err($expr).to_option();
@@ -846,7 +878,7 @@ mod tests {
 	#[cfg(feature = "specialization")]
 	macro_rules! test_log_error {
 		($expr:expr, $t:ty) => {
-			assert!({
+			break_assert!({
 				println!("\n******** BEGIN EXPECT ********");
 
 				$expr.log();
@@ -1006,7 +1038,7 @@ mod tests {
 					let file_path_str: &str = file_path.as_path().to_str().unwrap();
 					let serialization_result: Result<(), Box<dyn StdError>> = map.to_file(file_path_str);
 
-					assert!(
+					break_assert!(
 						serialization_result.is_ok(),
 						"Serializing {} yielded error: {:#?}",
 						file_path_str,
@@ -1016,7 +1048,7 @@ mod tests {
 					let deserialization_result: Result<HashMap<String, Enum>, Box<dyn StdError>> =
 						HashMap::<String, Enum>::from_file(file_path_str);
 
-					assert!(
+					break_assert!(
 						deserialization_result.is_ok(),
 						"Deserializing {} yielded error: {:#?}",
 						file_path_str,

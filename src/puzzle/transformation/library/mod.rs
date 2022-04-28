@@ -34,10 +34,7 @@ use {
 		Context,
 		Inspectable
 	},
-	bit_field::{
-		BitArray,
-		BitField
-	},
+	bitvec::prelude::*,
 	egui::{Ui},
 	serde::{
 		Deserialize,
@@ -65,8 +62,8 @@ use {
 		},
 		util::{
 			inspectable_bit_array::{
-				InspectableBitArrayAttrs,
-				InspectableBitArrayWrapper
+				InspectableBitSliceAttrs,
+				InspectableBitSlice
 			},
 			StaticDataLibrary
 		}
@@ -179,44 +176,57 @@ impl TryFrom<GenusIndexType> for GenusIndex {
 	}
 }
 
-pub type GenusIndexBitArrayBlock = u32;
+#[derive(Clone, PartialEq)]
+pub struct GenusIndexBitArray<T: BitStore = u32>(BitVec<T>);
 
-#[derive(Clone, Default, PartialEq)]
-pub struct GenusIndexBitArray(pub [GenusIndexBitArrayBlock; Self::SIZE]);
+impl<T: BitStore> GenusIndexBitArray<T> {
+	pub fn all() -> Self {
+		let mut genus_index_bit_array: Self = Self::default();
 
-impl GenusIndexBitArray {
-	pub const ALL:	Self	= GenusIndexBitArray([GenusIndexBitArrayBlock::MAX; Self::SIZE]);
-	pub const NONE:	Self	= GenusIndexBitArray([GenusIndexBitArrayBlock::MIN; Self::SIZE]);
-	pub const SIZE:	usize	= Self::size();
+		genus_index_bit_array.0.fill(true);
+
+		genus_index_bit_array
+	}
+
+	pub fn none() -> Self {
+		let mut genus_index_bit_array: Self = Self(BitVec::<T>::default());
+
+		genus_index_bit_array.refresh();
+
+		genus_index_bit_array
+	}
 
 	#[inline(always)]
-	pub fn get_bit<G: Into<usize>>(&self, genus_index: G) -> bool { self.0.get_bit(genus_index.into()) }
+	pub fn get_bit<G: Into<usize>>(&self, genus_index: G) -> bool { self.0[genus_index.into()] }
 
 	#[inline(always)]
 	pub fn set_bit<G: Into<usize> + Sized>(&mut self, genus_index: G, enabled: bool) -> () {
-		self.0.set_bit(genus_index.into(), enabled)
+		self.0.set(genus_index.into(), enabled);
 	}
 
-	pub fn iter(&self) -> GenusIndexBitArrayIter { GenusIndexBitArrayIter {
+	pub fn iter(&self) -> GenusIndexBitArrayIter<T> { GenusIndexBitArrayIter::<T> {
 		genus_index_bit_array: self,
-		current_index: 0_usize,
-		current_block: self.0[0_usize]
+		current_index: 0_usize
 	} }
 
-	const fn size() -> usize {
-		(1_usize << GenusIndexType::BITS) / GenusIndexBitArrayBlock::BITS as usize
+	pub fn refresh(&mut self) -> () {
+		self.0.resize(Library::get_genus_count(), false);
 	}
 }
 
-impl Debug for GenusIndexBitArray {
+impl<T: BitStore> Debug for GenusIndexBitArray<T> {
 	fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
 		formatter.debug_list().entries(self.iter()).finish()
 	}
 }
 
-impl<G: Copy + TryInto<GenusIndex>> From<&[G]> for GenusIndexBitArray {
+impl<T: BitStore> Default for GenusIndexBitArray<T> {
+	fn default() -> Self { Self::none() }
+}
+
+impl<T: BitStore, G: Copy + TryInto<GenusIndex>> From<&[G]> for GenusIndexBitArray<T> {
 	fn from(genus_indices: &[G]) -> Self {
-		let mut genus_index_bit_array: Self = Self::NONE;
+		let mut genus_index_bit_array: Self = Self::none();
 
 		for genus_index in genus_indices {
 			if let Ok(genus_index) = TryInto::<GenusIndex>::try_into(*genus_index) {
@@ -230,7 +240,7 @@ impl<G: Copy + TryInto<GenusIndex>> From<&[G]> for GenusIndexBitArray {
 	}
 }
 
-impl<'de> Deserialize<'de> for GenusIndexBitArray {
+impl<'de, T: BitStore> Deserialize<'de> for GenusIndexBitArray<T> {
 	fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
 		Ok(Vec::<GenusIndexString>::deserialize(deserializer)?
 			.into_iter()
@@ -241,7 +251,7 @@ impl<'de> Deserialize<'de> for GenusIndexBitArray {
 	}
 }
 
-impl Serialize for GenusIndexBitArray {
+impl<T: BitStore> Serialize for GenusIndexBitArray<T> {
 	fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
 		self
 			.iter()
@@ -251,19 +261,19 @@ impl Serialize for GenusIndexBitArray {
 	}
 }
 
-impl Inspectable for GenusIndexBitArray {
+impl<T: BitStore> Inspectable for GenusIndexBitArray<T> {
 	type Attributes = ();
 
 	fn ui(&mut self, ui: &mut Ui, _: (), context: &mut Context) -> bool {
+		self.refresh();
+
 		let mut inspectable_bit_array_wrapper:
-			InspectableBitArrayWrapper<
-				GenusIndexBitArrayBlock,
-				{ GenusIndexBitArray::SIZE }
-			> = InspectableBitArrayWrapper(&mut self.0);
+			InspectableBitSlice<T, Lsb0> = InspectableBitSlice::<T, Lsb0>(&mut self.0);
+
 		inspectable_bit_array_wrapper.ui(
 			ui,
-			InspectableBitArrayAttrs {
-				length: Some(Library::get_genus_count()),
+			InspectableBitSliceAttrs {
+				length: None,
 				fetch_label: Some(Rc::new(|genus_index: usize| -> String {
 					if let Ok(genus_index) =
 						if let Ok(bit_index_genus_index_type) = GenusIndexType::try_from(genus_index) {
@@ -283,49 +293,26 @@ impl Inspectable for GenusIndexBitArray {
 	}
 }
 
-/* With GenusIndexType as a u8, size_of::<GenusIndexBitArray>() == 32_usize. This is acceptable. With GenusIndexType as
-a u16, or some other integer type of greater or equal size, size_of::<GenusIndexBitArray>() >= 8192_usize. This is
-unacceptable. If there's a need to increase the bit count of GenusIndexType to be greater than 8, GenusIndexBitArray
-should be modified to be a dynamically allocated bit vector. */
-assert_type_eq_all!(GenusIndexType, u8);
-
-pub struct GenusIndexBitArrayIter<'a> {
-	genus_index_bit_array: &'a GenusIndexBitArray,
+pub struct GenusIndexBitArrayIter<'a, T: BitStore> {
+	genus_index_bit_array: &'a GenusIndexBitArray<T>,
 	current_index: usize,
-	current_block: GenusIndexBitArrayBlock
 }
 
-impl<'a> Iterator for GenusIndexBitArrayIter<'a> {
+impl<'a, T: BitStore> Iterator for GenusIndexBitArrayIter<'a, T> {
 	type Item = GenusIndex;
 
 	fn next(&mut self) -> Option<GenusIndex> {
-		type Block = GenusIndexBitArrayBlock;
+		self.current_index += self.genus_index_bit_array.0[self.current_index ..].leading_zeros();
 
-		let block_count: usize = self.genus_index_bit_array.0.len();
+		if self.current_index < self.genus_index_bit_array.0.len() {
+			let next: Option<GenusIndex> = Some(GenusIndex::from_usize(self.current_index));
 
-		while self.current_index < block_count {
-			let bit_index: usize = self.current_block.trailing_zeros() as usize;
+			self.current_index += 1_usize;
 
-			if bit_index < Block::BITS as usize {
-				self.current_block.set_bit(bit_index, false);
-
-				let genus_index: usize = self.current_index * Block::BITS as usize + bit_index;
-
-				return if genus_index < Library::get_genus_count() {
-					Some(GenusIndex::from_usize(genus_index))
-				} else {
-					None
-				};
-			} else {
-				self.current_index += 1_usize;
-
-				if self.current_index < block_count {
-					self.current_block = self.genus_index_bit_array.0[self.current_index];
-				}
-			}
+			next
+		} else {
+			None
 		}
-
-		None
 	}
 }
 
@@ -447,13 +434,14 @@ impl TryFrom<&str> for GenusRange {
 
 impl From<GenusRange> for GenusIndexBitArray {
 	fn from(genus_range: GenusRange) -> Self {
-		let genus_count: GenusIndexType = Library::get_genus_count() as GenusIndexType;
+		let genus_count: usize = Library::get_genus_count();
 
-		let mut genus_index_bit_array: Self = Self::NONE;
+		let mut genus_index_bit_array: Self = Self::none();
 
-		for genus_index_type in genus_range.0.start.min(genus_count) .. genus_range.0.end.min(genus_count) {
-			genus_index_bit_array.set_bit(genus_index_type, true);
-		}
+		genus_index_bit_array
+			.0
+			[(genus_range.0.start as usize).min(genus_count) .. (genus_range.0.end as usize).min(genus_count)]
+			.fill(true);
 
 		genus_index_bit_array
 	}
@@ -525,42 +513,42 @@ impl Library {
 
 	#[inline(always)]
 	pub fn get_transformation(full_addr: FullAddr) -> &'static Transformation {
-		debug_assert!(full_addr.is_valid());
+	break_assert!(full_addr.is_valid());
 
 		Library::get().transformations.get_word(full_addr)
 	}
 
 	#[inline(always)]
 	pub fn get_full_mask(full_addr: FullAddr) -> &'static FullMask {
-		debug_assert!(full_addr.is_valid());
+	break_assert!(full_addr.is_valid());
 
 		Library::get().full_masks.get_word(full_addr)
 	}
 
 	#[inline(always)]
 	pub fn get_inverse_addr(full_addr: FullAddr) -> &'static FullAddr {
-		debug_assert!(full_addr.is_valid());
+	break_assert!(full_addr.is_valid());
 
 		Library::get().inverse_addrs.get_word(full_addr)
 	}
 
 	#[inline(always)]
 	pub fn get_rotation(full_addr: FullAddr) -> &'static Quat {
-		debug_assert!(full_addr.is_valid() && full_addr.get_genus_index() < Self::GENERA_PER_SMALL_CLASS);
+	break_assert!(full_addr.is_valid() && full_addr.get_genus_index() < Self::GENERA_PER_SMALL_CLASS);
 
 		Library::get().rotations.get_word(full_addr)
 	}
 
 	#[inline(always)]
 	pub fn get_orientation(half_addr: HalfAddr) -> &'static Quat {
-		debug_assert!(half_addr.is_valid());
+	break_assert!(half_addr.is_valid());
 
 		Library::get().orientations.get_word(half_addr)
 	}
 
 	#[inline(always)]
 	pub fn get_simple_slice(full_addr: FullAddr) -> &'static [HalfAddr] {
-		debug_assert!(full_addr.is_valid());
+	break_assert!(full_addr.is_valid());
 
 		get_simple_slice(&Library::get(), full_addr)
 	}
@@ -572,25 +560,25 @@ impl Library {
 	pub fn get_family_count() -> usize { Library::get().family_infos.len() }
 
 	pub fn get_family_index(genus_index: GenusIndex) -> usize {
-		assert!(genus_index.is_valid());
+	break_assert!(genus_index.is_valid());
 
 		Self::get().get_genus_info(genus_index).family_index as usize
 	}
 
 	pub fn get_base_genus_index(family_index: usize) -> GenusIndex {
-		assert!(family_index < Self::get_family_count());
+	break_assert!(family_index < Self::get_family_count());
 
 		Self::get().family_infos[family_index].base_genus
 	}
 
 	pub fn get_family_genus_count(family_index: usize) -> GenusIndexType {
-		assert!(family_index < Self::get_family_count());
+	break_assert!(family_index < Self::get_family_count());
 
 		Self::get().family_infos[family_index].get_genus_count() as GenusIndexType
 	}
 
 	pub fn get_family_genus_range(family_index: usize) -> Range<GenusIndexType> {
-		assert!(family_index < Self::get_family_count());
+	break_assert!(family_index < Self::get_family_count());
 
 		let genus_range: Range<usize> = Self::get().family_infos[family_index].get_genus_range();
 

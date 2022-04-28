@@ -99,7 +99,8 @@ fn main() -> () {
 	let mut explorer: Explorer = Explorer::new(ExplorerParams {
 		is_end_state: Box::new(is_end_state) as IsEndState,
 		candidate_genera: GenusIndexBitArray::try_from([GenusIndex::SIMPLE].as_slice())
-			.unwrap_or(GenusIndexBitArray::NONE),
+			.ok()
+			.unwrap_or_else(GenusIndexBitArray::none),
 		.. ExplorerParams::default()
 	});
 

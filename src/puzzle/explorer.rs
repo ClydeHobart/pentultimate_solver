@@ -58,16 +58,9 @@ impl Default for ExplorerParams<'static> {
 		start_state:		&Explorer::START_STATE,
 		should_explore:		Explorer::SHOULD_EXPLORE,
 		is_end_state:		Explorer::default_is_end_state(),
-		candidate_genera:	Explorer::CANDIDATE_GENERA,
+		candidate_genera:	Explorer::default_candidate_genera(),
 		max_depth:			Explorer::MAX_DEPTH
 	} }
-}
-
-trait ExplorerConsts {
-	const START_STATE:		InflatedPuzzleState;
-	const SHOULD_EXPLORE:	Option<ShouldExplore>;
-	const CANDIDATE_GENERA:	GenusIndexBitArray;
-	const MAX_DEPTH:		u8;
 }
 
 #[derive(Default)]
@@ -93,6 +86,10 @@ pub struct Explorer {
 }
 
 impl Explorer {
+	const START_STATE:		InflatedPuzzleState		= InflatedPuzzleState::SOLVED_STATE;
+	const SHOULD_EXPLORE:	Option<ShouldExplore>	= None;
+	const MAX_DEPTH:		u8						= 0_u8;
+
 	#[inline]
 	pub fn init(&mut self, params: ExplorerParams) -> () { *self = Self::new(params); }
 
@@ -351,14 +348,9 @@ impl Explorer {
 
 	pub fn run_result(&self) -> &RunResult { &self.run_result }
 
-	fn default_is_end_state() -> IsEndState { Box::new(|_: &InflatedPuzzleState| -> bool { true }) }
-}
+	fn default_candidate_genera() -> GenusIndexBitArray { GenusIndexBitArray::all() }
 
-impl ExplorerConsts for Explorer {
-	const START_STATE:		InflatedPuzzleState		= InflatedPuzzleState::SOLVED_STATE;
-	const SHOULD_EXPLORE:	Option<ShouldExplore>	= None;
-	const CANDIDATE_GENERA:	GenusIndexBitArray		= GenusIndexBitArray::ALL;
-	const MAX_DEPTH:		u8						= 0_u8;
+	fn default_is_end_state() -> IsEndState { Box::new(|_: &InflatedPuzzleState| -> bool { true }) }
 }
 
 impl Default for Explorer {
@@ -370,7 +362,7 @@ impl Default for Explorer {
 		is_end_state:		Self::default_is_end_state(),
 		stats:				Stats::default(),
 		run_result:			RunResult::Pending,
-		candidate_genera:	Self::CANDIDATE_GENERA,
+		candidate_genera:	Self::default_candidate_genera(),
 		depth:				0_u8,
 		max_depth:			Self::MAX_DEPTH
 	} }

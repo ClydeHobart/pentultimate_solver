@@ -6,7 +6,6 @@ use {
 		Context,
 		Inspectable
 	},
-	bit_field::BitArray,
 	egui::{
 		Button,
 		Color32,
@@ -45,9 +44,9 @@ use {
 pub struct StatsOptions {
 	reorientation:			HalfAddr,
 	#[inspectable(collapse, length = usize::PENTAGON_VERTEX_COUNT)]
-	desired_pent_rot_sums:	InspectableBitArray<u8, 1_usize>,
+	desired_pent_rot_sums:	InspectableBitArray<u8>,
 	#[inspectable(collapse, length = usize::TRIANGLE_VERTEX_COUNT)]
-	desired_tri_rot_sums:	InspectableBitArray<u8, 1_usize>
+	desired_tri_rot_sums:	InspectableBitArray<u8>
 }
 
 #[derive(Clone, Default, PartialEq)]
@@ -110,12 +109,12 @@ impl Inspectable for PuzzleState {
 							.stats_options
 							.desired_pent_rot_sums
 							.0
-							.get_bit(pent_rot_sum as usize);
+							[pent_rot_sum as usize];
 						let desired_tri_rot_sum: bool = self
 							.stats_options
 							.desired_tri_rot_sums
 							.0
-							.get_bit(tri_rot_sum as usize);
+							[tri_rot_sum as usize];
 						let desired_rot_sum: bool = desired_pent_rot_sum && desired_tri_rot_sum;
 
 						macro_rules! colored_label {

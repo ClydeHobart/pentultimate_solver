@@ -39,7 +39,7 @@ use {
 		time::Duration
 	},
 	bevy::prelude::*,
-	bit_field::BitField,
+	bitvec::prelude::*,
 	bevy_inspector_egui::{
 		options::NumberAttributes,
 		Context,
@@ -242,7 +242,7 @@ impl HalfAddr {
 	}
 
 	const INVALID:				u8				= u8::MAX;
-	const SPECIES_INDEX_BITS:	Range<usize>	= 3_usize .. u8::BIT_LENGTH;
+	const SPECIES_INDEX_BITS:	Range<usize>	= 3_usize .. u8::BITS as usize;
 	const ORGANISM_INDEX_BITS:	Range<usize>	= 0_usize .. 3_usize;
 	const ORGANISM_INDEX_MASK:	u8				= (1_u8 << HalfAddr::ORGANISM_INDEX_BITS.end) - 1_u8;
 
@@ -292,7 +292,7 @@ impl AddAssign<FullAddr> for HalfAddr { fn add_assign(&mut self, rhs: FullAddr) 
 
 impl Addr for HalfAddr {
 	fn get_species_index(&self) -> usize {
-		assert!(self.is_valid() && self.species_index_is_valid());
+		break_assert!(self.is_valid() && self.species_index_is_valid());
 
 		// Safe: checked above
 		unsafe { self.get_species_index_unchecked() }
@@ -301,22 +301,22 @@ impl Addr for HalfAddr {
 	fn get_species_large_index(&self) -> usize {
 		const_assert!(Library::SPECIES_PER_LARGE_GENUS
 			<= 1_usize << (HalfAddr::SPECIES_INDEX_BITS.end - HalfAddr::SPECIES_INDEX_BITS.start));
-		assert!(self.is_valid());
+		break_assert!(self.is_valid());
 
 		// Safe: checked above (const_assert! shows the species large index is always valid)
 		unsafe { self.get_species_index_unchecked() }
 	}
 
 	fn get_organism_index(&self) -> usize {
-		assert!(self.is_valid());
+		break_assert!(self.is_valid());
 
 		// Safe: checked above
 		unsafe { self.get_organism_index_unchecked() }
 	}
 
 	fn set_species_index(&mut self, species_index: usize) -> &mut Self {
-		assert!(Self::is_valid_species_index(species_index));
-		self.0.set_bits(Self::SPECIES_INDEX_BITS, species_index as u8);
+		break_assert!(Self::is_valid_species_index(species_index));
+		self.0.view_bits_mut::<Lsb0>()[Self::SPECIES_INDEX_BITS].store(species_index as u8);
 
 		self
 	}
@@ -324,15 +324,15 @@ impl Addr for HalfAddr {
 	fn set_species_large_index(&mut self, species_large_index: usize) -> &mut Self {
 		// This assert is unnecessary, since the call to set_bits() would panic if this weren't the case, but it makes
 		// the issue more clear
-		assert!(Self::is_valid_species_large_index(species_large_index));
-		self.0.set_bits(Self::SPECIES_INDEX_BITS, species_large_index as u8);
+		break_assert!(Self::is_valid_species_large_index(species_large_index));
+		self.0.view_bits_mut::<Lsb0>()[Self::SPECIES_INDEX_BITS].store(species_large_index as u8);
 
 		self
 	}
 
 	fn set_organism_index(&mut self, organism_index: usize) -> &mut Self {
-		assert!(Self::is_valid_organism_index(organism_index));
-		self.0.set_bits(Self::ORGANISM_INDEX_BITS, organism_index as u8);
+		break_assert!(Self::is_valid_organism_index(organism_index));
+		self.0.view_bits_mut::<Lsb0>()[Self::ORGANISM_INDEX_BITS].store(organism_index as u8);
 
 		self
 	}
@@ -697,7 +697,7 @@ impl AddAssign<HalfAddr> for FullAddr { fn add_assign(&mut self, rhs: HalfAddr) 
 
 impl Addr for FullAddr {
 	fn get_genus_index(&self) -> usize {
-		assert!(self.genus_index_is_valid());
+		break_assert!(self.genus_index_is_valid());
 
 		self.genus_index.into()
 	}

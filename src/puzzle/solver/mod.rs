@@ -17,7 +17,7 @@ use {
 		}
 	},
 	bevy::prelude::*,
-	bit_field::BitField,
+	bitvec::prelude::*,
 	egui::{
 		Color32,
 		Grid,
@@ -140,7 +140,8 @@ impl SolverData {
 						.binary_search(dot_product)
 						.unwrap()
 				]
-				.set_bit(piece_index, true);
+				.view_bits_mut::<Lsb0>()
+				.set(piece_index, true);
 		}
 
 		solver_data.completed_half_masks = solver_data.focus_half_masks;
@@ -351,9 +352,9 @@ impl FullMaskAndCompletion {
 							for (bit, bit_char) in half_mask_string.chars().enumerate() {
 								ui.label(RichText::new(bit_char).monospace().color(
 									if focus {
-										if focus_tier_half_mask.get_bit(bit) {
+										if focus_tier_half_mask.view_bits::<Lsb0>()[bit] {
 											strong
-										} else if completed_tier_half_mask.get_bit(bit) {
+										} else if completed_tier_half_mask.view_bits::<Lsb0>()[bit] {
 											normal
 										} else {
 											weak
@@ -1017,7 +1018,7 @@ mod tests {
 				},
 				SolverState::Solving(stateful_solve_stage) => {
 					if SolveStage::from(stateful_solve_stage) == solve_stage {
-						assert!(solve_cycles == 0_u32);
+					break_assert!(solve_cycles == 0_u32);
 						panic!("Couldn't solve {:?} after 1 minute of solve time on iteration {}\n\
 							SolverState: {:#?}\n\
 							SolverStats: {:#?}",

@@ -1053,8 +1053,8 @@ mod tests {
 		let deflated_puzzle_state: DeflatedPuzzleState = DeflatedPuzzleState::default();
 		let inflated_puzzle_state: InflatedPuzzleState = InflatedPuzzleState::default();
 
-		assert!(test_conversion(&deflated_puzzle_state, &inflated_puzzle_state));
-		assert!(test_conversion(&inflated_puzzle_state, &deflated_puzzle_state));
+	break_assert!(test_conversion(&deflated_puzzle_state, &inflated_puzzle_state));
+	break_assert!(test_conversion(&inflated_puzzle_state, &deflated_puzzle_state));
 	}
 
 	#[test]
@@ -1073,8 +1073,8 @@ mod tests {
 			inflated_puzzle_state.rot[piece_index] = rot as IPSC;
 		}
 
-		assert!(test_conversion(&deflated_puzzle_state, &inflated_puzzle_state));
-		assert!(test_conversion(&inflated_puzzle_state, &deflated_puzzle_state));
+	break_assert!(test_conversion(&deflated_puzzle_state, &inflated_puzzle_state));
+	break_assert!(test_conversion(&inflated_puzzle_state, &deflated_puzzle_state));
 	}
 
 	#[test]
@@ -1086,8 +1086,8 @@ mod tests {
 		let mut thread_rng: ThreadRng = rand::thread_rng();
 
 		for _ in 0_u32 .. RANDOM_TEST_COUNT {
-			assert!(test_conversion_bidir::<DeflatedPuzzleState, InflatedPuzzleState>(&DeflatedPuzzleState::from(&mut thread_rng)));
-			assert!(test_conversion_bidir::<InflatedPuzzleState, DeflatedPuzzleState>(&InflatedPuzzleState::from(&mut thread_rng)));
+		break_assert!(test_conversion_bidir::<DeflatedPuzzleState, InflatedPuzzleState>(&DeflatedPuzzleState::from(&mut thread_rng)));
+		break_assert!(test_conversion_bidir::<InflatedPuzzleState, DeflatedPuzzleState>(&InflatedPuzzleState::from(&mut thread_rng)));
 		}
 	}
 

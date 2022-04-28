@@ -30,9 +30,9 @@ mod uses {
 			Context,
 			Inspectable
 		},
-		bit_field::{
-			BitArray,
-			BitField
+		bitvec::{
+			array::BitArray,
+			BitArr
 		},
 		egui::{
 			widgets::Separator,
@@ -223,29 +223,22 @@ impl TryFrom<usize> for Tool {
 	}
 }
 
-type ToolsInner = u32;
+type ToolsBitArray = BitArr!(for TOOL_COUNT, in u32);
 
 #[derive(Clone, Default)]
 pub struct ToolsData {
-	active_tools:		ToolsInner,
+	active_tools:		ToolsBitArray,
 	tool_data_boxes:	Vec<ToolDataBox>
 }
-
-const_assert!(TOOL_COUNT <= ToolsInner::BITS as usize);
 
 impl ToolsData {
 	pub fn should_render(&self) -> bool { !self.tool_data_boxes.is_empty() }
 
-	pub fn is_tool_active(&self, tool: Tool) -> bool {
-		self.active_tools.get_bit(tool as usize)
-	}
+	pub fn is_tool_active(&self, tool: Tool) -> bool { self.active_tools[tool as usize] }
 
 	pub fn get_tool_data(&self, tool: Tool) -> Option<&ToolDataBox> {
 		if self.is_tool_active(tool) {
-			Some(&self.tool_data_boxes[
-				(self.active_tools & ((ToolsInner::one() << tool as u32) - ToolsInner::one()))
-					.count_ones() as usize
-			])
+			Some(&self.tool_data_boxes[self.active_tools[0_usize .. tool as usize].count_ones()])
 		} else {
 			None
 		}
@@ -282,11 +275,11 @@ impl<'de> Deserialize<'de> for ToolsData {
 		let mut tools: Self = <Self as Default>::default();
 
 		for tool in Vec::<Tool>::deserialize(deserializer)? {
-			tools.active_tools.set_bit(tool as usize, true);
+			tools.active_tools.set(tool as usize, true);
 		}
 
 		for tool_index in 0_usize .. TOOL_COUNT {
-			if tools.active_tools.get_bit(tool_index) {
+			if tools.active_tools[tool_index] {
 				tools.tool_data_boxes.push(Tool::try_from(tool_index).unwrap().new_data());
 			}
 		}
@@ -304,10 +297,10 @@ impl Inspectable for ToolsData {
 
 		for tool_index in 0_usize .. TOOL_COUNT {
 			let tool: Tool = Tool::try_from(tool_index).unwrap();
-			let mut tool_bool: bool = self.active_tools.get_bit(tool_index);
+			let mut tool_bool: bool = self.active_tools[tool_index];
 
 			if ui.checkbox(&mut tool_bool, tool.as_str()).changed() {
-				self.active_tools.set_bit(tool_index, tool_bool);
+				self.active_tools.set(tool_index, tool_bool);
 
 				if tool_bool {
 					self

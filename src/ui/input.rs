@@ -278,7 +278,7 @@ impl Modifier {
 #[test]
 fn verify_sorted_key_codes() -> () {
 	for key_code_index in 1_usize .. Modifier::KEY_CODES.len() {
-		assert!(Modifier::KEY_CODES[key_code_index - 1_usize] < Modifier::KEY_CODES[key_code_index]);
+	break_assert!(Modifier::KEY_CODES[key_code_index - 1_usize] < Modifier::KEY_CODES[key_code_index]);
 	}
 }
 
@@ -326,7 +326,7 @@ impl KeyPress {
 
 	#[inline]
 	fn get_key_code(self) -> KeyCode {
-		assert!(self.is_valid());
+	break_assert!(self.is_valid());
 
 		((self.0 & Self::KEY_CODE_MASK) as u32).into_key_code()
 	}
@@ -654,7 +654,7 @@ key_presses!(
 
 impl KeyPressAction {
 	fn from_usize(action: usize) -> Self {
-		assert!(action < KEY_PRESS_ACTION_COUNT);
+	break_assert!(action < KEY_PRESS_ACTION_COUNT);
 
 		unsafe { transmute::<u8, Self>(action as u8) }
 	}
