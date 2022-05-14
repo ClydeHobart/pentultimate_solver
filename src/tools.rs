@@ -48,9 +48,10 @@ mod uses {
 			Deserializer
 		},
 		crate::{
+			preferences::Update,
 			prelude::*,
+			piece::consts::*,
 			puzzle::{
-				consts::*,
 				transformation::{
 					Action,
 					HalfAddr,

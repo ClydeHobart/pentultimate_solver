@@ -65,19 +65,17 @@ use {
 			},
 			Polyhedron
 		},
+		piece::consts::*,
 		preferences::AnimationSpeedData,
 		prelude::*,
 		ui::input::PuzzleActionType,
 		util::StaticDataLibrary
 	},
-	super::{
-		consts::*,
-		inflated::{
-			PieceStateComponent,
-			MutPosAndRot,
-			PosAndRot,
-			PuzzleState
-		}
+	super::inflated::{
+		PieceStateComponent,
+		MutPosAndRot,
+		PosAndRot,
+		PuzzleState
 	}
 };
 
@@ -85,7 +83,7 @@ pub mod library;
 
 pub type HalfMask = u32;
 
-const_assert!(PIECE_COUNT <= HalfMask::BITS as usize);
+const_assert!(usize::PIECE_COUNT <= HalfMask::BITS as usize);
 
 #[derive(Clone, Copy, Default)]
 pub struct FullMask {
@@ -113,7 +111,7 @@ impl FullMask {
 	}
 
 	fn from_pentagon_index(pentagon_index: usize) -> Self {
-		if pentagon_index >= PENTAGON_PIECE_COUNT {
+		if pentagon_index >= usize::PENTAGON_PIECE_COUNT {
 			log::warn!(
 				"HemisphereMask::new({}) was called, but {} is an invalid pentagon index",
 				pentagon_index,
@@ -128,7 +126,7 @@ impl FullMask {
 
 			let mut half_mask:	HalfMask		= HalfMask::default();
 
-			for pent_index in 0_usize .. PIECE_COUNT {
+			for pent_index in 0_usize .. usize::PIECE_COUNT {
 				half_mask |= ((faces[pent_index].norm.dot(face_normal) > 0.0_f32) as HalfMask) << pent_index;
 			}
 

@@ -1,7 +1,7 @@
 use pentultimate_solver::{
+	piece::consts::*,
 	prelude::*,
 	puzzle::{
-		consts::*,
 		explorer::{
 			Explorer,
 			ExplorerParams,

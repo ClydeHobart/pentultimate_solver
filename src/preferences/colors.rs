@@ -227,22 +227,24 @@ impl Inspectable for ColorDataWithMat {
 }
 
 impl Update for ColorDataWithMat {
-	fn update(&self, world: &mut World) -> () {
-		let mut mat_assets: Mut<Assets<StandardMaterial>> = warn_expect_some!(
-			world.get_resource_mut::<Assets<StandardMaterial>>(),
-			return
-		);
-
-		for (_, col_and_mats) in &self.polyhedron_to_colors {
-			for col_and_mat in col_and_mats {
-				if let Some(mat) = mat_assets.get_mut(&col_and_mat.mat) {
-					mat.base_color = col_and_mat.col.0;
+	fn update(&self, other: &Self, world: &mut World, _: &Preferences) -> () {
+		if self != other {
+			let mut mat_assets: Mut<Assets<StandardMaterial>> = warn_expect_some!(
+				world.get_resource_mut::<Assets<StandardMaterial>>(),
+				return
+			);
+	
+			for (_, col_and_mats) in &self.polyhedron_to_colors {
+				for col_and_mat in col_and_mats {
+					if let Some(mat) = mat_assets.get_mut(&col_and_mat.mat) {
+						mat.base_color = col_and_mat.col.0;
+					}
 				}
 			}
-		}
-
-		if let Some(base_mat) = mat_assets.get_mut(&self.base_color.mat) {
-			base_mat.base_color = self.base_color.col.0;
+	
+			if let Some(base_mat) = mat_assets.get_mut(&self.base_color.mat) {
+				base_mat.base_color = self.base_color.col.0;
+			}
 		}
 	}
 }
@@ -260,21 +262,16 @@ impl ColorData {
 		mut preferences: ResMut<Preferences>,
 		mut materials: ResMut<Assets<StandardMaterial>>
 	) -> () {
-		let colors_with_mat: &mut ColorDataWithMat = &mut preferences.color.colors_with_mat;
+		let colors_with_mat: &mut ColorDataWithMat = &mut preferences.puzzle.color.colors_with_mat;
+		let materials: &mut Assets<StandardMaterial> = &mut *materials;
 
 		for (_, col_and_hdls) in &mut colors_with_mat.polyhedron_to_colors {
 			for col_and_hdl in col_and_hdls {
-				col_and_hdl.set_hdl(&mut *materials);
+				col_and_hdl.set_hdl(materials);
 			}
 		}
 
-		colors_with_mat.base_color.set_hdl(&mut *materials);
-	}
-}
-
-impl Update for ColorData {
-	fn update(&self, world: &mut World) -> () {
-		self.colors_with_mat.update(world);
+		colors_with_mat.base_color.set_hdl(materials);
 	}
 }
 
@@ -283,6 +280,10 @@ pub struct ColorsPlugin;
 impl Plugin for ColorsPlugin {
 	fn build(&self, app: &mut App) -> () {
 		app
-			.add_startup_system(ColorData::startup_app.system().label(STRING_DATA.labels.color_data_startup.as_ref()));
+			.add_startup_system(ColorData::startup_app
+				.system()
+				.label(STRING_DATA.labels.color_data_startup.as_ref())
+				.after(STRING_DATA.labels.ui_startup.as_ref())
+			);
 	}
 }

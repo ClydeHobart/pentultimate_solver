@@ -3,7 +3,8 @@ pub use {
 	bevy::math::{
 		*,
 		prelude::*
-	}
+	},
+	bitvec::prelude::*
 };
 
 pub mod polyhedra;
@@ -87,25 +88,6 @@ pub const fn const_sqrt_f64(square: f64) -> f64 {
 	root
 }
 
-pub trait ExtendVec4 : Sized {
-	fn from_xyz(xyz: &Vec3) -> Self { Self::from_xyz_w(xyz, 0.0f32) }
-	fn from_xyw(xyw: &Vec3) -> Self { Self::from_xyw_z(xyw, 0.0f32) }
-	fn from_xzw(xzw: &Vec3) -> Self { Self::from_xzw_y(xzw, 0.0f32) }
-	fn from_yzw(yzw: &Vec3) -> Self { Self::from_yzw_x(yzw, 0.0f32) }
-
-	fn from_xyz_w(xyz: &Vec3, w: f32) -> Self;
-	fn from_xyw_z(xyw: &Vec3, z: f32) -> Self;
-	fn from_xzw_y(xzw: &Vec3, y: f32) -> Self;
-	fn from_yzw_x(yzw: &Vec3, x: f32) -> Self;
-}
-
-impl ExtendVec4 for Vec4 {
-	fn from_xyz_w(xyz: &Vec3, w: f32) -> Self { Self::new(xyz[0], xyz[1], xyz[2], w) }
-	fn from_xyw_z(xyw: &Vec3, z: f32) -> Self { Self::new(xyw[0], xyw[1], z, xyw[2]) }
-	fn from_xzw_y(xzw: &Vec3, y: f32) -> Self { Self::new(xzw[0], y, xzw[1], xzw[2]) }
-	fn from_yzw_x(yzw: &Vec3, x: f32) -> Self { Self::new(x, yzw[0], yzw[1], yzw[2]) }
-}
-
 pub mod two_d {
 	pub use super::*;
 
@@ -151,13 +133,48 @@ pub mod two_d {
 		}
 	}
 
-	pub fn compute_intersection(p1: Vec2, p2: Vec2, p3: Vec2, p4: Vec2, extrapolate: bool, optional_cir: Option<ComputeInterpolantResult>) -> ComputeIntersectionResult {
+	pub enum Point {
+		P1,
+		P2,
+		P3,
+		P4
+	}
+
+	pub struct PointBitArray(u8);
+
+	impl PointBitArray {
+		pub const LINES:	PointBitArray = PointBitArray(0b1111_u8);
+		pub const SEGMENTS:	PointBitArray = PointBitArray(0b0000_u8);
+		pub const RAYS:		PointBitArray = PointBitArray(0b1010_u8);
+
+		pub const fn new(p1: bool, p2: bool, p3: bool, p4: bool) -> Self {
+			let mut point_bit_array: Self = Self(0_u8);
+
+			point_bit_array.0 |= (p1 as u8) << Point::P1 as u32;
+			point_bit_array.0 |= (p2 as u8) << Point::P2 as u32;
+			point_bit_array.0 |= (p3 as u8) << Point::P3 as u32;
+			point_bit_array.0 |= (p4 as u8) << Point::P4 as u32;
+
+			point_bit_array
+		}
+	}
+
+	pub fn compute_intersection(
+		p1: Vec2,
+		p2: Vec2,
+		p3: Vec2,
+		p4: Vec2,
+		point_bit_array: PointBitArray,
+		optional_cir: Option<ComputeInterpolantResult>
+	) -> ComputeIntersectionResult {
 		match optional_cir.unwrap_or_else(|| compute_interpolant(p1, p2, p3, p4)) {
 			ComputeInterpolantResult::Interpolants(interpolants) => {
-				if extrapolate ||
-					interpolants[0].abs() <= f32::EPSILON && (1.0_f32 - interpolants[0]).abs() <= f32::EPSILON &&
-					interpolants[1].abs() <= f32::EPSILON && (1.0_f32 - interpolants[1]).abs() <= f32::EPSILON
-				{
+				let bit_slice: &BitSlice<u8> = point_bit_array.0.view_bits();
+
+				if (bit_slice[Point::P1 as usize] ||			interpolants[0_usize] >= -f32::EPSILON)
+				&& (bit_slice[Point::P2 as usize] || 1.0_f32 -	interpolants[0_usize] <= f32::EPSILON)
+				&& (bit_slice[Point::P3 as usize] ||			interpolants[1_usize] >= -f32::EPSILON)
+				&& (bit_slice[Point::P4 as usize] || 1.0_f32 -	interpolants[1_usize] <= f32::EPSILON) {
 					ComputeIntersectionResult::Intersection(p1 * (1.0_f32 - interpolants[0]) + p2 * interpolants[0])
 				} else {
 					ComputeIntersectionResult::Disjoint
@@ -168,11 +185,33 @@ pub mod two_d {
 		}
 	}
 
-	pub fn compute_segment_intersection(p1: Vec2, p2: Vec2, p3: Vec2, p4: Vec2, optional_cir: Option<ComputeInterpolantResult>) -> ComputeIntersectionResult {
-		compute_intersection(p1, p2, p3, p4, false, optional_cir)
+	pub fn compute_segment_intersection(
+		p1: Vec2,
+		p2: Vec2,
+		p3: Vec2,
+		p4: Vec2,
+		optional_cir: Option<ComputeInterpolantResult>
+	) -> ComputeIntersectionResult {
+		compute_intersection(p1, p2, p3, p4, PointBitArray::SEGMENTS, optional_cir)
 	}
 
-	pub fn compute_line_intersection(p1: Vec2, p2: Vec2, p3: Vec2, p4: Vec2, optional_cir: Option<ComputeInterpolantResult>) -> ComputeIntersectionResult {
-		compute_intersection(p1, p2, p3, p4, true, optional_cir)
+	pub fn compute_line_intersection(
+		p1: Vec2,
+		p2: Vec2,
+		p3: Vec2,
+		p4: Vec2,
+		optional_cir: Option<ComputeInterpolantResult>
+	) -> ComputeIntersectionResult {
+		compute_intersection(p1, p2, p3, p4, PointBitArray::LINES, optional_cir)
+	}
+
+	pub fn compute_ray_intersection(
+		p1: Vec2,
+		p2: Vec2,
+		p3: Vec2,
+		p4: Vec2,
+		optional_cir: Option<ComputeInterpolantResult>
+	) -> ComputeIntersectionResult {
+		compute_intersection(p1, p2, p3, p4, PointBitArray::RAYS, optional_cir)
 	}
 }

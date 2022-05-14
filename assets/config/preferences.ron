@@ -1,26 +1,4 @@
 Preferences(
-	color:				ColorData(
-		colors_without_mat: (),
-		colors_with_mat: (
-			polyhedron_to_colors: [
-				(Dodecahedron, [
-					"FFFFFF", // White,			0
-					"0000FF", // Blue,			1
-					"80C0FF", // Light Blue,	2
-					"808080", // Gray,			3
-					"008000", // Dark Green,	4
-					"800080", // Purple,		5
-					"FF80FF", // Pink,			6
-					"80FF00", // Light Green,	7
-					"FF0000", // Red,			8
-					"FFFFA0", // Light Yellow,	9
-					"FFFF00", // Yellow,		10
-					"FF8000", // Orange,		11
-				])
-			],
-			base_color: "000000" // Black
-		)
-	),
 	file_menu:			FileMenuData(
 		randomization_params:	RandomizationParams(
 			random_transformation_genera:	[ "Simple" ],
@@ -61,7 +39,33 @@ Preferences(
 			near:			1.0,
 			far:			1000.0,
 		),
-		light_illuminance:	4.0
+		// light_illuminance:	4.0
+		light_illuminance:	16.0
+	),
+	puzzle:				PuzzleData(
+		color:	ColorData(
+			colors_without_mat: (),
+			colors_with_mat: (
+				polyhedron_to_colors: [
+					(Dodecahedron, [
+						"FFFFFF", // White,			0
+						"0000FF", // Blue,			1
+						"80C0FF", // Light Blue,	2
+						"808080", // Gray,			3
+						"008000", // Dark Green,	4
+						"800080", // Purple,		5
+						"FF80FF", // Pink,			6
+						"80FF00", // Light Green,	7
+						"FF0000", // Red,			8
+						"FFFFA0", // Light Yellow,	9
+						"FFFF00", // Yellow,		10
+						"FF8000", // Orange,		11
+					])
+				],
+				base_color: "000000" // Black
+			)
+		),
+		design:	CustomSuperDodecahedron
 	),
 	speed:				SpeedData(
 		camera:							CameraSpeedData(

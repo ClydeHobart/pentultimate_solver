@@ -122,3 +122,17 @@ pub const RHOMBIC_TRIACONTAHEDRON: Properties = Properties {
 		FaceSizeData::new(ICOSIDODECAHEDRON.vert_count, 0)
 	]
 };
+
+pub const MAX_VERT_COUNT: usize = crate::max!(
+	ICOSAHEDRON.vert_count,
+	DODECAHEDRON.vert_count,
+	ICOSIDODECAHEDRON.vert_count,
+	RHOMBIC_TRIACONTAHEDRON.vert_count
+);
+
+pub const MAX_EDGE_COUNT: usize = crate::max!(
+	ICOSAHEDRON.edge_count,
+	DODECAHEDRON.edge_count,
+	ICOSIDODECAHEDRON.edge_count,
+	RHOMBIC_TRIACONTAHEDRON.edge_count
+);

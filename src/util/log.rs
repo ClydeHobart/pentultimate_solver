@@ -151,13 +151,57 @@ pub mod macros {
 		};
 	}
 
-	#[cfg(debug_assertions)]
 	#[macro_export(local_inner_macros)]
 	macro_rules! log_expect {
+		($level:path, $expr:expr, return $($return_expr:expr)?) => {
+			if $expr {
+				true
+			} else {
+				#[cfg(debug_assertions)]
+				$level!("\"{}\" was false", std::stringify!($expr));
+
+				return $($return_expr)?;
+			}
+		};
+
+		($level:path, $expr:expr, continue $($label:lifetime)?) => {
+			if $expr {
+				true
+			} else {
+				#[cfg(debug_assertions)]
+				$level!("\"{}\" was false", std::stringify!($expr));
+
+				continue $($label)?;
+			}
+		};
+
+		($level:path, $expr:expr, break $($label:lifetime)? $($break_expr:expr)?) => {
+			if $expr {
+				true
+			} else {
+				#[cfg(debug_assertions)]
+				$level!("\"{}\" was false", std::stringify!($expr));
+
+				break $($label)? $($break_expr)?;
+			}
+		};
+
+		($level:path, $expr:expr, ?) => {
+			if $expr {
+				true
+			} else {
+				#[cfg(debug_assertions)]
+				$level!("\"{}\" was false", std::stringify!($expr));
+
+				return;
+			}
+		};
+
 		($level:path, $expr:expr) => {
 			if $expr {
 				true
 			} else {
+				#[cfg(debug_assertions)]
 				$level!("\"{}\" was false", std::stringify!($expr));
 
 				false
@@ -165,16 +209,24 @@ pub mod macros {
 		};
 	}
 
-	#[cfg(not(debug_assertions))]
-	#[macro_export(local_inner_macros)]
-	macro_rules! log_expect {
-		($_:path, $expr:expr) => {
-			$expr
-		}
-	}
-
 	#[macro_export(local_inner_macros)]
 	macro_rules! trace_expect {
+		($expr:expr, return $($return_expr:expr)?) => {
+			log_expect!(::log::trace, $expr, return $($return_expr)?)
+		};
+
+		($expr:expr, continue $($label:lifetime)?) => {
+			log_expect!(::log::trace, $expr, continue $($label)?)
+		};
+
+		($expr:expr, break $($label:lifetime)? $($break_expr:expr)?) => {
+			log_expect!(::log::trace, $expr, break $($label)? $($break_expr)?)
+		};
+
+		($expr:expr, ?) => {
+			log_expect!(::log::trace, $expr, ?)
+		};
+
 		($expr:expr) => {
 			log_expect!(::log::trace, $expr)
 		};
@@ -182,6 +234,22 @@ pub mod macros {
 
 	#[macro_export(local_inner_macros)]
 	macro_rules! debug_expect {
+		($expr:expr, return $($return_expr:expr)?) => {
+			log_expect!(::log::debug, $expr, return $($return_expr)?)
+		};
+
+		($expr:expr, continue $($label:lifetime)?) => {
+			log_expect!(::log::debug, $expr, continue $($label)?)
+		};
+
+		($expr:expr, break $($label:lifetime)? $($break_expr:expr)?) => {
+			log_expect!(::log::debug, $expr, break $($label)? $($break_expr)?)
+		};
+
+		($expr:expr, ?) => {
+			log_expect!(::log::debug, $expr, ?)
+		};
+
 		($expr:expr) => {
 			log_expect!(::log::debug, $expr)
 		};
@@ -189,6 +257,22 @@ pub mod macros {
 
 	#[macro_export(local_inner_macros)]
 	macro_rules! info_expect {
+		($expr:expr, return $($return_expr:expr)?) => {
+			log_expect!(::log::info, $expr, return $($return_expr)?)
+		};
+
+		($expr:expr, continue $($label:lifetime)?) => {
+			log_expect!(::log::info, $expr, continue $($label)?)
+		};
+
+		($expr:expr, break $($label:lifetime)? $($break_expr:expr)?) => {
+			log_expect!(::log::info, $expr, break $($label)? $($break_expr)?)
+		};
+
+		($expr:expr, ?) => {
+			log_expect!(::log::info, $expr, ?)
+		};
+
 		($expr:expr) => {
 			log_expect!(::log::info, $expr)
 		};
@@ -196,6 +280,22 @@ pub mod macros {
 
 	#[macro_export(local_inner_macros)]
 	macro_rules! warn_expect {
+		($expr:expr, return $($return_expr:expr)?) => {
+			log_expect!(::log::warn, $expr, return $($return_expr)?)
+		};
+
+		($expr:expr, continue $($label:lifetime)?) => {
+			log_expect!(::log::warn, $expr, continue $($label)?)
+		};
+
+		($expr:expr, break $($label:lifetime)? $($break_expr:expr)?) => {
+			log_expect!(::log::warn, $expr, break $($label)? $($break_expr)?)
+		};
+
+		($expr:expr, ?) => {
+			log_expect!(::log::warn, $expr, ?)
+		};
+
 		($expr:expr) => {
 			log_expect!(::log::warn, $expr)
 		};
@@ -203,6 +303,22 @@ pub mod macros {
 
 	#[macro_export(local_inner_macros)]
 	macro_rules! error_expect {
+		($expr:expr, return $($return_expr:expr)?) => {
+			log_expect!(::log::error, $expr, return $($return_expr)?)
+		};
+
+		($expr:expr, continue $($label:lifetime)?) => {
+			log_expect!(::log::error, $expr, continue $($label)?)
+		};
+
+		($expr:expr, break $($label:lifetime)? $($break_expr:expr)?) => {
+			log_expect!(::log::error, $expr, break $($label)? $($break_expr)?)
+		};
+
+		($expr:expr, ?) => {
+			log_expect!(::log::error, $expr, ?)
+		};
+
 		($expr:expr) => {
 			log_expect!(::log::error, $expr)
 		};
@@ -218,6 +334,28 @@ pub mod macros {
 				$level!("\"{}\" was None", std::stringify!($expr));
 
 				return $($return_expr)?;
+			}
+		};
+
+		($level:path, $expr:expr, continue $($label:lifetime)?) => {
+			if let Some(some) = $expr {
+				some
+			} else {
+				#[cfg(debug_assertions)]
+				$level!("\"{}\" was None", std::stringify!($expr));
+
+				continue $($label)?;
+			}
+		};
+
+		($level:path, $expr:expr, break $($label:lifetime)? $($break_expr:expr)?) => {
+			if let Some(some) = $expr {
+				some
+			} else {
+				#[cfg(debug_assertions)]
+				$level!("\"{}\" was None", std::stringify!($expr));
+
+				break $($label)? $($break_expr)?;
 			}
 		};
 
@@ -258,6 +396,14 @@ pub mod macros {
 			log_expect_some!(::log::trace, $expr, return $($return_expr)?)
 		};
 
+		($expr:expr, continue $($label:lifetime)?) => {
+			log_expect_some!(::log::trace, $expr, continue $($label)?)
+		};
+
+		($expr:expr, break $($label:lifetime)? $($break_expr:expr)?) => {
+			log_expect_some!(::log::trace, $expr, break $($label)? $($break_expr)?)
+		};
+
 		($expr:expr, ?) => {
 			log_expect_some!(::log::trace, $expr, ?)
 		};
@@ -271,6 +417,14 @@ pub mod macros {
 	macro_rules! debug_expect_some {
 		($expr:expr, return $($return_expr:expr)?) => {
 			log_expect_some!(::log::debug, $expr, return $($return_expr)?)
+		};
+
+		($expr:expr, continue $($label:lifetime)?) => {
+			log_expect_some!(::log::debug, $expr, continue $($label)?)
+		};
+
+		($expr:expr, break $($label:lifetime)? $($break_expr:expr)?) => {
+			log_expect_some!(::log::debug, $expr, break $($label)? $($break_expr)?)
 		};
 
 		($expr:expr, ?) => {
@@ -288,6 +442,14 @@ pub mod macros {
 			log_expect_some!(::log::info, $expr, return $($return_expr)?)
 		};
 
+		($expr:expr, continue $($label:lifetime)?) => {
+			log_expect_some!(::log::info, $expr, continue $($label)?)
+		};
+
+		($expr:expr, break $($label:lifetime)? $($break_expr:expr)?) => {
+			log_expect_some!(::log::info, $expr, break $($label)? $($break_expr)?)
+		};
+
 		($expr:expr, ?) => {
 			log_expect_some!(::log::info, $expr, ?)
 		};
@@ -303,6 +465,14 @@ pub mod macros {
 			log_expect_some!(::log::warn, $expr, return $($return_expr)?)
 		};
 
+		($expr:expr, continue $($label:lifetime)?) => {
+			log_expect_some!(::log::warn, $expr, continue $($label)?)
+		};
+
+		($expr:expr, break $($label:lifetime)? $($break_expr:expr)?) => {
+			log_expect_some!(::log::warn, $expr, break $($label)? $($break_expr)?)
+		};
+
 		($expr:expr, ?) => {
 			log_expect_some!(::log::warn, $expr, ?)
 		};
@@ -316,6 +486,14 @@ pub mod macros {
 	macro_rules! error_expect_some {
 		($expr:expr, return $($return_expr:expr)?) => {
 			log_expect_some!(::log::error, $expr, return $($return_expr)?)
+		};
+
+		($expr:expr, continue $($label:lifetime)?) => {
+			log_expect_some!(::log::error, $expr, continue $($label)?)
+		};
+
+		($expr:expr, break $($label:lifetime)? $($break_expr:expr)?) => {
+			log_expect_some!(::log::error, $expr, break $($label)? $($break_expr)?)
 		};
 
 		($expr:expr, ?) => {
@@ -337,6 +515,30 @@ pub mod macros {
 					$level!("\"{}\" was Err: {:#?}", std::stringify!($expr), _error);
 
 					return $($return_expr)?;
+				}
+			}
+		};
+
+		($level:path, $expr:expr, continue $($label:lifetime)?) => {
+			match $expr {
+				Ok(ok) => ok,
+				Err(_error) => {
+					#[cfg(debug_assertions)]
+					$level!("\"{}\" was Err: {:#?}", std::stringify!($expr), _error);
+
+					continue $($label)?;
+				}
+			}
+		};
+
+		($level:path, $expr:expr, break $($label:lifetime)? $($break_expr:expr)?) => {
+			match $expr {
+				Ok(ok) => ok,
+				Err(_error) => {
+					#[cfg(debug_assertions)]
+					$level!("\"{}\" was Err: {:#?}", std::stringify!($expr), _error);
+
+					break $($label)? $($break_expr)?;
 				}
 			}
 		};
@@ -382,6 +584,14 @@ pub mod macros {
 			log_expect_ok!(::log::trace, $expr, return $($return_expr)?)
 		};
 
+		($expr:expr, continue $($label:lifetime)?) => {
+			log_expect_ok!(::log::trace, $expr, continue $($label)?)
+		};
+
+		($expr:expr, break $($label:lifetime)? $($break_expr:expr)?) => {
+			log_expect_ok!(::log::trace, $expr, break $($label)? $($break_expr)?)
+		};
+
 		($expr:expr, ?) => {
 			log_expect_ok!(::log::trace, $expr, ?)
 		};
@@ -395,6 +605,14 @@ pub mod macros {
 	macro_rules! debug_expect_ok {
 		($expr:expr, return $($return_expr:expr)?) => {
 			log_expect_ok!(::log::debug, $expr, return $($return_expr)?)
+		};
+
+		($expr:expr, continue $($label:lifetime)?) => {
+			log_expect_ok!(::log::debug, $expr, continue $($label)?)
+		};
+
+		($expr:expr, break $($label:lifetime)? $($break_expr:expr)?) => {
+			log_expect_ok!(::log::debug, $expr, break $($label)? $($break_expr)?)
 		};
 
 		($expr:expr, ?) => {
@@ -412,6 +630,14 @@ pub mod macros {
 			log_expect_ok!(::log::info, $expr, return $($return_expr)?)
 		};
 
+		($expr:expr, continue $($label:lifetime)?) => {
+			log_expect_ok!(::log::info, $expr, continue $($label)?)
+		};
+
+		($expr:expr, break $($label:lifetime)? $($break_expr:expr)?) => {
+			log_expect_ok!(::log::info, $expr, break $($label)? $($break_expr)?)
+		};
+
 		($expr:expr, ?) => {
 			log_expect_ok!(::log::info, $expr, ?)
 		};
@@ -427,6 +653,14 @@ pub mod macros {
 			log_expect_ok!(::log::warn, $expr, return $($return_expr)?)
 		};
 
+		($expr:expr, continue $($label:lifetime)?) => {
+			log_expect_ok!(::log::warn, $expr, continue $($label)?)
+		};
+
+		($expr:expr, break $($label:lifetime)? $($break_expr:expr)?) => {
+			log_expect_ok!(::log::warn, $expr, break $($label)? $($break_expr)?)
+		};
+
 		($expr:expr, ?) => {
 			log_expect_ok!(::log::warn, $expr, ?)
 		};
@@ -440,6 +674,14 @@ pub mod macros {
 	macro_rules! error_expect_ok {
 		($expr:expr, return $($return_expr:expr)?) => {
 			log_expect_ok!(::log::error, $expr, return $($return_expr)?)
+		};
+
+		($expr:expr, continue $($label:lifetime)?) => {
+			log_expect_ok!(::log::error, $expr, continue $($label)?)
+		};
+
+		($expr:expr, break $($label:lifetime)? $($break_expr:expr)?) => {
+			log_expect_ok!(::log::error, $expr, break $($label)? $($break_expr)?)
 		};
 
 		($expr:expr, ?) => {

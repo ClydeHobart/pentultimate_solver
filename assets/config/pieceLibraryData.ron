@@ -1,6 +1,10 @@
 (
-	default_design: CustomSuperDodecahedron,
+	// default_design: CustomSuperDodecahedron,
+	// designs: [
+	// 	CustomSuperDodecahedron
+	// ]
+	default_design: OriginalSuperDodecahedron,
 	designs: [
-		CustomSuperDodecahedron
+		OriginalSuperDodecahedron
 	]
 )

@@ -13,16 +13,16 @@ use {
 			},
 			Polyhedron
 		},
-		piece::Type,
+		piece::{
+			consts::*,
+			Type
+		},
 		preferences::{
 			Preferences,
 			Update
 		},
 		prelude::*,
-		puzzle::{
-			consts::*,
-			transformation::HalfAddr
-		}
+		puzzle::transformation::HalfAddr
 	},
 	super::input::InputState
 };
@@ -72,26 +72,28 @@ define_struct_with_default!(
 );
 
 impl Update for LightAndCameraData {
-	fn update(&self, world: &mut World) -> () {
-		if let Some((mut directional_light, mut transform)) = world
-			.query::<(&mut bevy::pbr::DirectionalLight, &mut Transform)>()
-			.iter_mut(world)
-			.next()
-		{
-			directional_light.illuminance = 10.0_f32.powf(self.light_illuminance);
-			transform.translation = Vec3::from(self.light_pos);
-		}
+	fn update(&self, other: &Self, world: &mut World, _: &Preferences) -> () {
+		if self != other {
+			if let Some((mut directional_light, mut transform)) = world
+				.query::<(&mut bevy::pbr::DirectionalLight, &mut Transform)>()
+				.iter_mut(world)
+				.next()
+			{
+				directional_light.illuminance = 10.0_f32.powf(self.light_illuminance);
+				transform.translation = Vec3::from(self.light_pos);
+			}
 
-		if let Some((
-			mut transform,
-			mut bevy_perspective_projection
-		)) = world
-			.query::<(&mut Transform, &mut BevyPerspectiveProjection)>()
-			.iter_mut(world)
-			.next()
-		{
-			transform.translation = Vec3::from(self.camera_pos);
-			*bevy_perspective_projection = self.persp_proj.clone().into();
+			if let Some((
+				mut transform,
+				mut bevy_perspective_projection
+			)) = world
+				.query::<(&mut Transform, &mut BevyPerspectiveProjection)>()
+				.iter_mut(world)
+				.next()
+			{
+				transform.translation = Vec3::from(self.camera_pos);
+				*bevy_perspective_projection = self.persp_proj.clone().into();
+			}
 		}
 	}
 }
@@ -215,9 +217,9 @@ impl CameraPlugin {
 	pub fn compute_camera_addr(quat: &Quat) -> HalfAddr {
 		Data::get(Polyhedron::Icosidodecahedron).get_pos_and_rot(
 			&quat,
-			Some(Box::new(|face_data: &FaceData| -> bool {
-				face_data.get_size() == usize::PENTAGON_VERTEX_COUNT
-			}))
+			Some(&|face_index: usize, _: &FaceData| -> bool {
+				PENTAGON_PIECE_RANGE.contains(&face_index)
+			})
 		).into()
 	}
 }

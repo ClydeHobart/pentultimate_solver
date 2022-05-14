@@ -10,6 +10,7 @@ edition = "2018"
 bevy = { version = "0.6.1", features = ["serialize"] }
 bevy_egui = "0.12.1"
 bevy-inspector-egui = "0.9.0"
+bevy_prototype_debug_lines = "0.6.1"
 bincode = { version = "1.3.3", optional = true }
 bit_field = "0.10.1"
 bitvec = "1.0.0"
@@ -33,6 +34,8 @@ serde = "1.0.125"
 serde_json = { version = "1.0.78", optional = true }
 simple-error = "0.2.3"
 static_assertions = "1.1.0"
+strum = "0.24.0"
+strum_macros = "0.24.0"
 toml = { version = "0.5.8", optional = true }
 tracing-subscriber = "0.3.8" # for testing
 

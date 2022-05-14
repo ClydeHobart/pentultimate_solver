@@ -13,6 +13,7 @@ use {
 			read_dir
 		},
 		io::Result as IoResult,
+		mem::swap,
 		ops::Range,
 		path::Path,
 		sync::Mutex,
@@ -48,6 +49,7 @@ use {
 	crate::{
 		app::prelude::*,
 		preferences::Update,
+		preferences::prelude::*,
 		prelude::*,
 		puzzle::transformation::{
 			Addr,
@@ -651,8 +653,8 @@ impl UIPlugin {
 					},
 					ClosingAction::Save => {
 						world.resource_scope(|world: &mut World, mut res_preferences: Mut<Preferences>| -> () {
-							*res_preferences = (**preferences).clone();
-							(*res_preferences).update(world);
+							preferences.update(&*res_preferences, world, preferences);
+							swap(&mut *res_preferences, &mut *preferences);
 						});
 
 						*view = View::Main;

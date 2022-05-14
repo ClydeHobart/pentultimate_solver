@@ -93,14 +93,14 @@ use {
 			},
 			Polyhedron
 		},
+		piece::consts::*,
 		preferences::{
 			AnimationSpeedData,
 			RandomizationType,
-			SpeedData
+			SpeedData,
 		},
 		prelude::*,
 		puzzle::{
-			consts::*,
 			transformation::{
 				Action,
 				Addr,
@@ -840,7 +840,7 @@ impl Inspectable for KeyPresses {
 define_struct_with_default!(
 	#[derive(Clone, Deserialize, Inspectable, PartialEq)]
 	pub struct InputData {
-		#[inspectable(collapse, max = Some(PENTAGON_PIECE_COUNT - 1_usize))]
+		#[inspectable(collapse, max = Some(usize::PENTAGON_PIECE_COUNT - 1_usize))]
 		pub default_positions:		[usize; HALF_PENTAGON_PIECE_COUNT]		= generate_default_positions(),
 		#[inspectable(collapse)]
 		pub key_presses:			KeyPresses								= KeyPresses::default()
@@ -1058,7 +1058,7 @@ impl PuzzleAction {
 		extended_puzzle_state:	&mut ExtendedPuzzleState,
 		queries:				&mut QuerySet<(
 			CameraQueryStateMut,
-			PieceQueryState
+			PieceQueryStateMut
 		)>
 	) -> bool {
 		let mut completed: bool = true;
@@ -1136,7 +1136,11 @@ impl PuzzleAction {
 										(s - cycle_count) / cycles
 									);
 
-									for (piece_component, mut transform) in queries
+									for (
+										_entity,
+										piece_component,
+										mut transform
+									) in queries
 										.q1()
 										.iter_mut()
 									{

@@ -17,6 +17,7 @@ use {
 			render_resource::PrimitiveTopology
 		}
 	},
+	bitvec::prelude::*,
 	log::Level,
 	crate::{
 		math::{
@@ -50,7 +51,7 @@ impl From<Vec3> for VertexData {
 	}
 }
 
-#[derive(Clone, Copy, Eq, Debug, Default, Hash, PartialEq)]
+#[derive(Clone, Copy, Eq, Debug, Default, Hash, Ord, PartialEq, PartialOrd)]
 pub struct EdgeData(usize, usize);
 
 impl EdgeData {
@@ -63,12 +64,15 @@ impl EdgeData {
 	}
 }
 
-pub type EdgeBitArray = [u32; 2_usize];
+pub type EdgeBitArray = BitArr!(for properties::MAX_EDGE_COUNT, in u32);
 
 #[derive(Debug, Default)]
 pub struct FaceData {
 	pub quat:	Quat,
 	pub norm:	Vec3,
+
+	/* Range of vertex indices in Data::vert_indices corresponding to this face. The corresponding vertices wrap in
+	counter-clockwise order */
 	pub range:	Range<usize>,
 	pub edges:	EdgeBitArray
 }
@@ -133,7 +137,8 @@ pub struct Data {
 	pub faces:			Vec<FaceData>
 }
 
-pub type OptionalPredicate<T> = Option<Box<dyn Fn(&T) -> bool>>;
+pub type IndexedPredicate<'a, T> = &'a dyn Fn(usize, &T) -> bool;
+pub type OptionalIndexedPredicate<'a, T> = Option<IndexedPredicate<'a, T>>;
 
 impl Data {
 	pub fn initialize() -> () { DataLibrary::build(); }
@@ -144,29 +149,25 @@ impl Data {
 	/// has no side effects
 	pub fn get(polyhedron: Polyhedron) -> &'static Self { &DataLibrary::get().0[polyhedron as usize] }
 
-	pub fn get_closest_vert_index(&self, vec: &Vec3, filter: OptionalPredicate<VertexData>) -> usize {
+	pub fn get_closest_vert_index(&self, vec: &Vec3, filter: OptionalIndexedPredicate<VertexData>) -> usize {
 		Data::get_closest_vert_index_for_verts(&self.verts, vec, filter)
 	}
 
 	pub fn get_closest_vert_index_for_verts(
 		verts:	&Vec<VertexData>,
 		vec:	&Vec3,
-		filter:	OptionalPredicate<VertexData>
+		filter:	OptionalIndexedPredicate<VertexData>
 	) -> usize {
 		use std::cmp::Ordering;
 
+		let filter: IndexedPredicate<VertexData> =
+			filter.unwrap_or(&|_: usize, _: &VertexData| -> bool { true });
+
 		verts
 			.iter()
-			.filter(|vert: &&VertexData| -> bool {
-				match &filter {
-					Some(filter_func) => filter_func(vert),
-					None => true
-				}
-			})
-			.map(|vert: &VertexData| -> f32 {
-				vert.norm.dot(*vec)
-			})
 			.enumerate()
+			.filter(|(vert_index, vert): &(usize, &VertexData)| -> bool { filter(*vert_index, vert) })
+			.map(|(vert_index, vert): (usize, &VertexData)| -> (usize, f32) { (vert_index, vert.norm.dot(*vec)) })
 			.max_by(|
 				(_vert_index_a, norm_dot_vec_a): &(usize, f32),
 				(_vert_index_b, norm_dot_vec_b): &(usize, f32)
@@ -179,29 +180,27 @@ impl Data {
 			.unwrap()
 	}
 
-	pub fn get_closest_face_index(&self, vec: &Vec3, filter: OptionalPredicate<FaceData>) -> usize {
+	pub fn get_edge_index(&self, edge_data: &EdgeData) -> Result<usize, usize> { self.edges.binary_search(edge_data) }
+
+	pub fn get_closest_face_index(&self, vec: &Vec3, filter: OptionalIndexedPredicate<FaceData>) -> usize {
 		Data::get_closest_face_index_for_faces(&self.faces, vec, filter)
 	}
 
 	pub fn get_closest_face_index_for_faces(
 		faces:	&Vec<FaceData>,
 		vec:	&Vec3,
-		filter:	OptionalPredicate<FaceData>
+		filter:	OptionalIndexedPredicate<FaceData>
 	) -> usize {
 		use std::cmp::Ordering;
 
+		let filter: IndexedPredicate<FaceData> =
+			filter.unwrap_or(&|_: usize, _: &FaceData| -> bool { true });
+
 		faces
 			.iter()
-			.filter(|face: &&FaceData| -> bool {
-				match &filter {
-					Some(filter_func) => filter_func(face),
-					None => true
-				}
-			})
-			.map(|face: &FaceData| -> f32 {
-				face.norm.dot(*vec)
-			})
 			.enumerate()
+			.filter(|(face_index, face): &(usize, &FaceData)| -> bool { filter(*face_index, face) })
+			.map(|(face_index, face): (usize, &FaceData)| -> (usize, f32) { (face_index, face.norm.dot(*vec)) })
 			.max_by(|
 				(_face_index_a, norm_dot_vec_a): &(usize, f32),
 				(_face_index_b, norm_dot_vec_b): &(usize, f32)
@@ -214,7 +213,7 @@ impl Data {
 			.unwrap()
 	}
 
-	pub fn get_pos_and_rot(&self, quat: &Quat, filter: OptionalPredicate<FaceData>) -> (usize, usize) {
+	pub fn get_pos_and_rot(&self, quat: &Quat, filter: OptionalIndexedPredicate<FaceData>) -> (usize, usize) {
 		let pos: usize = self.get_closest_face_index(&(*quat * Vec3::Z), filter);
 
 		(pos, self.faces[pos].get_rotation(quat))
@@ -506,27 +505,38 @@ impl<'a> DataBuilder<'a> {
 	}
 
 	fn generate_faces(&mut self) -> LogErrorResult {
+		type VertBitArray = BitArr!(for properties::MAX_VERT_COUNT, in u32);
+
 		let properties:				&Properties							= self.polyhedron.properties();
 		let should_be_initial_vert:	fn(usize, usize) -> bool			= self.get_should_be_initial_vert();
 		let verts:					&Vec<VertexData>					= &self.data.verts;
 		let edges:					&Vec<EdgeData>						= &self.data.edges;
 		let vert_indices:			&mut Vec<usize>						= &mut self.data.vert_indices;
 		let faces:					&mut Vec<FaceData>					= &mut self.data.faces;
-		let all_edges_used:			u64									= (1_u64 << properties.edge_count) - 1_u64;
+		let all_edges_used:			EdgeBitArray						= {
+			let mut all_edges_used: EdgeBitArray = EdgeBitArray::default();
+
+			all_edges_used[0_usize .. properties.edge_count].fill(true);
+
+			all_edges_used
+		};
 		let log_target:				String								= log_path!("generate_faces").into();
 
 		let mut edge_to_index:		fnv::FnvHashMap<EdgeData, usize>	= fnv::FnvHashMap::default();
-		let mut edge_matrix:		Vec<u64>							= vec![0_u64; properties.vert_count];
-		let mut forward_edges:		u64									= 0_u64;
-		let mut backward_edges:		u64									= 0_u64;
+		let mut edge_matrix:		Vec<VertBitArray>					= vec![
+			VertBitArray::default();
+			properties.vert_count
+		];
+		let mut forward_edges:		EdgeBitArray						= EdgeBitArray::default();
+		let mut backward_edges:		EdgeBitArray						= EdgeBitArray::default();
 
 		vert_indices.clear();
 		faces.clear();
 		faces.reserve_exact(properties.face_count);
 
 		for (edge_index, edge) in edges.iter().enumerate() {
-			edge_matrix[edge.0] |= 1_u64 << edge.1;
-			edge_matrix[edge.1] |= 1_u64 << edge.0;
+			edge_matrix[edge.0].set(edge.1, true);
+			edge_matrix[edge.1].set(edge.0, true);
 			edge_to_index.insert(*edge, edge_index);
 		}
 
@@ -547,7 +557,7 @@ impl<'a> DataBuilder<'a> {
 
 						for vert_index_x in 0 .. properties.vert_count {
 							status_update.push_str(format!("{0:^1$}",
-								if (*adjacent_verts & (1 << vert_index_x)) != 0 { 'X' } else { '.' },
+								if adjacent_verts[vert_index_x] { 'X' } else { '.' },
 								cell_width
 							).as_str());
 						}
@@ -559,8 +569,8 @@ impl<'a> DataBuilder<'a> {
 
 					for (edge_index, edge) in edges.iter().enumerate() {
 						status_update.push_str(format!("{:>3x}: {:2?} {} {}\n", edge_index, edge,
-							if (forward_edges & (1 << edge_index)) != 0 { 'X' } else { '.' },
-							if (backward_edges & (1 << edge_index)) != 0 { 'X' } else { '.' }
+							if forward_edges[edge_index] { 'X' } else { '.' },
+							if backward_edges[edge_index] { 'X' } else { '.' }
 						).as_str());
 					}
 
@@ -573,12 +583,13 @@ impl<'a> DataBuilder<'a> {
 
 		while forward_edges != all_edges_used && backward_edges != all_edges_used {
 			const INVALID_VERT_INDEX: usize = usize::MAX;
-			let initial_edge: EdgeData = edges[forward_edges.trailing_ones() as usize];
+			let initial_edge: EdgeData = edges[forward_edges.leading_ones() as usize];
 			let start: usize = vert_indices.len();
 			let mut end: usize = start;
 			let mut prev_vert_index: usize = 0;
 			let mut curr_vert_index: usize = initial_edge.0;
 			let mut next_vert_index: usize = initial_edge.1;
+			let mut face_edges: EdgeBitArray = EdgeBitArray::default();
 
 			macro_rules! cycle_values {
 				() => {
@@ -614,14 +625,16 @@ impl<'a> DataBuilder<'a> {
 
 					log::trace!(target: log_concat!(log_target, "record_edge"), "Recording edge {:?}", edge);
 
-					edge_matrix[prev_vert_index] &= !(1_u64 << curr_vert_index);
+					edge_matrix[prev_vert_index].set(curr_vert_index, false);
 
-					if let Some(edge_index) = edge_to_index.get(&edge) {
+					if let Some(edge_index) = edge_to_index.get(&edge).cloned() {
 						if prev_vert_index <= curr_vert_index {
-							forward_edges |= 1_u64 << edge_index;
+							forward_edges.set(edge_index, true);
 						} else {
-							backward_edges |= 1_u64 << edge_index;
+							backward_edges.set(edge_index, true);
 						}
+
+						face_edges.set(edge_index, true);
 					} else {
 						return Err(log_error!(
 							target: log_concat!(log_target, "record_edge"),
@@ -643,9 +656,9 @@ impl<'a> DataBuilder<'a> {
 			macro_rules! find_next_vert {
 				() => {
 					next_vert_index = {
-						let mut candidate_vert_indices: u64 = edge_matrix[curr_vert_index];
+						let mut candidate_vert_indices: VertBitArray = edge_matrix[curr_vert_index];
 
-						if candidate_vert_indices == 0 {
+						if candidate_vert_indices.not_any() {
 							log::warn!(
 								target: log_concat!(log_target, "find_next_vert"),
 								"No candidate next vertices for vertex {} in polyhedron {:?}",
@@ -660,8 +673,8 @@ impl<'a> DataBuilder<'a> {
 							let mut best_vert_index: usize = INVALID_VERT_INDEX;
 							let mut best_vert_angle: f32 = 0.0;
 
-							while candidate_vert_indices != 0 {
-								let candidate_vert_index: usize = candidate_vert_indices.trailing_zeros() as usize;
+							while candidate_vert_indices.any() {
+								let candidate_vert_index: usize = candidate_vert_indices.leading_zeros() as usize;
 
 								log::trace!(
 									target: log_concat!(log_target, "find_next_vert"),
@@ -669,7 +682,7 @@ impl<'a> DataBuilder<'a> {
 									candidate_vert_index
 								);
 
-								candidate_vert_indices &= !(1 << candidate_vert_index);
+								candidate_vert_indices.set(candidate_vert_index, false);
 
 								// Don't double back
 								if candidate_vert_index == prev_vert_index {
@@ -681,15 +694,29 @@ impl<'a> DataBuilder<'a> {
 									continue;
 								}
 
-								let candidate_vert_vector: Vec3 = verts[candidate_vert_index].vec;
+								let curr_vert_to_candidate_vert_vector: Vec3 =
+									verts[candidate_vert_index].vec - curr_vert_vector;
 
-								/* TODO: Might need to revisit this because glam is FOOLISH and implements left-hand
-								rule instead of right-hand rule. Ruined my night learning this. Only proceed if this is
-								a counter-clockwise candidate */
+								// /* TODO: Might need to revisit this because glam is FOOLISH and implements left-hand
+								// rule instead of right-hand rule. Ruined my night learning this. Only proceed if this is
+								// a counter-clockwise candidate */
+								// if prev_vert_to_curr_vert_vector
+								// 	.cross(candidate_vert_vector)
+								// 	.dot(curr_vert_vector)
+								// 	<= 0.0 {
+								// 	log::trace!(
+								// 		target: log_concat!(log_target, "find_next_vert"),
+								// 		"Clockwise, rejecting"
+								// 	);
+
+								// 	continue;
+								// }
+
 								if prev_vert_to_curr_vert_vector
-									.cross(candidate_vert_vector)
-									.dot(curr_vert_vector)
-									<= 0.0 {
+									.cross(curr_vert_vector)
+									.dot(curr_vert_to_candidate_vert_vector)
+									>= 0.0_f32
+								{
 									log::trace!(
 										target: log_concat!(log_target, "find_next_vert"),
 										"Clockwise, rejecting"
@@ -699,7 +726,7 @@ impl<'a> DataBuilder<'a> {
 								}
 
 								let candidate_vert_angle: f32 = prev_vert_to_curr_vert_vector
-									.angle_between(candidate_vert_vector);
+									.angle_between(curr_vert_to_candidate_vert_vector);
 
 								if best_vert_index == INVALID_VERT_INDEX || best_vert_angle <= candidate_vert_angle {
 									best_vert_index = candidate_vert_index;
@@ -748,7 +775,7 @@ impl<'a> DataBuilder<'a> {
 
 			cycle_values!();
 			record_edge!();
-			faces.push(FaceData::new(&verts, &vert_indices, start .. end, EdgeBitArray::default()));
+			faces.push(FaceData::new(&verts, &vert_indices, start .. end, face_edges));
 			log::trace!(target: log_target.as_str(), "Adding face {:?}", faces.last().unwrap());
 			log_edge_status!();
 		}
@@ -1055,6 +1082,52 @@ mod tests {
 	#[test]
 	fn test_data() -> () {
 		init_env_logger();
-	break_assert!(Data::validate_polyhedra().is_ok());
+		break_assert!(Data::validate_polyhedra().is_ok());
+	}
+
+	#[test]
+	fn test_3d_to_2d() -> () {
+		use crate::piece::consts::*;
+
+		/*
+			/* TODO: Might need to revisit this because glam is FOOLISH and implements left-hand
+			rule instead of right-hand rule. Ruined my night learning this. Only proceed if this is
+			a counter-clockwise candidate */
+			if prev_vert_to_curr_vert_vector
+				.cross(candidate_vert_vector)
+				.dot(curr_vert_vector)
+				<= 0.0 {
+				log::trace!(
+					target: log_concat!(log_target, "find_next_vert"),
+					"Clockwise, rejecting"
+				);
+
+				continue;
+			}
+		*/
+
+		init_env_logger();
+		DataLibrary::build();
+
+		let icosidodecahedron_data: &Data = Data::get(Polyhedron::Icosidodecahedron);
+		let pent_vert_indices: &[usize] = icosidodecahedron_data
+			.faces
+			[PENTAGON_INDEX_OFFSET]
+			.get_slice(&icosidodecahedron_data.vert_indices);
+		let vert_0: Vec3 = icosidodecahedron_data.verts[pent_vert_indices[0_usize]].vec;
+		let vert_1: Vec3 = icosidodecahedron_data.verts[pent_vert_indices[1_usize]].vec;
+		let vert_2: Vec3 = icosidodecahedron_data.verts[pent_vert_indices[2_usize]].vec;
+		let v0_to_v1: Vec3 = vert_1 - vert_0;
+		let v02v1_cross_v2: Vec3 = v0_to_v1.cross(vert_2);
+		let v02v1xv2_dot_v1: f32 = v02v1_cross_v2.dot(vert_1);
+
+		debug_expr!(
+			vert_0,
+			vert_1,
+			vert_2,
+			v0_to_v1,
+			v02v1_cross_v2,
+			v02v1xv2_dot_v1
+		);
 	}
 }

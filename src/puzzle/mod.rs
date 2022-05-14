@@ -22,7 +22,6 @@ use {
 		app::PluginGroupBuilder,
 		prelude::*
 	},
-	bevy_inspector_egui::Inspectable,
 	libc::{
 		c_void,
 		memcmp
@@ -35,40 +34,25 @@ use {
 	crate::{
 		app::prelude::*,
 		math::polyhedra::{
-			data::{
-				Data,
-				FaceData
-			},
+			data::Data,
 			Polyhedron
 		},
 		piece::{
+			consts::*,
 			PieceLibrary,
-			PiecePair,
-			Type
+			PieceMats
 		},
-		preferences::{
-			colors::{
-				ColAndMat,
-				ColorDataWithMat
-			},
-			Preferences,
-			RandomizationType
-		},
+		preferences::prelude::*,
 		prelude::*,
-		util::inspectable_bin_map::*,
-		max
+		util::inspectable_bin_map::*
 	},
-	self::{
-		consts::*,
-		transformation::{
-			Action,
-			Addr,
-			FullAddr,
-			GenusIndexBitArray,
-			HalfAddr,
-			Library,
-			Transformation
-		}
+	self::transformation::{
+		Action,
+		Addr,
+		FullAddr,
+		HalfAddr,
+		Library,
+		Transformation
 	}
 };
 
@@ -87,53 +71,6 @@ pub mod solver;
 pub mod tools;
 pub mod transformation;
 
-pub mod consts {
-	use {
-		super::{
-			inflated::PieceStateComponent as IPSC,
-			Type,
-			max
-		},
-		std::ops::Range
-	};
-
-	pub trait PolygonVertexCounts: Sized{
-		const PENTAGON_VERTEX_COUNT: Self;
-		const TRIANGLE_VERTEX_COUNT: Self;
-	}
-
-	impl PolygonVertexCounts for usize {
-		const PENTAGON_VERTEX_COUNT: Self = Type::Pentagon.vertex_count();
-		const TRIANGLE_VERTEX_COUNT: Self = Type::Triangle.vertex_count();
-	}
-
-	impl PolygonVertexCounts for f32 {
-		const PENTAGON_VERTEX_COUNT: Self = Type::Pentagon.vertex_count() as Self;
-		const TRIANGLE_VERTEX_COUNT: Self = Type::Triangle.vertex_count() as Self;
-	}
-
-	impl PolygonVertexCounts for IPSC {
-		const PENTAGON_VERTEX_COUNT: Self = Type::Pentagon.vertex_count() as Self;
-		const TRIANGLE_VERTEX_COUNT: Self = Type::Triangle.vertex_count() as Self;
-	}
-
-	pub const PENTAGON_PIECE_COUNT:			usize			= Type::Pentagon.instance_count();				// 12
-	pub const TRIANGLE_PIECE_COUNT:			usize			= Type::Triangle.instance_count();				// 20
-	pub const PIECE_COUNT:					usize			= PENTAGON_PIECE_COUNT + TRIANGLE_PIECE_COUNT;	// 32
-	pub const PENTAGON_INDEX_OFFSET:		usize			= Type::Pentagon.index_offset();				// 0
-	pub const TRIANGLE_INDEX_OFFSET:		usize			= Type::Triangle.index_offset();				// 12
-	pub const ROTATION_BIT_COUNT:			u32				= usize::BITS - max!(usize::PENTAGON_VERTEX_COUNT, usize::TRIANGLE_VERTEX_COUNT).leading_zeros(); // 3
-	pub const ROTATION_BIT_MASK:			IPSC			= ((1 as IPSC) << ROTATION_BIT_COUNT) - 1;		// 0b111
-	pub const PENTAGON_PIECE_COUNT_F32:		f32				= PENTAGON_PIECE_COUNT as f32;
-	pub const TRIANGLE_PIECE_COUNT_F32:		f32				= TRIANGLE_PIECE_COUNT as f32;
-	pub const PIECE_COUNT_F32:				f32				= PENTAGON_PIECE_COUNT_F32 + TRIANGLE_PIECE_COUNT_F32;
-	pub const ZERO_IPSC:					IPSC			= 0 as IPSC;
-	pub const PENTAGON_PIECE_RANGE:			Range<usize>	= PENTAGON_INDEX_OFFSET .. PENTAGON_INDEX_OFFSET + PENTAGON_PIECE_COUNT;
-	pub const TRIANGLE_PIECE_RANGE:			Range<usize>	= TRIANGLE_INDEX_OFFSET .. TRIANGLE_INDEX_OFFSET + TRIANGLE_PIECE_COUNT;
-	pub const PIECE_RANGE:					Range<usize>	= 0_usize .. PIECE_COUNT;
-	pub const HALF_PENTAGON_PIECE_COUNT:	usize			= PENTAGON_PIECE_COUNT / 2;
-}
-
 // Compressed version for smaller memory footprint when keeping track of multiple states
 pub mod deflated {
 	use super::*;
@@ -143,7 +80,7 @@ pub mod deflated {
 	#[derive(Debug, Eq, Hash)]
 	#[repr(align(32))]
 	pub struct PuzzleState {
-		pub pieces: [PieceState; PIECE_COUNT]
+		pub pieces: [PieceState; usize::PIECE_COUNT]
 	}
 
 	impl PuzzleState {
@@ -194,14 +131,14 @@ pub mod deflated {
 			let mut puzzle_state: PuzzleState = PuzzleState::default();
 
 			for pent_index in PENTAGON_PIECE_RANGE {
-				puzzle_state.pieces[pent_index] = ((thread_rng.gen::<f32>() * PENTAGON_PIECE_COUNT_F32) as PieceState)
+				puzzle_state.pieces[pent_index] = ((thread_rng.gen::<f32>() * f32::PENTAGON_PIECE_COUNT) as PieceState)
 					<< ROTATION_BIT_COUNT
 					| (thread_rng.gen::<f32>() * f32::PENTAGON_VERTEX_COUNT)
 					as PieceState;
 			}
 
 			for tri_index in TRIANGLE_PIECE_RANGE {
-				puzzle_state.pieces[tri_index] = ((thread_rng.gen::<f32>() * TRIANGLE_PIECE_COUNT_F32) as PieceState)
+				puzzle_state.pieces[tri_index] = ((thread_rng.gen::<f32>() * f32::TRIANGLE_PIECE_COUNT) as PieceState)
 					<< ROTATION_BIT_COUNT
 					| (thread_rng.gen::<f32>() * f32::TRIANGLE_VERTEX_COUNT)
 					as PieceState;
@@ -230,7 +167,7 @@ pub mod inflated {
 
 	pub type PieceStateComponent = u32;
 
-	pub type PuzzleStateComponent = [PieceStateComponent; PIECE_COUNT];
+	pub type PuzzleStateComponent = [PieceStateComponent; usize::PIECE_COUNT];
 	pub type PosAndRot<'p, 'r> = (&'p PuzzleStateComponent, &'r PuzzleStateComponent);
 	pub type MutPosAndRot<'p, 'r> = (&'p mut PuzzleStateComponent, &'r mut PuzzleStateComponent);
 
@@ -290,7 +227,7 @@ pub mod inflated {
 			0x10_u32,	0x11_u32,	0x12_u32,	0x13_u32,	0x14_u32,	0x15_u32,	0x16_u32,	0x17_u32,
 			0x18_u32,	0x19_u32,	0x1A_u32,	0x1B_u32,	0x1C_u32,	0x1D_u32,	0x1E_u32,	0x1F_u32
 		];
-		const ZERO_COMPONENT: PuzzleStateComponent = [0_u32; PIECE_COUNT];
+		const ZERO_COMPONENT: PuzzleStateComponent = [0_u32; usize::PIECE_COUNT];
 		pub const SOLVED_STATE: PuzzleState = PuzzleState {
 			pos: Self::SOLVED_COMPONENT,
 			rot: Self::ZERO_COMPONENT
@@ -351,7 +288,7 @@ pub mod inflated {
 
 		pub fn is_valid(&self) -> bool {
 			use PieceStateComponent as PSC;
-			const_assert!(PIECE_COUNT <= PSC::BITS as usize);
+			const_assert!(usize::PIECE_COUNT <= PSC::BITS as usize);
 
 			let mut present_positions:	u32 = 0_u32;
 			let mut tri_rot_sum:		PSC = 0 as PSC;
@@ -441,8 +378,10 @@ pub mod inflated {
 			self
 		}
 
-		pub fn update_pieces(&self, pieces_query: &mut PieceQuery) -> () {
-			for (piece_component, mut transform) in pieces_query.iter_mut() {
+		pub fn update_pieces(&self, pieces_query: &mut PieceQueryMut) -> () {
+			for (_entity, piece_component, mut transform)
+				in pieces_query.iter_mut()
+			{
 				transform.rotation = *self.half_addr(piece_component.index).get_orientation().unwrap();
 			}
 		}
@@ -541,12 +480,12 @@ pub mod inflated {
 			let mut puzzle_state: PuzzleState = PuzzleState::default();
 
 			for pent_index in PENTAGON_PIECE_RANGE {
-				puzzle_state.pos[pent_index] = (thread_rng.gen::<f32>() * PENTAGON_PIECE_COUNT_F32) as PSC;
+				puzzle_state.pos[pent_index] = (thread_rng.gen::<f32>() * f32::PENTAGON_PIECE_COUNT) as PSC;
 				puzzle_state.rot[pent_index] = (thread_rng.gen::<f32>() * f32::PENTAGON_VERTEX_COUNT) as PSC;
 			}
 
 			for tri_index in TRIANGLE_PIECE_RANGE {
-				puzzle_state.pos[tri_index] = (thread_rng.gen::<f32>() * TRIANGLE_PIECE_COUNT_F32) as PSC;
+				puzzle_state.pos[tri_index] = (thread_rng.gen::<f32>() * f32::TRIANGLE_PIECE_COUNT) as PSC;
 				puzzle_state.rot[tri_index] = (thread_rng.gen::<f32>() * f32::TRIANGLE_VERTEX_COUNT) as PSC;
 			}
 
@@ -604,15 +543,6 @@ pub mod inflated {
 
 			transformation
 		}
-	}
-
-	#[derive(Clone, Deserialize, Inspectable, PartialEq)]
-	pub struct RandomizePuzzleStateParams {
-		#[inspectable(collapse)]
-		pub random_transformation_genera:	GenusIndexBitArray,
-		#[inspectable(min = 1_u8, max = 100_u8)]
-		pub random_transformation_count:	u8,
-		pub randomization_type:				RandomizationType
 	}
 
 	#[derive(Clone, Default, Deserialize, Serialize)]
@@ -847,65 +777,41 @@ pub struct PuzzlePlugin;
 
 impl PuzzlePlugin {
 	fn startup(
-		mut commands: Commands,
-		piece_library: Res<PieceLibrary>,
-		preferences: Res<Preferences>
+		world: &mut World,
 	) -> () {
-		warn_expect_ok!(Self::startup_internal(&mut commands, &piece_library, &preferences));
-	}
+		warn_expect!(world.contains_resource::<Preferences>(),?);
+		warn_expect!(world.contains_resource::<PieceLibrary>(),?);
 
-	fn startup_internal(
-		commands: &mut Commands,
-		piece_library: &Res<PieceLibrary>,
-		preferences: &Res<Preferences>
-	) -> LogErrorResult {
-		let color_data_with_mat: &ColorDataWithMat = &preferences.color.colors_with_mat;
-		let piece_pair: &PiecePair = match piece_library.pieces.get(&piece_library.data.default_design) {
-			Some(piece_pair) => piece_pair,
-			None => {
-				return Err(log_error!(
-					Level::Error,
-					format!("No PiecePair available for Design {:?}",
-						piece_library.data.default_design
-					)
-				))
-			}
-		};
-		let inspectable_bin_map: InspectableBinMap<(Polyhedron, Vec<ColAndMat>)> =
-			color_data_with_mat
-				.polyhedron_to_colors
-				.as_inspectable_bin_map();
-		let (base_col_and_mat, col_and_mats): (&ColAndMat, &Vec<ColAndMat>) = {
-			(
-				&color_data_with_mat.base_color,
-				match inspectable_bin_map.get(&piece_library.data.default_design.as_polyhedron()) {
-					Some(color_mats) => color_mats,
-					None => {
-						return Err(log_error!(
-							Level::Error,
-							format!("No color materials available for Design {:?}'s Polyhedron, {:?}",
-								piece_library.data.default_design,
-								piece_library.data.default_design.as_polyhedron()
-							)
-						));
-					}
-				}
-			)
-		};
-		let faces: &Vec<FaceData> = &Data::get(Polyhedron::Icosidodecahedron).faces;
-		let param_bundle: (&ColAndMat, &Vec<ColAndMat>, &Vec<FaceData>) = (base_col_and_mat, col_and_mats, faces);
+		world.resource_scope(|world: &mut World, preferences: Mut<Preferences>| -> () {
+			world.resource_scope(|world: &mut World, piece_library: Mut<PieceLibrary>| -> () {
+				let color_data_with_mat: &ColorDataWithMat = &preferences.puzzle.color.colors_with_mat;
+				let design: Design = preferences.puzzle.design;
 
-		piece_pair.add_entities(commands, &param_bundle);
-
-		Ok(())
+				piece_library.0[design as usize].add_entities(
+					world,
+					&PieceMats {
+						base_mat: &color_data_with_mat.base_color,
+						color_mats: warn_expect_some!(
+							color_data_with_mat
+								.polyhedron_to_colors
+								.as_inspectable_bin_map()
+								.get(&design.as_polyhedron()),
+							return
+						)
+					},
+					&Data::get(Polyhedron::Icosidodecahedron).faces
+				);
+			});
+		});
 	}
 
 	fn run(
+		// _: Res<Assets<StandardMaterial>>,
 		mut extended_puzzle_state: ResMut<ExtendedPuzzleState>,
 		mut input_state: ResMut<InputState>,
 		mut queries: QuerySet<(
 			CameraQueryStateMut,
-			PieceQueryState
+			PieceQueryStateMut
 		)>
 	) -> () {
 		if input_state.puzzle_action.is_some()
@@ -921,8 +827,9 @@ impl Plugin for PuzzlePlugin {
 		app
 			.insert_resource(ExtendedPuzzleState::default())
 			.add_startup_system(Self::startup
-				.system()
+				.exclusive_system()
 				.label(STRING_DATA.labels.puzzle_startup.as_ref())
+				.at_end()
 				.after(STRING_DATA.labels.piece_library_startup.as_ref())
 				.after(STRING_DATA.labels.color_data_startup.as_ref())
 			)
@@ -953,6 +860,11 @@ impl PluginGroup for PuzzlePluginGroup {
 #[cfg(test)]
 mod tests {
 	use {
+		std::{
+			any::type_name,
+			fmt::Debug
+		},
+		crate::piece::Type,
 		super::{
 			*,
 			deflated::{
@@ -963,10 +875,6 @@ mod tests {
 				PieceStateComponent as IPSC,
 				PuzzleState as InflatedPuzzleState
 			}
-		},
-		std::{
-			any::type_name,
-			fmt::Debug
 		}
 	};
 

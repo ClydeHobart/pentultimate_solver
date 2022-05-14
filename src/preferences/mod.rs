@@ -4,28 +4,41 @@ use {
 	serde::Deserialize,
 	crate::{
 		prelude::*,
-		puzzle::transformation::{
-			GenusIndex,
-			GenusIndexBitArray
-		},
-		tools::ToolsData
-	}
-};
-
-pub use {
-	crate::{
-		ui::{
-			camera::LightAndCameraData,
-			input::InputData
-		}
+		puzzle::transformation::GenusIndex
 	},
-	self::colors::ColorData
+	self::prelude::*
 };
 
 pub mod colors;
 
-pub trait Update {
-	fn update(&self, world: &mut World) -> ();
+pub mod prelude {
+	pub use {
+		crate::{
+			piece::Design,
+			puzzle::transformation::GenusIndexBitArray,
+			tools::ToolsData,
+			ui::{
+				camera::LightAndCameraData,
+				input::InputData
+			}
+		},
+		super::{
+			colors::{
+				ColAndMat,
+				ColorData,
+				ColorDataWithMat
+			},
+			FileMenuData,
+			Preferences,
+			RandomizationParams,
+			RandomizationType,
+			Update
+		}
+	};
+}
+
+pub trait Update: PartialEq + Sized {
+	fn update(&self, other: &Self, world: &mut World, preferences: &Preferences) -> ();
 }
 
 #[derive(Clone, Deserialize, Inspectable, PartialEq)]
@@ -35,26 +48,36 @@ pub enum RandomizationType {
 	FromSolvedNoStack
 }
 
-#[derive(Clone, Deserialize, Inspectable, PartialEq)]
-pub struct RandomizationParams {
-	#[inspectable(collapse)]
-	pub random_transformation_genera:	GenusIndexBitArray,
-	#[inspectable(min = 1_u8, max = 100_u8)]
-	pub random_transformation_count:	u8,
-	pub randomization_type:				RandomizationType
-}
-
-impl Default for RandomizationParams {
-	fn default() -> Self { Self {
-		random_transformation_genera:	[GenusIndex::SIMPLE].as_slice().into(),
-		random_transformation_count:	30_u8,
-		randomization_type:				RandomizationType::FromSolved
-	} }
-}
+define_struct_with_default!(
+	#[derive(Clone, Deserialize, Inspectable, PartialEq)]
+	pub struct RandomizationParams {
+		#[inspectable(collapse)]
+		pub random_transformation_genera:	GenusIndexBitArray	=
+			GenusIndexBitArray::from([GenusIndex::SIMPLE].as_slice()),
+		#[inspectable(min = 1_u8, max = 100_u8)]
+		pub random_transformation_count:	u8					= 30_u8,
+		pub randomization_type:				RandomizationType	= RandomizationType::FromSolved
+	}
+);
 
 #[derive(Clone, Default, Deserialize, Inspectable, PartialEq)]
 pub struct FileMenuData {
 	pub randomization_params: RandomizationParams
+}
+
+define_struct_with_default!(
+	#[derive(Clone, Deserialize, Inspectable, PartialEq)]
+	pub struct PuzzleData {
+		pub color:	ColorData	= ColorData::default(),
+		pub design:	Design		= Design::CustomSuperDodecahedron
+	}
+);
+
+impl Update for PuzzleData {
+	fn update(&self, other: &Self, world: &mut World, preferences: &Preferences) -> () {
+		self.color.colors_with_mat.update(&other.color.colors_with_mat, world, preferences);
+		self.design.update(&other.design, world, preferences);
+	}
 }
 
 define_struct_with_default!(
@@ -95,13 +118,13 @@ pub struct SpeedData {
 #[derive(Clone, Default, Deserialize, Inspectable, PartialEq)]
 pub struct Preferences {
 	#[inspectable(collapse)]
-	pub color:				ColorData,
-	#[inspectable(collapse)]
 	pub file_menu:			FileMenuData,
 	#[inspectable(collapse)]
 	pub input:				InputData,
 	#[inspectable(collapse)]
 	pub light_and_camera:	LightAndCameraData,
+	#[inspectable(collapse)]
+	pub puzzle:				PuzzleData,
 	#[inspectable(collapse)]
 	pub speed:				SpeedData,
 	#[inspectable(collapse)]
@@ -109,8 +132,8 @@ pub struct Preferences {
 }
 
 impl Update for Preferences {
-	fn update(&self, world: &mut World) -> () {
-		self.color.update(world);
-		self.light_and_camera.update(world);
+	fn update(&self, other: &Self, world: &mut World, preferences: &Preferences) -> () {
+		self.light_and_camera.update(&other.light_and_camera, world, preferences);
+		self.puzzle.update(&other.puzzle, world, preferences);
 	}
 }

@@ -32,9 +32,9 @@ use {
 			data::Data,
 			Polyhedron
 		},
+		piece::consts::*,
 		prelude::*,
 		puzzle::{
-			consts::*,
 			inflated::{
 				PosAndRot,
 				PuzzleState
@@ -85,7 +85,7 @@ enum SolverGenusIndex {
 	Count
 }
 
-const PENTAGON_HALF_MASK:		HalfMask	= ((1 as HalfMask) << PENTAGON_PIECE_COUNT) - 1 as HalfMask;
+const PENTAGON_HALF_MASK:		HalfMask	= ((1 as HalfMask) << usize::PENTAGON_PIECE_COUNT) - 1 as HalfMask;
 const TRIANGLE_HALF_MASK:		HalfMask	= !PENTAGON_HALF_MASK;
 const ZERO_HALF_MASK:			HalfMask	= 0 as HalfMask;
 const COMPLETION_TIER_COUNT:	usize		= 4_usize;
@@ -101,7 +101,7 @@ struct SolverData{
 impl SolverData {
 	fn new() -> Self {
 		let mut solver_data: Self = Self::default();
-		let mut dot_products: [i8; PIECE_COUNT] = [0_i8; PIECE_COUNT];
+		let mut dot_products: [i8; usize::PIECE_COUNT] = [0_i8; usize::PIECE_COUNT];
 		let mut pent_dot_products: Vec<i8> = Vec::<i8>::with_capacity(COMPLETION_TIER_COUNT + 1_usize);
 		let mut tri_dot_products: Vec<i8> = Vec::<i8>::with_capacity(COMPLETION_TIER_COUNT + 1_usize);
 

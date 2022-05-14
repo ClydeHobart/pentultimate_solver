@@ -51,14 +51,12 @@ use {
 			},
 			Polyhedron
 		},
+		piece::consts::*,
 		prelude::*,
-		puzzle::{
-			consts::*,
-			inflated::{
-				PieceStateComponent,
-				PuzzleState,
-				PuzzleStateComponent
-			}
+		puzzle::inflated::{
+			PieceStateComponent,
+			PuzzleState,
+			PuzzleStateComponent
 		},
 		util::{
 			inspectable_bit_array::{
@@ -508,8 +506,8 @@ impl Library {
 	pub const GENERA_PER_SMALL_CLASS:	usize = GenusIndex::COMPLEX_OFFSET;
 	pub const ORGANISMS_PER_GENUS:		usize = Self::ORGANISMS_PER_SPECIES * Self::SPECIES_PER_GENUS;
 	pub const ORGANISMS_PER_SPECIES:	usize = usize::PENTAGON_VERTEX_COUNT;
-	pub const SPECIES_PER_GENUS:		usize = PENTAGON_PIECE_COUNT;
-	pub const SPECIES_PER_LARGE_GENUS:	usize = PIECE_COUNT;
+	pub const SPECIES_PER_GENUS:		usize = usize::PENTAGON_PIECE_COUNT;
+	pub const SPECIES_PER_LARGE_GENUS:	usize = usize::PIECE_COUNT;
 
 	#[inline(always)]
 	pub fn get_transformation(full_addr: FullAddr) -> &'static Transformation {
@@ -1250,7 +1248,11 @@ fn dump_library() -> () {
 	use std::io::Write;
 	Library::build();
 
-	write!(std::fs::File::create(".ignore/rotate_tri_pair_full_masks.ron").unwrap(), "{:#?}", Library::get().full_masks[Library::get_genus_count() - 4_usize]).unwrap();
+	write!(
+		std::fs::File::create(".ignore/rotate_tri_pair_full_masks.ron").unwrap(),
+		"{:#?}",
+		Library::get().full_masks[Library::get_genus_count() - 4_usize]
+	).unwrap();
 }
 
 #[cfg(test)]
@@ -1335,15 +1337,18 @@ mod tests {
 	fn test_reorientations() -> () {
 		let library: &Library = Library::get();
 		let reorientation_genus_index: usize = GenusIndex::REORIENTATION.into();
-		let simple_transformation_genus: &Genus<Transformation> = &library.transformations[usize::from(GenusIndex::SIMPLE)];
-		let reorientation_tests: [Vec<(usize, usize)>; PENTAGON_PIECE_COUNT] =
-			<[Vec<(usize, usize)>; PENTAGON_PIECE_COUNT]>::from_file(
+		let simple_transformation_genus: &Genus<Transformation> =
+			&library.transformations[usize::from(GenusIndex::SIMPLE)];
+		let reorientation_tests: [Vec<(usize, usize)>; usize::PENTAGON_PIECE_COUNT] =
+			<[Vec<(usize, usize)>; usize::PENTAGON_PIECE_COUNT]>::from_file(
 				STRING_DATA.tests.reorientation_tests.as_ref()
 			).to_option().unwrap();
 
 		for species_index in 0_usize .. Library::SPECIES_PER_GENUS {
-			let transformation_species:	&Species<Transformation>	= &library.transformations[reorientation_genus_index][species_index];
-			let inverse_addr_species:	&Species<FullAddr>			= &library.inverse_addrs[reorientation_genus_index][species_index];
+			let transformation_species:	&Species<Transformation> =
+				&library.transformations[reorientation_genus_index][species_index];
+			let inverse_addr_species:	&Species<FullAddr> =
+				&library.inverse_addrs[reorientation_genus_index][species_index];
 			let pent_puzzle_state: PuzzleState = {
 				let mut solved_state: PuzzleState = PuzzleState::SOLVED_STATE;
 
@@ -1383,7 +1388,11 @@ mod tests {
 						species_index,
 						organism_index
 					);
-					error_expr!(pent_puzzle_state, simple_transformation_genus[species_index][organism_index], prev_puzzle_state);
+					error_expr!(
+						pent_puzzle_state,
+						simple_transformation_genus[species_index][organism_index],
+						prev_puzzle_state
+					);
 
 					panic!();
 				}
@@ -1465,7 +1474,8 @@ mod tests {
 				// Reorientation was originally in the other direction, and the standardization check only works for the
 				// other direction, so just run the rest how the test was originally conducted
 
-				let word_pack_transformation: &Transformation = library.transformations.get_word(standardization_full_addr);
+				let word_pack_transformation: &Transformation =
+					library.transformations.get_word(standardization_full_addr);
 				let word_pack_mask: &FullMask = library.full_masks.get_word(standardization_full_addr);
 
 				curr_puzzle_state += word_pack_transformation;
@@ -1510,12 +1520,17 @@ mod tests {
 
 				if transformation_from_states != *word_pack_transformation {
 					log::error!(
-						"Transformation from previous to current state doesn't match applied transformation with pentagon {} and \
-							rotation {}",
+						"Transformation from previous to current state doesn't match applied transformation with \
+							pentagon {} and rotation {}",
 						species_index,
 						organism_index
 					);
-					error_expr!(word_pack_transformation, prev_puzzle_state, curr_puzzle_state, transformation_from_states);
+					error_expr!(
+						word_pack_transformation,
+						prev_puzzle_state,
+						curr_puzzle_state,
+						transformation_from_states
+					);
 
 					panic!();
 				}

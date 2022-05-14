@@ -5,6 +5,7 @@ use {
 		log::LogPlugin
 	},
 	bevy_inspector_egui::bevy_egui::EguiPlugin,
+	bevy_prototype_debug_lines::DebugLinesPlugin,
 	serde::{
 		Deserialize,
 		Serialize
@@ -24,13 +25,12 @@ pub mod prelude {
 			PieceComponent,
 			PieceLibrary,
 			PiecePlugin,
-			PieceQuery,
-			PieceQueryState,
-			PieceTuple
+			PieceQueryMut,
+			PieceQueryStateMut,
+			PieceTupleMut
 		},
 		preferences::{
 			colors::{
-				ColorData,
 				ColorsPlugin
 			},
 			Preferences
@@ -69,7 +69,6 @@ pub mod prelude {
 				CameraTupleMut,
 			},
 			input::{
-				InputData,
 				InputPlugin,
 				InputState,
 				InputToggles
@@ -94,7 +93,8 @@ impl Plugin for AppPlugin {
 			.add_plugins_with(DefaultPlugins, |group: &mut PluginGroupBuilder| -> &mut PluginGroupBuilder {
 				group.disable::<LogPlugin>()
 			})
-			.add_plugin(EguiPlugin);
+			.add_plugin(EguiPlugin)
+			.add_plugin(DebugLinesPlugin::default());
 	}
 }
 
@@ -116,8 +116,8 @@ impl PluginGroup for AppPluginGroup {
 pub fn main() -> () {
 	set_rust_log_env_var();
 
-	#[cfg(debug_assertions)]
-	std::env::set_var("RUST_BACKTRACE", "1");
+	// #[cfg(debug_assertions)]
+	// std::env::set_var("RUST_BACKTRACE", "1");
 
 	App::new().add_plugins(AppPluginGroup).run();
 }

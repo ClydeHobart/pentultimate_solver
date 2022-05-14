@@ -14,17 +14,9 @@ use {
 		TextEdit,
 		Ui
 	},
-	super::{
-		consts::*,
-		transformation::{
-			library::FamilyInput,
-			HalfAddrAttrs
-		},
-		HalfAddr,
-		InflatedPieceStateComponent as PSC
-	},
 	crate::{
 		app::prelude::*,
+		piece::consts::*,
 		prelude::*,
 		ui::{
 			input::{
@@ -37,6 +29,14 @@ use {
 			inspectable_bit_array::InspectableBitArray,
 			inspectable_num::InspectableNum
 		}
+	},
+	super::{
+		transformation::{
+			library::FamilyInput,
+			HalfAddrAttrs
+		},
+		HalfAddr,
+		InflatedPieceStateComponent as PSC
 	}
 };
 
@@ -118,7 +118,7 @@ impl Inspectable for PuzzleState {
 						let desired_rot_sum: bool = desired_pent_rot_sum && desired_tri_rot_sum;
 
 						macro_rules! colored_label {
-							($count:expr, $max:ident) => {
+							($count:expr, $max:expr) => {
 								let count: PSC = $count;
 
 								ui.colored_label(
@@ -135,15 +135,15 @@ impl Inspectable for PuzzleState {
 						ui.end_row();
 
 						ui.label("Correct Pos").on_hover_text("Correct Position Count");
-						colored_label!(correct_pent_pos_count, PENTAGON_PIECE_COUNT_F32);
-						colored_label!(correct_tri_pos_count, TRIANGLE_PIECE_COUNT_F32);
-						colored_label!(correct_pent_pos_count + correct_tri_pos_count, PIECE_COUNT_F32);
+						colored_label!(correct_pent_pos_count, f32::PENTAGON_PIECE_COUNT);
+						colored_label!(correct_tri_pos_count, f32::TRIANGLE_PIECE_COUNT);
+						colored_label!(correct_pent_pos_count + correct_tri_pos_count, f32::PIECE_COUNT);
 						ui.end_row();
 
 						ui.label("Correct Rot").on_hover_text("Correct Rotation Count");
-						colored_label!(correct_pent_rot_count, PENTAGON_PIECE_COUNT_F32);
-						colored_label!(correct_tri_rot_count, TRIANGLE_PIECE_COUNT_F32);
-						colored_label!(correct_pent_rot_count + correct_tri_rot_count, PIECE_COUNT_F32);
+						colored_label!(correct_pent_rot_count, f32::PENTAGON_PIECE_COUNT);
+						colored_label!(correct_tri_rot_count, f32::TRIANGLE_PIECE_COUNT);
+						colored_label!(correct_pent_rot_count + correct_tri_rot_count, f32::PIECE_COUNT);
 						ui.end_row();
 
 						ui.label("Rot Sum").on_hover_text("Rotation Sum (% Piece Side Count)");

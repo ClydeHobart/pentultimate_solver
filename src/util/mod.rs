@@ -802,7 +802,42 @@ pub fn untracked_ref_mut<T>(reference: &mut T) -> &'static mut T {
 }
 
 #[macro_export]
-macro_rules! max { ($a:expr, $b:expr) => { if $a > $b { $a } else { $b } } }
+macro_rules! max {
+	($a:expr $(, $b:expr)*) => { {
+		let mut _max_val = $a;
+
+		$(
+			{
+				let _b_val = $b;
+
+				if _max_val < _b_val {
+					_max_val = _b_val;
+				}
+			}
+		)*
+
+		_max_val
+	} }
+}
+
+#[macro_export]
+macro_rules! min {
+	($a:expr $(, $b:expr)*) => { {
+		let mut _min_val = $a;
+
+		$(
+			{
+				let _b_val = $b;
+
+				if _min_val > _b_val {
+					_min_val = _b_val;
+				}
+			}
+		)*
+
+		_min_val
+	} }
+}
 
 #[cfg(test)]
 mod tests {
