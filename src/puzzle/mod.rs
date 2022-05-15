@@ -378,11 +378,12 @@ pub mod inflated {
 			self
 		}
 
-		pub fn update_pieces(&self, pieces_query: &mut PieceQueryMut) -> () {
-			for (_entity, piece_component, mut transform)
-				in pieces_query.iter_mut()
-			{
-				transform.rotation = *self.half_addr(piece_component.index).get_orientation().unwrap();
+		pub fn update_pieces(&self, piece_query: &mut PieceQueryMut) -> () {
+			for mut piece_components_mut_item in piece_query.iter_mut() {
+				piece_components_mut_item.transform.rotation = *self
+					.half_addr(piece_components_mut_item.piece_component.index)
+					.get_orientation()
+					.unwrap();
 			}
 		}
 	}
@@ -776,7 +777,7 @@ pub mod inflated {
 pub struct PuzzlePlugin;
 
 impl PuzzlePlugin {
-	fn startup(
+	pub fn startup(
 		world: &mut World,
 	) -> () {
 		warn_expect!(world.contains_resource::<Preferences>(),?);
@@ -805,14 +806,10 @@ impl PuzzlePlugin {
 		});
 	}
 
-	fn run(
-		// _: Res<Assets<StandardMaterial>>,
+	pub fn run(
 		mut extended_puzzle_state: ResMut<ExtendedPuzzleState>,
 		mut input_state: ResMut<InputState>,
-		mut queries: QuerySet<(
-			CameraQueryStateMut,
-			PieceQueryStateMut
-		)>
+		mut queries: ParamSet<(CameraQueryMut, PieceQueryMut)>
 	) -> () {
 		if input_state.puzzle_action.is_some()
 			&& input_state.puzzle_action.as_mut().unwrap().update(&mut *extended_puzzle_state, &mut queries)
@@ -826,17 +823,8 @@ impl Plugin for PuzzlePlugin {
 	fn build(&self, app: &mut App) -> () {
 		app
 			.insert_resource(ExtendedPuzzleState::default())
-			.add_startup_system(Self::startup
-				.exclusive_system()
-				.label(STRING_DATA.labels.puzzle_startup.as_ref())
-				.at_end()
-				.after(STRING_DATA.labels.piece_library_startup.as_ref())
-				.after(STRING_DATA.labels.color_data_startup.as_ref())
-			)
-			.add_system(Self::run
-				.system()
-				.label(STRING_DATA.labels.puzzle_run.as_ref())
-			);
+			.add_startup_system(Self::startup.exclusive_system().at_end())
+			.add_system(Self::run);
 	}
 }
 

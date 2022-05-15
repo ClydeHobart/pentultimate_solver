@@ -944,19 +944,9 @@ impl Plugin for SolverPlugin {
 	fn build(&self, app: &mut App) -> () {
 		app
 			.insert_resource(Solver::default())
-			.add_startup_system(Self::startup
-				.system()
-				.label(STRING_DATA.labels.solver_startup.as_ref())
-				.after(STRING_DATA.labels.transformation_startup.as_ref())
-			)
-			.add_system(Self::update
-				.system()
-				.label(STRING_DATA.labels.solver_update.as_ref())
-			)
-			.add_system(Self::post_update
-				.system()
-				.label(STRING_DATA.labels.solver_post_update.as_ref())
-			);
+			.add_startup_system(Self::startup.after(TransformationPlugin::startup))
+			.add_system(Self::update)
+			.add_system(Self::post_update);
 	}
 }
 

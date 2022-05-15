@@ -23,23 +23,6 @@ define_struct_with_default!(
 
 define_struct_with_default!(
 	#[derive(Deserialize)]
-	pub struct Labels<String> {
-		pub camera_run				= "CameraPlugin::run()",
-		pub color_data_startup		= "ColorData::startup()",
-		pub input_run				= "InputPlugin::run()",
-		pub piece_library_startup	= "PieceLibrary::startup()",
-		pub puzzle_run				= "PuzzlePlugin::run()",
-		pub puzzle_startup			= "PuzzlePlugin::startup()",
-		pub solver_update			= "SolverPlugin::update()",
-		pub solver_post_update		= "SolverPlugin::post_update()",
-		pub solver_startup			= "SolverPlugin::startup()",
-		pub transformation_startup	= "TransformationPlugin::startup()",
-		pub ui_startup				= "UIPlugin::startup()",
-	}
-);
-
-define_struct_with_default!(
-	#[derive(Deserialize)]
 	pub struct Misc<String> {
 		pub app_title				= "Pentultimate Solver"
 	}
@@ -62,7 +45,6 @@ pub mod test {
 #[derive(Default, Deserialize)]
 pub struct StringData {
 	pub files:	Files,
-	pub labels:	Labels,
 	pub misc:	Misc,
 
 	#[cfg(test)]

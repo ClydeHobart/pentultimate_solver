@@ -101,4 +101,4 @@ fn run(mut egui_context: ResMut<EguiContext>) -> () {
 	});
 }
 
-fn main() -> () { App::new().add_plugins(DefaultPlugins).add_plugin(EguiPlugin).add_system(run.system()).run(); }
+fn main() -> () { App::new().add_plugins(DefaultPlugins).add_plugin(EguiPlugin).add_system(run).run(); }

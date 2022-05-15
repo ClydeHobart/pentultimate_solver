@@ -10,7 +10,6 @@ use {
 	},
 	bevy::prelude::{
 		App,
-		IntoSystem,
 		Plugin,
 		StartupStage
 	},
@@ -946,7 +945,7 @@ pub struct LogPlugin;
 
 impl Plugin for LogPlugin {
 	fn build(&self, app: &mut App) -> () {
-		app.add_startup_system_to_stage(StartupStage::PreStartup, set_rust_log_env_var.system());
+		app.add_startup_system_to_stage(StartupStage::PreStartup, set_rust_log_env_var);
 	}
 }
 

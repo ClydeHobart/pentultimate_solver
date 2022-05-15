@@ -25,9 +25,10 @@ pub mod prelude {
 			PieceComponent,
 			PieceLibrary,
 			PiecePlugin,
+			PieceComponents,
+			PieceComponentsMut,
+			PieceQuery,
 			PieceQueryMut,
-			PieceQueryStateMut,
-			PieceTupleMut
 		},
 		preferences::{
 			colors::{
@@ -57,16 +58,17 @@ pub mod prelude {
 			camera::{
 				CameraComponent,
 				CameraPlugin,
+				CameraComponents,
+				CameraComponentsItem,
+				CameraComponentsMut,
 				CameraQuery,
 				CameraQueryMut,
+				CameraQueryMutNT,
+				CameraQueryMutState,
+				CameraQueryMutStateNT,
 				CameraQueryNT,
-				CameraQueryNTMut,
 				CameraQueryState,
-				CameraQueryStateMut,
 				CameraQueryStateNT,
-				CameraQueryStateNTMut,
-				CameraTuple,
-				CameraTupleMut,
 			},
 			input::{
 				InputPlugin,

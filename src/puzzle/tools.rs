@@ -293,7 +293,7 @@ impl Inspectable for Stack {
 							let world: &mut World = world.as_mut().unwrap();
 
 							world.contains_resource::<Preferences>()
-								&& world.query::<CameraTuple>().iter(world).next().is_some()
+								&& world.query::<CameraComponents>().iter(world).next().is_some()
 						}
 					)
 				})
@@ -363,7 +363,7 @@ impl Inspectable for Stack {
 								.get_resource::<ExtendedPuzzleState>()
 								.unwrap()
 								.clone();
-							let mut camera: HalfAddr = CameraQueryStateNT(&mut (world.query::<CameraTuple>()))
+							let mut camera: HalfAddr = CameraQueryStateNT(&mut (world.query::<CameraComponents>()))
 								.orientation(world, |camera_orientation: Option<&Quat>| -> HalfAddr {
 									camera_orientation
 										.map_or(

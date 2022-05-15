@@ -277,9 +277,9 @@ impl Data {
 			_ => { return None; }
 		}
 
-		mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-		mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-		mesh.set_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+		mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+		mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+		mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
 
 		Some(mesh)
 	}
@@ -1069,9 +1069,15 @@ lazy_static! {
 
 pub struct DataPlugin;
 
-impl Plugin for DataPlugin {
-	fn build(&self, _app: &mut App) -> () {
+impl DataPlugin {
+	pub fn startup() -> () {
 		DataLibrary::build();
+	}
+}
+
+impl Plugin for DataPlugin {
+	fn build(&self, app: &mut App) -> () {
+		app.add_startup_system(Self::startup);
 	}
 }
 
@@ -1088,23 +1094,6 @@ mod tests {
 	#[test]
 	fn test_3d_to_2d() -> () {
 		use crate::piece::consts::*;
-
-		/*
-			/* TODO: Might need to revisit this because glam is FOOLISH and implements left-hand
-			rule instead of right-hand rule. Ruined my night learning this. Only proceed if this is
-			a counter-clockwise candidate */
-			if prev_vert_to_curr_vert_vector
-				.cross(candidate_vert_vector)
-				.dot(curr_vert_vector)
-				<= 0.0 {
-				log::trace!(
-					target: log_concat!(log_target, "find_next_vert"),
-					"Clockwise, rejecting"
-				);
-
-				continue;
-			}
-		*/
 
 		init_env_logger();
 		DataLibrary::build();

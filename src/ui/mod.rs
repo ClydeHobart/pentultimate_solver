@@ -81,7 +81,7 @@ pub enum View {
 pub struct UIPlugin;
 
 impl UIPlugin {
-	fn startup(
+	pub fn startup(
 		mut preferences:	ResMut<Preferences>,
 		mut windows:		ResMut<Windows>
 	) -> () {
@@ -172,11 +172,11 @@ impl UIPlugin {
 			Some(preferences)
 		) = (
 			world
-				.query::<CameraTuple>()
+				.query::<CameraComponents>()
 				.iter(world)
 				.next()
-				.map(|(_, transform): CameraTuple| -> Quat {
-					transform.rotation
+				.map(|camera_components_item: CameraComponentsItem| -> Quat {
+					camera_components_item.transform.rotation
 				}
 			),
 			world.get_resource::<Preferences>(),
@@ -681,16 +681,10 @@ impl Plugin for UIPlugin {
 			})
 			.add_plugin(CameraPlugin)
 			.add_plugin(InputPlugin)
-			.add_startup_system(Self::startup
-				.system()
-				.label(STRING_DATA.labels.ui_startup.as_ref())
-				.after(STRING_DATA.labels.transformation_startup.as_ref())
-			)
+			.add_startup_system(Self::startup.after(TransformationPlugin::startup))
 			.add_system_to_stage(
 				CoreStage::PostUpdate,
-				Self::run
-					.exclusive_system()
-					.before(EguiSystem::ProcessOutput)
+				Self::run.exclusive_system().before(EguiSystem::ProcessOutput)
 			);
 	}
 }

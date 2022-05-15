@@ -26,17 +26,15 @@ use {
 		}
 	},
 	bevy::{
-		app::{
-			AppExit,
-			EventWriter
-		},
+		app::AppExit,
+		ecs::event::EventWriter,
 		render::color::Color
 	},
 	bit_field::{
 		BitArray,
 		BitField
 	},
-	egui::{Color32},
+	egui::Color32,
 	::log::Level,
 	memmap::Mmap,
 	num_format::{
@@ -555,11 +553,30 @@ pub trait ToFile: Serialize {
 		}
 
 		serialize!(
-			cfg(feature = "bincode"),		Bincode,	bincode::serialize_into(buf_writer, self),								|x| x;
-			cfg(feature = "serde_json"),	JSON,		serde_json::to_writer(buf_writer, self),								|x| x;
-			cfg(feature = "json5"),			JSON5,		json5::to_string(&self),												write_all;
-			cfg(feature = "ron"),			RON,		ron::ser::to_writer_pretty(buf_writer, &self, PRETTY_CONFIG.clone()),	|x| x;
-			cfg(feature = "toml"),			TOML,		toml::ser::to_string_pretty(self),										write_all
+			cfg(feature = "bincode"),
+			Bincode,
+			bincode::serialize_into(buf_writer, self),
+			|x| x;
+
+			cfg(feature = "serde_json"),
+			JSON,
+			serde_json::to_writer(buf_writer, self),
+			|x| x;
+
+			cfg(feature = "json5"),
+			JSON5,
+			json5::to_string(&self),
+			write_all;
+
+			cfg(feature = "ron"),
+			RON,
+			ron::ser::to_writer_pretty(buf_writer, &self, PRETTY_CONFIG.clone()),
+			|x| x;
+
+			cfg(feature = "toml"),
+			TOML,
+			toml::ser::to_string_pretty(self),
+			write_all
 		)
 	}
 }
@@ -893,7 +910,14 @@ mod tests {
 	macro_rules! test_err {
 		($expr:expr, $t:ty, $e:ty) => {
 			break_assert!({
-				println!("\n******** BEGIN EXPECT ********\n{:#?}\n******** END EXPECT ********\n******** BEGIN ERROR ********", $expr);
+				println!(
+					"\n\
+					******** BEGIN EXPECT ********\n\
+					{:#?}\n\
+					******** END EXPECT ********\n\
+					******** BEGIN ERROR ********",
+					$expr
+				);
 
 				let option: Option<$t> = Result::<$t, $e>::Err($expr).to_option();
 

@@ -26,7 +26,7 @@ use {
 		math::polyhedra::Polyhedron,
 		preferences::Update,
 		prelude::*,
-		strings::STRING_DATA,
+		ui::UIPlugin,
 		util::inspectable_bin_map::*
 	},
 	super::Preferences
@@ -280,10 +280,6 @@ pub struct ColorsPlugin;
 impl Plugin for ColorsPlugin {
 	fn build(&self, app: &mut App) -> () {
 		app
-			.add_startup_system(ColorData::startup_app
-				.system()
-				.label(STRING_DATA.labels.color_data_startup.as_ref())
-				.after(STRING_DATA.labels.ui_startup.as_ref())
-			);
+			.add_startup_system(ColorData::startup_app.after(UIPlugin::startup));
 	}
 }

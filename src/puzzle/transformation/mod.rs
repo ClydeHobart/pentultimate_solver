@@ -58,6 +58,7 @@ use {
 		Serialize
 	},
 	crate::{
+		app::prelude::*,
 		math::polyhedra::{
 			data::{
 				Data,
@@ -1041,16 +1042,13 @@ impl<A : Addr + Sized, T> GetWord<A, T> for Class<T> {
 pub struct TransformationPlugin;
 
 impl TransformationPlugin {
-	fn startup() -> () {
+	pub fn startup() -> () {
 		Library::build();
 	}
 }
 
 impl Plugin for TransformationPlugin {
 	fn build(&self, app: &mut App) -> () {
-		app.add_startup_system(Self::startup
-			.system()
-			.label(STRING_DATA.labels.transformation_startup.as_ref())
-		);
+		app.add_startup_system(Self::startup.after(PolyhedraDataPlugin::startup));
 	}
 }

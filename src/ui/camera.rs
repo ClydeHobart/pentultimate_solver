@@ -1,11 +1,13 @@
 use {
 	bevy::{
+		ecs::query::WorldQuery,
 		prelude::*,
 		render::camera::PerspectiveProjection as BevyPerspectiveProjection
 	},
 	bevy_inspector_egui::Inspectable,
 	serde::Deserialize,
 	crate::{
+		app::prelude::*,
 		math::polyhedra::{
 			data::{
 				Data,
@@ -101,16 +103,20 @@ impl Update for LightAndCameraData {
 #[derive(Component)]
 pub struct CameraComponent;
 
-pub type CameraTuple<'cc, 't> = (&'cc CameraComponent, &'t Transform);
-pub type CameraQueryState<'cc, 't> = QueryState<CameraTuple<'cc, 't>>;
-pub type CameraQuery<'world, 'state, 'cc, 't> = Query<'world, 'state, CameraTuple<'cc, 't>>;
-pub struct CameraQueryNT<'field, 'world, 'state, 'cc, 't>(pub &'field CameraQuery<'world, 'state, 'cc, 't>);
+#[derive(WorldQuery)]
+pub struct CameraComponents<'c> {
+	pub camera_component:	&'c CameraComponent,
+	pub transform:			&'c Transform,
+}
 
-impl<'field, 'world, 'state, 'cc, 't> CameraQueryNT<'field, 'world, 'state, 'cc, 't> {
+pub type CameraQuery<'world, 'state, 'c> = Query<'world, 'state, CameraComponents<'c>>;
+pub struct CameraQueryNT<'field, 'world, 'state, 'c>(pub &'field CameraQuery<'world, 'state, 'c>);
+
+impl<'field, 'world, 'state, 'c> CameraQueryNT<'field, 'world, 'state, 'c> {
 	pub fn orientation<T, F: FnOnce(Option<&Quat>) -> T>(&self, f: F) -> T {
 		match self.0.iter().next() {
-			Some((_, transform)) => {
-				f(Some(&transform.rotation))
+			Some(camera_components_item) => {
+				f(Some(&camera_components_item.transform.rotation))
 			},
 			None => {
 				f(None)
@@ -119,13 +125,14 @@ impl<'field, 'world, 'state, 'cc, 't> CameraQueryNT<'field, 'world, 'state, 'cc,
 	}
 }
 
-pub struct CameraQueryStateNT<'field, 'cc, 't>(pub &'field mut CameraQueryState<'cc, 't>);
+pub type CameraQueryState<'c> = QueryState<CameraComponents<'c>>;
+pub struct CameraQueryStateNT<'field, 'c>(pub &'field mut CameraQueryState<'c>);
 
-impl<'field, 'cc, 't> CameraQueryStateNT<'field, 'cc, 't> {
+impl<'field, 'c> CameraQueryStateNT<'field, 'c> {
 	pub fn orientation<T, F: FnOnce(Option<&Quat>) -> T>(&mut self, world: &World, f: F) -> T {
 		match self.0.iter(world).next() {
-			Some((_, transform)) => {
-				f(Some(&transform.rotation))
+			Some(camera_components_item) => {
+				f(Some(&camera_components_item.transform.rotation))
 			},
 			None => {
 				f(None)
@@ -134,16 +141,21 @@ impl<'field, 'cc, 't> CameraQueryStateNT<'field, 'cc, 't> {
 	}
 }
 
-pub type CameraTupleMut<'cc, 't> = (&'cc CameraComponent, &'t mut Transform);
-pub type CameraQueryStateMut<'cc, 't> = QueryState<CameraTupleMut<'cc, 't>>;
-pub type CameraQueryMut<'world, 'state, 'cc, 't> = Query<'world, 'state, CameraTupleMut<'cc, 't>>;
-pub struct CameraQueryNTMut<'field, 'world, 'state, 'cc, 't>(pub &'field mut CameraQueryMut<'world, 'state, 'cc, 't>);
+#[derive(WorldQuery)]
+#[world_query(mutable)]
+pub struct CameraComponentsMut<'c> {
+	camera_component:	&'c CameraComponent,
+	transform:			&'c mut Transform,
+}
 
-impl<'field, 'world, 'state, 'cc, 't> CameraQueryNTMut<'field, 'world, 'state, 'cc, 't> {
+pub type CameraQueryMut<'world, 'state, 'c> = Query<'world, 'state, CameraComponentsMut<'c>>;
+pub struct CameraQueryMutNT<'field, 'world, 'state, 'c>(pub &'field mut CameraQueryMut<'world, 'state, 'c>);
+
+impl<'field, 'world, 'state, 'c> CameraQueryMutNT<'field, 'world, 'state, 'c> {
 	pub fn orientation<T, F: FnOnce(Option<&mut Quat>) -> T>(&mut self, f: F) -> T {
 		match self.0.iter_mut().next() {
-			Some((_, mut transform)) => {
-				f(Some(&mut transform.rotation))
+			Some(mut camera_components_mut_item) => {
+				f(Some(&mut camera_components_mut_item.transform.rotation))
 			},
 			None => {
 				f(None)
@@ -152,13 +164,14 @@ impl<'field, 'world, 'state, 'cc, 't> CameraQueryNTMut<'field, 'world, 'state, '
 	}
 }
 
-pub struct CameraQueryStateNTMut<'field, 'cc, 't>(pub &'field mut CameraQueryStateMut<'cc, 't>);
+pub type CameraQueryMutState<'c> = QueryState<CameraComponentsMut<'c>>;
+pub struct CameraQueryMutStateNT<'field, 'c>(pub &'field mut CameraQueryMutState<'c>);
 
-impl<'field, 'cc, 't> CameraQueryStateNTMut<'field, 'cc, 't> {
+impl<'field, 'c> CameraQueryMutStateNT<'field, 'c> {
 	pub fn orientation<T, F: FnOnce(Option<&mut Quat>) -> T>(&mut self, world: &mut World, f: F) -> T {
 		match self.0.iter_mut(world).next() {
-			Some((_, mut transform)) => {
-				f(Some(&mut transform.rotation))
+			Some(mut camera_components_mut_item) => {
+				f(Some(&mut camera_components_mut_item.transform.rotation))
 			},
 			None => {
 				f(None)
@@ -206,7 +219,7 @@ impl CameraPlugin {
 		mut camera_query: CameraQueryMut
 	) -> () {
 		if input_state.has_camera_rotation {
-			CameraQueryNTMut(&mut camera_query).orientation(|rotation: Option<&mut Quat>| -> () {
+			CameraQueryMutNT(&mut camera_query).orientation(|rotation: Option<&mut Quat>| -> () {
 				if let Some(rotation) = rotation {
 					*rotation *= input_state.camera_rotation;
 				}
@@ -227,11 +240,7 @@ impl CameraPlugin {
 impl Plugin for CameraPlugin {
 	fn build(&self, app: &mut App) -> () {
 		app
-			.add_startup_system(Self::startup.system())
-			.add_system(Self::run
-				.system()
-				.label(STRING_DATA.labels.camera_run.as_ref())
-				.after(STRING_DATA.labels.puzzle_run.as_ref())
-			);
+			.add_startup_system(Self::startup.after(PolyhedraDataPlugin::startup))
+			.add_system(Self::run.after(PuzzlePlugin::run));
 	}
 }

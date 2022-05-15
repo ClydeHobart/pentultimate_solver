@@ -1246,7 +1246,7 @@ lazy_static!{
 #[test]
 fn dump_library() -> () {
 	use std::io::Write;
-	Library::build();
+	Library::build(); 
 
 	write!(
 		std::fs::File::create(".ignore/rotate_tri_pair_full_masks.ron").unwrap(),

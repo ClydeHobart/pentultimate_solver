@@ -8,7 +8,10 @@ use {
 		ops::Range
 	},
 	bevy::{
-		ecs::world::EntityMut,
+		ecs::{
+			query::WorldQuery,
+			world::EntityMut
+		},
 		prelude::*,
 		render::{
 			mesh::{
@@ -45,7 +48,6 @@ use {
 		},
 		preferences::prelude::*,
 		prelude::*,
-		strings::STRING_DATA,
 		util::inspectable_bin_map::*
 	},
 	self::consts::*
@@ -387,9 +389,9 @@ impl From<&Mesh> for BevyMesh {
 			indices.push(index);
 		}
 
-		bevy_mesh.set_attribute(BevyMesh::ATTRIBUTE_POSITION, positions);
-		bevy_mesh.set_attribute(BevyMesh::ATTRIBUTE_NORMAL, normals);
-		bevy_mesh.set_attribute(BevyMesh::ATTRIBUTE_UV_0, uvs);
+		bevy_mesh.insert_attribute(BevyMesh::ATTRIBUTE_POSITION, positions);
+		bevy_mesh.insert_attribute(BevyMesh::ATTRIBUTE_NORMAL, normals);
+		bevy_mesh.insert_attribute(BevyMesh::ATTRIBUTE_UV_0, uvs);
 		bevy_mesh.set_indices(Some(Indices::U32(indices)));
 
 		bevy_mesh
@@ -402,10 +404,24 @@ pub struct PieceComponent {
 	pub piece_type:	Type
 }
 
-pub type PieceTuple<'pc, 't> = (Entity, &'pc PieceComponent, &'t Transform);
-pub type PieceTupleMut<'pc, 't> = (Entity, &'pc PieceComponent, &'t mut Transform);
-pub type PieceQueryStateMut<'pc, 't> = QueryState<PieceTupleMut<'pc, 't>>;
-pub type PieceQueryMut<'world, 'state, 'pc, 't> = Query<'world, 'state, PieceTupleMut<'pc, 't>>;
+#[derive(WorldQuery)]
+pub struct PieceComponents<'w> {
+	pub entity:				Entity,
+	pub piece_component:	&'w PieceComponent,
+	pub transform:			&'w Transform
+}
+
+pub type PieceQuery<'world, 'state, 'w> = Query<'world, 'state, PieceComponents<'w>>;
+
+#[derive(WorldQuery)]
+#[world_query(mutable)]
+pub struct PieceComponentsMut<'w> {
+	pub entity:				Entity,
+	pub piece_component:	&'w PieceComponent,
+	pub transform:			&'w mut Transform
+}
+
+pub type PieceQueryMut<'world, 'state, 'w> = Query<'world, 'state, PieceComponentsMut<'w>>;
 
 pub struct PieceMats<'a> {
 	pub base_mat:	&'a ColAndMat,
@@ -1013,8 +1029,8 @@ impl PiecePair {
 		};
 		let mut entity_count: u32 = 0_u32;
 
-		for (entity, piece_component, _) in world.query::<PieceTuple>().iter(world) {
-			entities[piece_component.index] = entity;
+		for piece_components in world.query::<PieceComponents>().iter(world) {
+			entities[piece_components.piece_component.index] = piece_components.entity;
 			entity_count += 1_u32;
 		}
 
@@ -1070,7 +1086,7 @@ impl PieceLibrary {
 pub struct PiecePlugin;
 
 impl PiecePlugin {
-	fn startup_app(
+	pub fn startup_app(
 		mut piece_library: ResMut<PieceLibrary>,
 		mut bevy_meshes: ResMut<Assets<BevyMesh>>
 	) -> () {
@@ -1085,6 +1101,6 @@ impl Plugin for PiecePlugin {
 				PieceLibrary::try_default(),
 				return
 			))
-			.add_startup_system(Self::startup_app.system().label(STRING_DATA.labels.piece_library_startup.as_ref()));
+			.add_startup_system(Self::startup_app);
 	}
 }
