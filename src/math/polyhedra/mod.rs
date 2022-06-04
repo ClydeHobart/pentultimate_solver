@@ -27,7 +27,7 @@ impl Polyhedron {
 	}
 
 	#[inline(always)]
-	pub fn properties(self) -> &'static properties::Properties { properties::Properties::get(self) }
+	pub const fn properties(self) -> &'static properties::Properties { properties::Properties::get(self) }
 }
 
 impl Default for Polyhedron {

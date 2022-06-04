@@ -17,6 +17,7 @@ use {
 			ManuallyDrop,
 			transmute
 		},
+		ops::Range,
 		path::Path,
 		str,
 		sync::Once,
@@ -41,6 +42,7 @@ use {
 		Buffer,
 		Locale
 	},
+	num_traits::PrimInt,
 	serde::{
 		Deserialize,
 		Serialize
@@ -251,6 +253,10 @@ impl FromAlt<Color> for Color32 {
 
 impl FromAlt<[u8; 4_usize]> for Color32 {
 	fn from_alt(value: [u8; 4_usize]) -> Self { unsafe { transmute::<[u8; 4_usize], Self>(value) } }
+}
+
+impl<T: PrimInt, U: PrimInt> FromAlt<Range<T>> for Option<Range<U>> {
+	fn from_alt(range: Range<T>) -> Self { Some(U::from(range.start)? .. U::from(range.end)?) }
 }
 
 pub trait IntoAlt<T> {

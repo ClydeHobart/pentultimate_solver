@@ -1090,33 +1090,4 @@ mod tests {
 		init_env_logger();
 		break_assert!(Data::validate_polyhedra().is_ok());
 	}
-
-	#[test]
-	fn test_3d_to_2d() -> () {
-		use crate::piece::consts::*;
-
-		init_env_logger();
-		DataLibrary::build();
-
-		let icosidodecahedron_data: &Data = Data::get(Polyhedron::Icosidodecahedron);
-		let pent_vert_indices: &[usize] = icosidodecahedron_data
-			.faces
-			[PENTAGON_INDEX_OFFSET]
-			.get_slice(&icosidodecahedron_data.vert_indices);
-		let vert_0: Vec3 = icosidodecahedron_data.verts[pent_vert_indices[0_usize]].vec;
-		let vert_1: Vec3 = icosidodecahedron_data.verts[pent_vert_indices[1_usize]].vec;
-		let vert_2: Vec3 = icosidodecahedron_data.verts[pent_vert_indices[2_usize]].vec;
-		let v0_to_v1: Vec3 = vert_1 - vert_0;
-		let v02v1_cross_v2: Vec3 = v0_to_v1.cross(vert_2);
-		let v02v1xv2_dot_v1: f32 = v02v1_cross_v2.dot(vert_1);
-
-		debug_expr!(
-			vert_0,
-			vert_1,
-			vert_2,
-			v0_to_v1,
-			v02v1_cross_v2,
-			v02v1xv2_dot_v1
-		);
-	}
 }

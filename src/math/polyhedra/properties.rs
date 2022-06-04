@@ -28,7 +28,7 @@ pub struct Properties {
 }
 
 impl Properties {
-	pub fn get(polyhedron: Polyhedron) -> &'static Self {
+	pub const fn get(polyhedron: Polyhedron) -> &'static Self {
 		match polyhedron {
 			Polyhedron::Icosahedron				=> &ICOSAHEDRON,
 			Polyhedron::Dodecahedron			=> &DODECAHEDRON,

@@ -369,6 +369,17 @@ pub mod macros {
 			}
 		};
 
+		($level:path, $expr:expr, =>) => { {
+			let option = $expr;
+
+			#[cfg(debug_assertions)]
+			if option.is_none() {
+				$level!("\"{}\" was None", std::stringify!($expr));
+			}
+
+			option
+		} };
+
 		($level:path, $expr:expr $(, $some_closure:expr $(, $none_closure:expr)?)?) => {
 			if let Some(_some) = $expr {
 				$(
@@ -407,6 +418,10 @@ pub mod macros {
 			log_expect_some!(::log::trace, $expr, ?)
 		};
 
+		($expr:expr, =>) => {
+			log_expect_some!(::log::trace, $expr, =>)
+		};
+
 		($expr:expr $(, $some_closure:expr $(, $none_closure:expr)?)?) => {
 			log_expect_some!(::log::trace, $expr $(, $some_closure $(, $none_closure)?)?)
 		};
@@ -428,6 +443,10 @@ pub mod macros {
 
 		($expr:expr, ?) => {
 			log_expect_some!(::log::debug, $expr, ?)
+		};
+
+		($expr:expr, =>) => {
+			log_expect_some!(::log::debug, $expr, =>)
 		};
 
 		($expr:expr $(, $some_closure:expr $(, $none_closure:expr)?)?) => {
@@ -453,6 +472,10 @@ pub mod macros {
 			log_expect_some!(::log::info, $expr, ?)
 		};
 
+		($expr:expr, =>) => {
+			log_expect_some!(::log::info, $expr, =>)
+		};
+
 		($expr:expr $(, $some_closure:expr $(, $none_closure:expr)?)?) => {
 			log_expect_some!(::log::info, $expr $(, $some_closure $(, $none_closure)?)?)
 		};
@@ -476,6 +499,10 @@ pub mod macros {
 			log_expect_some!(::log::warn, $expr, ?)
 		};
 
+		($expr:expr, =>) => {
+			log_expect_some!(::log::warn, $expr, =>)
+		};
+
 		($expr:expr $(, $some_closure:expr $(, $none_closure:expr)?)?) => {
 			log_expect_some!(::log::warn, $expr $(, $some_closure $(, $none_closure)?)?)
 		};
@@ -497,6 +524,10 @@ pub mod macros {
 
 		($expr:expr, ?) => {
 			log_expect_some!(::log::error, $expr, ?)
+		};
+
+		($expr:expr, =>) => {
+			log_expect_some!(::log::error, $expr, =>)
 		};
 
 		($expr:expr $(, $some_closure:expr $(, $none_closure:expr)?)?) => {
@@ -554,6 +585,17 @@ pub mod macros {
 			}
 		};
 
+		($level:path, $expr:expr, =>) => { {
+			let result = $expr;
+
+			#[cfg(debug_assertions)]
+			if result.is_err() {
+				$level!("\"{}\" was Err: {:#?}", std::stringify!($expr), result.as_ref().unwrap());
+			}
+
+			result
+		} };
+
 		($level:path, $expr:expr $(, $ok_closure:expr $(, $err_closure:expr)?)?) => {
 			match $expr {
 				Ok(_ok) => {
@@ -595,6 +637,10 @@ pub mod macros {
 			log_expect_ok!(::log::trace, $expr, ?)
 		};
 
+		($expr:expr, =>) => {
+			log_expect_ok!(::log::trace, $expr, =>)
+		};
+
 		($expr:expr $(, $ok_closure:expr $(, $err_closure:expr)?)?) => {
 			log_expect_ok!(::log::trace, $expr $(, $ok_closure $(, $err_closure)?)?)
 		};
@@ -616,6 +662,10 @@ pub mod macros {
 
 		($expr:expr, ?) => {
 			log_expect_ok!(::log::debug, $expr, ?)
+		};
+
+		($expr:expr, =>) => {
+			log_expect_ok!(::log::debug, $expr, =>)
 		};
 
 		($expr:expr $(, $ok_closure:expr $(, $err_closure:expr)?)?) => {
@@ -641,6 +691,10 @@ pub mod macros {
 			log_expect_ok!(::log::info, $expr, ?)
 		};
 
+		($expr:expr, =>) => {
+			log_expect_ok!(::log::info, $expr, =>)
+		};
+
 		($expr:expr $(, $ok_closure:expr $(, $err_closure:expr)?)?) => {
 			log_expect_ok!(::log::info, $expr $(, $ok_closure $(, $err_closure)?)?)
 		};
@@ -664,6 +718,10 @@ pub mod macros {
 			log_expect_ok!(::log::warn, $expr, ?)
 		};
 
+		($expr:expr, =>) => {
+			log_expect_ok!(::log::warn, $expr, =>)
+		};
+
 		($expr:expr $(, $ok_closure:expr $(, $err_closure:expr)?)?) => {
 			log_expect_ok!(::log::warn, $expr $(, $ok_closure $(, $err_closure)?)?)
 		};
@@ -685,6 +743,10 @@ pub mod macros {
 
 		($expr:expr, ?) => {
 			log_expect_ok!(::log::error, $expr, ?)
+		};
+
+		($expr:expr, =>) => {
+			log_expect_ok!(::log::error, $expr, =>)
 		};
 
 		($expr:expr $(, $ok_closure:expr $(, $err_closure:expr)?)?) => {

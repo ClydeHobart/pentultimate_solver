@@ -33,18 +33,8 @@ use {
 	},
 	crate::{
 		app::prelude::*,
-		math::polyhedra::{
-			data::Data,
-			Polyhedron
-		},
-		piece::{
-			consts::*,
-			PieceLibrary,
-			PieceMats
-		},
-		preferences::prelude::*,
-		prelude::*,
-		util::inspectable_bin_map::*
+		piece::consts::*,
+		prelude::*
 	},
 	self::transformation::{
 		Action,
@@ -777,35 +767,6 @@ pub mod inflated {
 pub struct PuzzlePlugin;
 
 impl PuzzlePlugin {
-	pub fn startup(
-		world: &mut World,
-	) -> () {
-		warn_expect!(world.contains_resource::<Preferences>(),?);
-		warn_expect!(world.contains_resource::<PieceLibrary>(),?);
-
-		world.resource_scope(|world: &mut World, preferences: Mut<Preferences>| -> () {
-			world.resource_scope(|world: &mut World, piece_library: Mut<PieceLibrary>| -> () {
-				let color_data_with_mat: &ColorDataWithMat = &preferences.puzzle.color.colors_with_mat;
-				let design: Design = preferences.puzzle.design;
-
-				piece_library.0[design as usize].add_entities(
-					world,
-					&PieceMats {
-						base_mat: &color_data_with_mat.base_color,
-						color_mats: warn_expect_some!(
-							color_data_with_mat
-								.polyhedron_to_colors
-								.as_inspectable_bin_map()
-								.get(&design.as_polyhedron()),
-							return
-						)
-					},
-					&Data::get(Polyhedron::Icosidodecahedron).faces
-				);
-			});
-		});
-	}
-
 	pub fn run(
 		mut extended_puzzle_state: ResMut<ExtendedPuzzleState>,
 		mut input_state: ResMut<InputState>,
@@ -823,7 +784,6 @@ impl Plugin for PuzzlePlugin {
 	fn build(&self, app: &mut App) -> () {
 		app
 			.insert_resource(ExtendedPuzzleState::default())
-			.add_startup_system(Self::startup.exclusive_system().at_end())
 			.add_system(Self::run);
 	}
 }
