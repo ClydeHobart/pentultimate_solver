@@ -398,75 +398,85 @@ impl<'a> PieceMats<'a> {
 	}
 }
 
-struct MeshVertexData<
-	P: Copy + Into<[f32; 3_usize]>,
-	N: Copy + Into<[f32; 3_usize]>,
-	U: Copy + Into<[f32; 2_usize]>
-> {
-	position:	P,
-	normal:		N,
-	uv:			U
+struct MeshVertexData {
+	position:	Vec3,
+	normal:		Vec3,
+	uv:			Vec2
 }
 
-type VecMeshVertexData = MeshVertexData<Vec3, Vec3, Vec2>;
+trait PushVertex<V: Sized> {
+	fn push_vertex(&mut self, vertex: V) -> ();
+}
 
-trait PushVertex<V> {
-	fn push_vertex(&mut self, vertex: &V) -> ();
+#[test]
+fn vec2_alignment() -> () {
+	println!("{}", std::mem::align_of::<Vec2>());
 }
 
 struct MeshAttributeData {
-	positions:		Vec<[f32; 3_usize]>,
-	normals:		Vec<[f32; 3_usize]>,
-	uvs:			Vec<[f32; 2_usize]>,
-	indices:		Vec<u32>,
-	face_indices:	Vec<u8>,
+	positions:		[Vec3;	gen::TOTAL_VERTEX_COUNT],
+	normals:		[Vec3;	gen::TOTAL_VERTEX_COUNT],
+	uvs:			[Vec2;	gen::TOTAL_VERTEX_COUNT],
+	indices:		[u32;	gen::TOTAL_INDEX_COUNT],
+	face_indices:	[u8;	gen::TOTAL_FACE_INDEX_COUNT],
 }
 
-impl MeshAttributeData {
-	fn vertices(&self) -> usize { self.positions.len() }
+impl Default for MeshAttributeData { fn default() -> Self { unsafe { MaybeUninit::<Self>::zeroed().assume_init() } } }
 
-	fn offset(&self) -> MeshStats<usize> { <MeshStats<usize> as From<&Self>>::from(self) }
+struct MeshAttributeDataWithStats<'d> {
+	data:	&'d mut MeshAttributeData,
+	stats:	MeshStats<usize>
 }
 
-impl Default for MeshAttributeData {
-	fn default() -> Self {
-		use generation::TOTAL_MESH_STATS_SUM;
+impl<'d> MeshAttributeDataWithStats<'d> {
+	fn indices(&mut self) -> TempVec<u32> { TempVec::<u32> {
+		data:	&mut self.data.indices,
+		index:	&mut self.stats.indices
+	} }
 
-		Self {
-			positions:		Vec::<[f32; 3_usize]>::with_capacity(TOTAL_MESH_STATS_SUM.vertices),
-			normals:		Vec::<[f32; 3_usize]>::with_capacity(TOTAL_MESH_STATS_SUM.vertices),
-			uvs:			Vec::<[f32; 2_usize]>::with_capacity(TOTAL_MESH_STATS_SUM.vertices),
-			indices:		Vec::<u32>::with_capacity(TOTAL_MESH_STATS_SUM.indices),
-			face_indices:	Vec::<u8>::with_capacity(TOTAL_MESH_STATS_SUM.face_indices),
-		}
+	fn face_indices(&mut self) -> TempVec<u8> { TempVec::<u8> {
+		data:	&mut self.data.face_indices,
+		index:	&mut self.stats.face_indices
+	} }
+}
+
+impl<'d> PushVertex<MeshVertexData> for MeshAttributeDataWithStats<'d> {
+	fn push_vertex(&mut self, mesh_vertex_data: MeshVertexData) -> () {
+		self.data.positions	[self.stats.vertices] = mesh_vertex_data.position;
+		self.data.normals	[self.stats.vertices] = mesh_vertex_data.normal;
+		self.data.uvs		[self.stats.vertices] = mesh_vertex_data.uv;
+
+		self.stats.vertices += 1_usize;
 	}
 }
 
-impl<
-	P: Copy + Into<[f32; 3_usize]>,
-	N: Copy + Into<[f32; 3_usize]>,
-	U: Copy + Into<[f32; 2_usize]>
-> PushVertex<MeshVertexData<P, N, U>> for MeshAttributeData {
-	fn push_vertex(&mut self, mesh_vertex_data: &MeshVertexData<P, N, U>) -> () {
-		self.positions.push(mesh_vertex_data.position.into());
-		self.normals.push(mesh_vertex_data.normal.into());
-		self.uvs.push(mesh_vertex_data.uv.into());
-	}
-}
-
-impl PushVertex<(Tri, u32)> for MeshAttributeData {
-	fn push_vertex(&mut self, (tri, offset): &(Tri, u32)) -> () {
-		let offset: u32 = self.vertices() as u32 - offset;
+impl<'d> PushVertex<(Tri, u32)> for MeshAttributeDataWithStats<'d> {
+	fn push_vertex(&mut self, (tri, offset): (Tri, u32)) -> () {
+		let offset: u32 = self.stats.vertices as u32 - offset;
 
 		for vertex in tri.vertices {
-			self.push_vertex(&MeshVertexData {
+			self.push_vertex(MeshVertexData {
 				position:	vertex,
 				normal:		tri.normal,
 				uv:			Vec2::ZERO
 			});
 		}
 
-		self.indices.extend([offset, offset + 1_u32, offset + 2_u32]);
+		self.indices().extend([offset, offset + 1_u32, offset + 2_u32]);
+	}
+}
+
+struct TempVec<'a, T> {
+	data:	&'a mut [T],
+	index:	&'a mut usize
+}
+
+impl<'a, T> TempVec<'a, T> {
+	fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) -> () {
+		for t in iter {
+			self.data[*self.index] = t;
+			*self.index += 1_usize;
+		}
 	}
 }
 
@@ -537,14 +547,6 @@ impl<I: PrimInt + Default> Add for MeshStats<I> {
 	} }
 }
 
-impl From<&MeshAttributeData> for MeshStats<usize> {
-	fn from(mesh_attribute_data: &MeshAttributeData) -> Self { Self {
-		vertices:		mesh_attribute_data.vertices(),
-		indices:		mesh_attribute_data.indices.len(),
-		face_indices:	mesh_attribute_data.face_indices.len()
-	} }
-}
-
 #[derive(Clone, Default)]
 struct MeshHeader(Range<MeshStats<u32>>);
 
@@ -572,33 +574,56 @@ impl MeshHeader {
 		let vertices: Range<usize> = self.vertices();
 		let indices: Range<usize> = self.indices();
 
-		warn_expect!(vertices.end <= mesh_attribute_data.vertices(), ?);
-		warn_expect!(indices.end <= mesh_attribute_data.indices.len(), ?);
+		warn_expect!(vertices.end <= gen::TOTAL_VERTEX_COUNT, ?);
+		warn_expect!(indices.end <= gen::TOTAL_INDEX_COUNT, ?);
+
+		macro_rules! assert_eq_align_and_size {
+			($type_a:ty, $type_b:ty) => {
+				assert_eq_align!($type_a, $type_b);
+				assert_eq_size!($type_a, $type_b);
+			}
+		}
+
+		assert_eq_align_and_size!(Vec3, [f32; 3_usize]);
+		assert_eq_align_and_size!(Vec2, [f32; 2_usize]);
+		assert_eq_align_and_size!(Vec<Vec3>, Vec<[f32; 3_usize]>);
+		assert_eq_align_and_size!(Vec<Vec2>, Vec<[f32; 2_usize]>);
 
 		let mut bevy_mesh: BevyMesh = BevyMesh::new(PrimitiveTopology::TriangleList);
 
 		bevy_mesh.insert_attribute(
 			BevyMesh::ATTRIBUTE_POSITION,
-			Vec::<[f32; 3_usize]>::from(&mesh_attribute_data.positions[vertices.clone()])
+			// Safe: assert_eq_align_and_size! invocations above
+			unsafe {
+				transmute::<Vec<Vec3>, Vec<[f32; 3_usize]>>(
+					Vec::<Vec3>::from(&mesh_attribute_data.positions[vertices.clone()])
+				)
+			}
 		);
 		bevy_mesh.insert_attribute(
 			BevyMesh::ATTRIBUTE_NORMAL,
-			Vec::<[f32; 3_usize]>::from(&mesh_attribute_data.normals[vertices.clone()])
+			// Safe: assert_eq_align_and_size! invocations above
+			unsafe {
+				transmute::<Vec<Vec3>, Vec<[f32; 3_usize]>>(
+					Vec::<Vec3>::from(&mesh_attribute_data.normals[vertices.clone()])
+				)
+			}
 		);
 		bevy_mesh.insert_attribute(
 			BevyMesh::ATTRIBUTE_UV_0,
-			Vec::<[f32; 2_usize]>::from(&mesh_attribute_data.uvs[vertices])
+			// Safe: assert_eq_align_and_size! invocations above
+			unsafe {
+				transmute::<Vec<Vec2>, Vec<[f32; 2_usize]>>(Vec::<Vec2>::from(&mesh_attribute_data.uvs[vertices]))
+			}
 		);
 		bevy_mesh.set_indices(Some(Indices::U32(Vec::<u32>::from(&mesh_attribute_data.indices[indices]))));
 		*bevy_mesh_handle = bevy_meshes.add(bevy_mesh);
 	}
 }
 
-struct MeshHeaders(Vec<MeshHeader>);
+struct MeshHeaders([MeshHeader; gen::TOTAL_MESH_COUNT]);
 
 impl MeshHeaders {
-	fn offset(&self) -> usize { self.0.len() }
-
 	fn add_bevy_meshes(
 		&self,
 		mesh_attribute_data: &MeshAttributeData,
@@ -616,17 +641,31 @@ impl MeshHeaders {
 }
 
 impl Default for MeshHeaders {
-	fn default() -> Self { Self(Vec::<MeshHeader>::with_capacity(generation::TOTAL_MESH_COUNT)) }
+	fn default() -> Self {
+		Self(<[MeshHeader; gen::TOTAL_MESH_COUNT]>::default_array())
+	}
+}
+
+struct MeshHeadersWithIndex<'h> {
+	headers:	&'h mut MeshHeaders,
+	index:		usize
+}
+
+impl<'h> MeshHeadersWithIndex<'h> {
+	fn push(&mut self, mesh_header: MeshHeader) -> () {
+		self.headers.0[self.index] = mesh_header;
+		self.index += 1_usize;
+	}
 }
 
 struct PieceHeaderParams<'a> {
-	design:					Design,
-	piece_type:				Type,
-	mesh_attribute_data:	&'a mut MeshAttributeData,
-	mesh_headers:			&'a mut MeshHeaders
+	design:							Design,
+	piece_type:						Type,
+	mesh_attribute_data_with_stats:	&'a mut MeshAttributeDataWithStats<'a>,
+	mesh_headers_with_index:		&'a mut MeshHeadersWithIndex<'a>
 }
 
-mod generation {
+mod gen {
 	use super::*;
 
 	pub mod original_super_dodecahedron {
@@ -765,6 +804,9 @@ mod generation {
 		&original_super_dodecahedron::DESIGN_MESH_STATS_SUM,
 		&custom_super_dodecahedron::DESIGN_MESH_STATS_SUM
 	]);
+	pub const TOTAL_VERTEX_COUNT:		usize	= TOTAL_MESH_STATS_SUM.vertices;
+	pub const TOTAL_INDEX_COUNT:		usize	= TOTAL_MESH_STATS_SUM.indices;
+	pub const TOTAL_FACE_INDEX_COUNT:	usize	= TOTAL_MESH_STATS_SUM.face_indices;
 	pub const PLANAR_OFFSET_RATIO:		f32		= 1.0_f32 / 64.0_f32;
 	pub const NORMAL_OFFSET_RATIO:		f32		= 1.0_f32 / 256.0_f32;
 	pub const SHELL_DEPTH_RATIO:		f32		= 0.25_f32;
@@ -779,7 +821,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 	type Error = ();
 
 	fn try_from(mut params: &mut PieceHeaderParams) -> Result<Self, ()> {
-		use generation::*;
+		use gen::*;
 
 		fn next_vert_index<I: PrimInt>(curr_vert_index: I, vert_count: I) -> I {
 			(curr_vert_index + I::one()) % vert_count
@@ -789,7 +831,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 			(curr_vert_index + vert_count + I::one()) % vert_count
 		}
 
-		let start:							u32					= params.mesh_headers.offset() as u32;
+		let start:							u32					= params.mesh_headers_with_index.index as u32;
 
 		let pyramid_data:					&Data				= Data::get(params.piece_type.pyramid_polyhedron());
 		let icosahedron_data:				&Data				= Data::get(Polyhedron::Icosahedron);
@@ -826,7 +868,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 		};
 		let add_adjacent_face_indices_same_piece: &dyn Fn(&mut PieceHeaderParams, usize) -> () =
 			&|params: &mut PieceHeaderParams, vert_index: usize| -> () {
-				params.mesh_attribute_data.face_indices.extend(face_range
+				params.mesh_attribute_data_with_stats.face_indices().extend(face_range
 					.clone()
 					.map(|face_index: usize| -> u8 {
 						let face_data: &FaceData = &icosidodecahedron_faces[face_index];
@@ -847,7 +889,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 			&|params: &mut PieceHeaderParams, vert_index: usize| -> () {
 				let next_vert_index: usize = params.piece_type.next_side_index(vert_index);
 
-				params.mesh_attribute_data.face_indices.extend(face_range
+				params.mesh_attribute_data_with_stats.face_indices().extend(face_range
 					.clone()
 					.map(|face_index: usize| -> u8 {
 						let edge_index: usize = icosidodecahedron_data.get_edge_index(&{
@@ -871,7 +913,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 				);
 			};
 		let add_piece_range: &dyn Fn(&mut PieceHeaderParams) -> () = &|params: &mut PieceHeaderParams| -> () {
-			params.mesh_attribute_data.face_indices.extend(
+			params.mesh_attribute_data_with_stats.face_indices().extend(
 				PENTAGON_PIECE_RANGE.map(<u8 as NumCast>::from).map(Option::unwrap)
 			);
 		};
@@ -886,17 +928,17 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 		| -> () {
 			let normal: Vec3 = *normal;
 			let uv: Vec2 = *uv;
-			let offset: u32 = params.mesh_attribute_data.vertices() as u32 - offset;
+			let offset: u32 = params.mesh_attribute_data_with_stats.stats.vertices as u32 - offset;
 
 			for vert in vert_loop {
-				params.mesh_attribute_data.push_vertex(&VecMeshVertexData {
+				params.mesh_attribute_data_with_stats.push_vertex(MeshVertexData {
 					position: *vert,
 					normal,
 					uv
 				});
 			}
 
-			params.mesh_attribute_data.push_vertex(&VecMeshVertexData {
+			params.mesh_attribute_data_with_stats.push_vertex(MeshVertexData {
 				position: *center,
 				normal,
 				uv
@@ -912,7 +954,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 			for curr_vert_index in 0_u32 .. vert_count {
 				let next_vert_index: u32 = next_vert_index(curr_vert_index, vert_count);
 
-				params.mesh_attribute_data.indices.extend(
+				params.mesh_attribute_data_with_stats.indices().extend(
 					[offset + vert_count, offset + curr_vert_index, offset + next_vert_index]
 				);
 			}
@@ -956,12 +998,12 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 					tri.offset_along_normal(NORMAL_OFFSET);
 				}
 
-				params.mesh_attribute_data.push_vertex(&(tri, offset));
+				params.mesh_attribute_data_with_stats.push_vertex((tri, offset));
 			}
 		};
 
 		let mut mesh_index: usize = 0_usize;
-		let mut offset: MeshStats<usize> = params.mesh_attribute_data.offset();
+		let mut offset: MeshStats<usize> = params.mesh_attribute_data_with_stats.stats.clone();
 
 		let check_mesh_stats: &dyn Fn(
 			&PieceHeaderParams,
@@ -974,7 +1016,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 			offset:				&mut MeshStats<usize>,
 			mesh_index:			&mut usize
 		| -> Result<(), ()> {
-			let new_offset: MeshStats<usize> = params.mesh_attribute_data.offset();
+			let new_offset: MeshStats<usize> = params.mesh_attribute_data_with_stats.stats.clone();
 			let expected_offset: MeshStats<usize> = *offset + *mesh_stats_slice[*mesh_index];
 
 			if !warn_expect!(new_offset == expected_offset) {
@@ -1007,7 +1049,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 			offset:				&MeshStats<usize>,
 			mesh_index:			usize
 		| -> u32 {
-			params.mesh_headers.0.push(MeshHeader::new(offset, mesh_stats_slice[mesh_index]));
+			params.mesh_headers_with_index.push(MeshHeader::new(offset, mesh_stats_slice[mesh_index]));
 
 			offset.vertices as u32
 		};
@@ -1033,24 +1075,24 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 							&curr_vert_loop[curr_vert_index],
 							&curr_vert_loop[next_vert_index]
 						);
-						let offset: u32 = params.mesh_attribute_data.vertices() as u32 - offset;
+						let offset: u32 = params.mesh_attribute_data_with_stats.stats.vertices as u32 - offset;
 
-						params.mesh_attribute_data.push_vertex(&VecMeshVertexData {
+						params.mesh_attribute_data_with_stats.push_vertex(MeshVertexData {
 							position: next_vert_loop[curr_vert_index],
 							normal,
 							uv
 						});
-						params.mesh_attribute_data.push_vertex(&VecMeshVertexData {
+						params.mesh_attribute_data_with_stats.push_vertex(MeshVertexData {
 							position: curr_vert_loop[curr_vert_index],
 							normal,
 							uv
 						});
-						params.mesh_attribute_data.push_vertex(&VecMeshVertexData {
+						params.mesh_attribute_data_with_stats.push_vertex(MeshVertexData {
 							position: curr_vert_loop[next_vert_index],
 							normal,
 							uv
 						});
-						params.mesh_attribute_data.push_vertex(&VecMeshVertexData {
+						params.mesh_attribute_data_with_stats.push_vertex(MeshVertexData {
 							position: next_vert_loop[next_vert_index],
 							normal,
 							uv
@@ -1061,7 +1103,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 						let vert_index_c: u32 = offset + 2_u32;
 						let vert_index_d: u32 = offset + 3_u32;
 
-						params.mesh_attribute_data.indices.extend([
+						params.mesh_attribute_data_with_stats.indices().extend([
 							vert_index_a,
 							vert_index_b,
 							vert_index_c,
@@ -1130,11 +1172,11 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 								&curr_vert_pentagon[0_usize],
 								&curr_vert_pentagon[1_usize]
 							);
-							let offset: u32 = params.mesh_attribute_data.vertices() as u32 - offset;
+							let offset: u32 = params.mesh_attribute_data_with_stats.stats.vertices as u32 - offset;
 							let curr_loop_offset: usize = CURR_LOOP_INDEX * vert_count;
 							let next_loop_offset: usize = NEXT_LOOP_INDEX * vert_count;
 							let mut push_vertex = |position: &Vec3| -> () {
-								params.mesh_attribute_data.push_vertex(&VecMeshVertexData {
+								params.mesh_attribute_data_with_stats.push_vertex(MeshVertexData {
 									position: *position,
 									normal,
 									uv
@@ -1151,7 +1193,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 								let vert_index_c: u32 = (curr_loop_offset + next_vert_index) as u32 + offset;
 								let vert_index_d: u32 = (next_loop_offset + next_vert_index) as u32 + offset;
 
-								params.mesh_attribute_data.indices.extend([
+								params.mesh_attribute_data_with_stats.indices().extend([
 									vert_index_a,
 									vert_index_b,
 									vert_index_c,
@@ -1434,7 +1476,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 
 								tri.offset_all_along_plane(-PLANAR_OFFSET);
 								tri.offset_along_normal(NORMAL_OFFSET);
-								params.mesh_attribute_data.push_vertex(&(tri, vertices_offset));
+								params.mesh_attribute_data_with_stats.push_vertex((tri, vertices_offset));
 							}
 
 							add_piece_range(&mut params);
@@ -1468,7 +1510,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 
 								tri.offset_all_along_plane(-PLANAR_OFFSET);
 								tri.offset_along_normal(NORMAL_OFFSET);
-								params.mesh_attribute_data.push_vertex(&(tri, vertices_offset));
+								params.mesh_attribute_data_with_stats.push_vertex((tri, vertices_offset));
 							}
 
 							add_adjacent_face_indices_same_piece(&mut params, vert_index);
@@ -1538,10 +1580,9 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 			}
 		}
 
-		Ok(Self(start .. params.mesh_headers.offset() as u32))
+		Ok(Self(start .. params.mesh_headers_with_index.index as u32))
 	}
 }
-
 
 #[derive(Default)]
 struct DesignHeader([PieceHeader; Type::COUNT]);
@@ -1565,10 +1606,16 @@ impl PieceLibrary {
 		} = self;
 
 		let mut piece_header_params: PieceHeaderParams = PieceHeaderParams {
-			design: Design::iter().next().unwrap(),
-			piece_type: Type::iter().next().unwrap(),
-			mesh_attribute_data,
-			mesh_headers
+			design:							Design::iter().next().unwrap(),
+			piece_type:						Type::iter().next().unwrap(),
+			mesh_attribute_data_with_stats:	&mut MeshAttributeDataWithStats {
+				data:	mesh_attribute_data,
+				stats:	MeshStats::<usize>::default()
+			},
+			mesh_headers_with_index:		&mut MeshHeadersWithIndex {
+				headers:	mesh_headers,
+				index:		0_usize
+			}
 		};
 
 		for design in Design::iter() {
@@ -1705,10 +1752,12 @@ lazy_static! {
 	};
 }
 
-pub struct BevyMeshHandles(Vec<Handle<BevyMesh>>);
+pub struct BevyMeshHandles([Handle<BevyMesh>; gen::TOTAL_MESH_COUNT]);
 
 impl Default for BevyMeshHandles {
-	fn default() -> Self { Self(Vec::<Handle<BevyMesh>>::with_capacity(generation::TOTAL_MESH_COUNT)) }
+	fn default() -> Self {
+		Self(<[Handle<BevyMesh>; gen::TOTAL_MESH_COUNT]>::default_array())
+	}
 }
 
 pub struct PiecePlugin;

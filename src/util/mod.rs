@@ -15,6 +15,7 @@ use {
 		},
 		mem::{
 			ManuallyDrop,
+			MaybeUninit,
 			transmute
 		},
 		ops::Range,
@@ -58,6 +59,7 @@ pub mod prelude {
 	pub use super::{
 		log::prelude::*,
 		AsBitString,
+		DefaultArray,
 		FromAlt,
 		FromFile,
 		FromFileOrDefault,
@@ -387,6 +389,34 @@ pub trait StaticDataLibrary: 'static {
 		} else {
 			build();
 		}
+	}
+}
+
+pub trait DefaultArray: Sized {
+	fn default_array() -> Self;
+}
+
+impl<T: Default, const N: usize> DefaultArray for [T; N] {
+	fn default_array() -> Self {
+		type MU<T> = MaybeUninit<T>;
+
+		let mut mu_array: MU<Self> = MU::<Self>::uninit();
+
+		{
+			for t in unsafe {
+				/*
+					* as *mut [MU<T>; N]: safe since they're the same size and we're about to write() into each cell
+					* as_mut(): safe since we know where this pointer comes from
+					* unwrap(): safe since we know where this pointer comes from
+				*/
+				(&mut mu_array as *mut MU<Self> as *mut [MU<T>; N]).as_mut().unwrap()
+			} {
+				t.write(T::default());
+			}
+		}
+
+		// Safe: the whole array has been initialized
+		unsafe { mu_array.assume_init() }
 	}
 }
 
