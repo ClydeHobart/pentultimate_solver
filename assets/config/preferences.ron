@@ -47,6 +47,28 @@ Preferences(
 			colors_without_mat: (),
 			colors_with_mat: (
 				polyhedron_to_colors: [
+					(Icosahedron, [
+						"ff9595", // 0
+						"eaff95", // 1
+						"15006a", // 2
+						"006a6a", // 3
+						"95bfff", // 4
+						"1f78ff", // 5
+						"e08700", // 6
+						"6a4000", // 7
+						"d21fff", // 8
+						"e00087", // 9
+						"1fff78", // 10
+						"2de000", // 11
+						"ea95ff", // 12
+						"95ffbf", // 13
+						"ff1f1f", // 14
+						"d2ff1f", // 15
+						"2d00e0", // 16
+						"00e0e0", // 17
+						"6a0040", // 18
+						"156a00", // 19
+					]),
 					(Dodecahedron, [
 						"FFFFFF", // White,			0
 						"0000FF", // Blue,			1

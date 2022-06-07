@@ -1,13 +1,16 @@
 use {
 	std::mem::transmute,
 	bevy_inspector_egui::Inspectable,
-	serde::Deserialize
+	serde::{
+		Deserialize,
+		Serialize
+	}
 };
 
 pub mod data;
 pub mod properties;
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Inspectable, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Inspectable, Ord, PartialEq, PartialOrd, Serialize)]
 #[repr(u8)]
 pub enum Polyhedron {
 	Icosahedron,

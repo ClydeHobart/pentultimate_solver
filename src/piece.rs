@@ -27,10 +27,7 @@ use {
 		}
 	},
 	bevy_inspector_egui::Inspectable,
-	num_traits::{
-		PrimInt,
-		NumCast
-	},
+	num_traits::PrimInt,
 	serde::Deserialize,
 	strum::{
 		EnumCount as EnumCountTrait,
@@ -118,14 +115,16 @@ pub mod consts {
 #[derive(Clone, Copy, Debug, Deserialize, EnumCount, EnumIter, Inspectable, PartialEq)]
 pub enum Design {
 	OriginalSuperDodecahedron,
-	CustomSuperDodecahedron
+	CustomSuperDodecahedron,
+	SuperIcosahedron
 }
 
 impl Design {
 	pub const fn as_polyhedron(self) -> Polyhedron {
 		match self {
-			Design::OriginalSuperDodecahedron => Polyhedron::Dodecahedron,
-			Design::CustomSuperDodecahedron => Polyhedron::Dodecahedron
+			Design::OriginalSuperDodecahedron	=> Polyhedron::Dodecahedron,
+			Design::CustomSuperDodecahedron		=> Polyhedron::Dodecahedron,
+			Design::SuperIcosahedron			=> Polyhedron::Icosahedron
 		}
 	}
 }
@@ -175,17 +174,17 @@ impl Type {
 		index_offset .. index_offset + self.instance_count()
 	}
 
-	pub fn next_side_index(&self, index: usize) -> usize {
+	pub const fn next_side_index(&self, index: usize) -> usize {
 		(index + 1) % self.vertex_count()
 	}
 
-	pub fn prev_side_index(&self, index: usize) -> usize {
+	pub const fn prev_side_index(&self, index: usize) -> usize {
 		let side_count: usize = self.vertex_count();
 
 		(index + side_count - 1) % side_count
 	}
 
-	pub fn from_index(index: usize) -> Option<Self> {
+	pub const fn from_index(index: usize) -> Option<Self> {
 		const_assert_eq!(Type::Pentagon.index_offset(),		0_usize);
 		const_assert_eq!(Type::Pentagon.instance_count(),	12_usize);
 		const_assert_eq!(Type::Triangle.index_offset(),		12_usize);
@@ -202,6 +201,13 @@ impl Type {
 		match self {
 			Self::Pentagon => Polyhedron::Icosahedron,
 			Self::Triangle => Polyhedron::Dodecahedron
+		}
+	}
+
+	pub const fn other(self) -> Self {
+		match self {
+			Self::Pentagon => Self::Triangle,
+			Self::Triangle => Self::Pentagon
 		}
 	}
 }
@@ -408,11 +414,6 @@ trait PushVertex<V: Sized> {
 	fn push_vertex(&mut self, vertex: V) -> ();
 }
 
-#[test]
-fn vec2_alignment() -> () {
-	println!("{}", std::mem::align_of::<Vec2>());
-}
-
 struct MeshAttributeData {
 	positions:		[Vec3;	gen::TOTAL_VERTEX_COUNT],
 	normals:		[Vec3;	gen::TOTAL_VERTEX_COUNT],
@@ -425,7 +426,7 @@ impl Default for MeshAttributeData { fn default() -> Self { unsafe { MaybeUninit
 
 struct MeshAttributeDataWithStats<'d> {
 	data:	&'d mut MeshAttributeData,
-	stats:	MeshStats<usize>
+	stats:	MeshStats
 }
 
 impl<'d> MeshAttributeDataWithStats<'d> {
@@ -481,13 +482,13 @@ impl<'a, T> TempVec<'a, T> {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct MeshStats<I: PrimInt + Default> {
+pub struct MeshStats<I: PrimInt + Default = usize> {
 	vertices:		I,
 	indices:		I,
 	face_indices:	I
 }
 
-type MeshStatsRefSlice = &'static [&'static MeshStats<usize>];
+type MeshStatsRefSlice = &'static [&'static MeshStats];
 
 impl<I: PrimInt + Default> MeshStats<I> {
 	fn from<J: PrimInt + Default>(mesh_stats: MeshStats<J>) -> Option<Self> { Some(Self {
@@ -497,7 +498,7 @@ impl<I: PrimInt + Default> MeshStats<I> {
 	}) }
 }
 
-impl MeshStats<usize> {
+impl MeshStats {
 	const fn new(vertices: usize, tris: usize, piece_type: Type) -> Self {
 		Self {
 			vertices,
@@ -525,7 +526,7 @@ impl MeshStats<usize> {
 		let mut index: usize = 0_usize;
 
 		while index < len {
-			let mesh_stats: &MeshStats<usize> = slice[index];
+			let mesh_stats: &MeshStats = slice[index];
 
 			sum.vertices += mesh_stats.vertices;
 			sum.indices += mesh_stats.indices;
@@ -551,7 +552,7 @@ impl<I: PrimInt + Default> Add for MeshStats<I> {
 struct MeshHeader(Range<MeshStats<u32>>);
 
 impl MeshHeader {
-	fn new(start: &MeshStats<usize>, len: &MeshStats<usize>) -> Self {
+	fn new(start: &MeshStats, len: &MeshStats) -> Self {
 		|| -> Option<Self> {
 			Some(Self({
 				let start: MeshStats<u32> = warn_expect_some!(MeshStats::<u32>::from(*start), ?);
@@ -690,13 +691,13 @@ mod gen {
 			pub const CURR_TRI_VERT_INDEX:					usize				= 1_usize;
 			pub const OFFSET_MASK:							[bool; 3_usize]		= [true, true, false];
 			pub const PIECE_TYPE:							Type				= Type::Pentagon;
-			pub const BASE_MESH_STATS:						MeshStats<usize>	= MeshStats::new_base(
+			pub const BASE_MESH_STATS:						MeshStats			= MeshStats::new_base(
 				2_usize * 2_usize * PENTAGON_VERTEX_COUNT + 2_usize * 4_usize * PENTAGON_VERTEX_COUNT,
 				BASE_MESH_TRIS_CAPACITY
 			);
-			pub const PRIMARY_PENT_MESH_STATS:				MeshStats<usize>	=
+			pub const PRIMARY_PENT_MESH_STATS:				MeshStats			=
 				MeshStats::new(2_usize * PENTAGON_VERTEX_COUNT, TRIS_PER_PENTAGONAL_ANNULUS, PIECE_TYPE);
-			pub const ADJACENT_PENT_MESH_STATS:				MeshStats<usize>	= MeshStats::new(
+			pub const ADJACENT_PENT_MESH_STATS:				MeshStats			= MeshStats::new(
 				CIRCLE_SUBDIVISION_COUNT + 1_usize,
 				CIRCLE_SUBDIVISION_COUNT,
 				PIECE_TYPE
@@ -711,32 +712,32 @@ mod gen {
 				&ADJACENT_PENT_MESH_STATS
 			];
 			pub const MESH_COUNT:							usize				= MESH_STATS_SLICE.len();
-			pub const MESH_STATS_SUM:						MeshStats<usize>	= MeshStats::sum_slice(MESH_STATS_SLICE);
+			pub const MESH_STATS_SUM:						MeshStats			= MeshStats::sum_slice(MESH_STATS_SLICE);
 		}
 
 		pub mod triangle {
 			use super::*;
 
 			pub const PIECE_TYPE:				Type				= Type::Triangle;
-			pub const BASE_MESH_STATS:			MeshStats<usize>	= MeshStats::new_base(
+			pub const BASE_MESH_STATS:			MeshStats			= MeshStats::new_base(
 				TRIANGLE_VERTEX_COUNT * (TRIANGLE_VERTEX_COUNT + 4_usize + 1_usize) + 1_usize,
 				TRIANGLE_VERTEX_COUNT * (1_usize + TRIS_PER_QUAD + 1_usize)
 			);
-			pub const ADJACENT_PENT_MESH_STATS:	MeshStats<usize>	=
+			pub const ADJACENT_PENT_MESH_STATS:	MeshStats			=
 				MeshStats::new(TRIANGLE_VERTEX_COUNT, 1_usize, PIECE_TYPE);
 			pub const MESH_STATS_SLICE:			MeshStatsRefSlice	=
 				&[&BASE_MESH_STATS, &ADJACENT_PENT_MESH_STATS, &ADJACENT_PENT_MESH_STATS, &ADJACENT_PENT_MESH_STATS];
 			pub const MESH_COUNT:				usize				= MESH_STATS_SLICE.len();
-			pub const MESH_STATS_SUM:			MeshStats<usize>	= MeshStats::sum_slice(MESH_STATS_SLICE);
+			pub const MESH_STATS_SUM:			MeshStats			= MeshStats::sum_slice(MESH_STATS_SLICE);
 		}
 
-		pub const DESIGN_MESH_COUNT:		usize				= pentagon::MESH_COUNT + triangle::MESH_COUNT;
-		pub const DESIGN_MESH_STATS_SUM:	MeshStats<usize>	= MeshStats::sum_slice(&[
+		pub const DESIGN_MESH_COUNT:		usize		= pentagon::MESH_COUNT + triangle::MESH_COUNT;
+		pub const DESIGN_MESH_STATS_SUM:	MeshStats	= MeshStats::sum_slice(&[
 			&pentagon::MESH_STATS_SUM,
 			&triangle::MESH_STATS_SUM
 		]);
-		pub const CURR_LOOP_INDEX:			usize				= 0_usize;
-		pub const NEXT_LOOP_INDEX:			usize				= 1_usize;
+		pub const CURR_LOOP_INDEX:			usize		= 0_usize;
+		pub const NEXT_LOOP_INDEX:			usize		= 1_usize;
 	}
 
 	pub mod custom_super_dodecahedron {
@@ -747,16 +748,16 @@ mod gen {
 
 			pub const PENTAGON_COUNT:			usize				= 3_usize;
 			pub const PIECE_TYPE:				Type				= Type::Pentagon;
-			pub const BASE_MESH_STATS:			MeshStats<usize>	= MeshStats::new_base(
+			pub const BASE_MESH_STATS:			MeshStats			= MeshStats::new_base(
 				PENTAGON_VERTEX_COUNT + 1_usize + PENTAGON_VERTEX_COUNT * TRIANGLE_VERTEX_COUNT,
 				2_usize * PENTAGON_VERTEX_COUNT
 			);
-			pub const PRIMARY_PENT_MESH_STATS:	MeshStats<usize>	= MeshStats::new(
+			pub const PRIMARY_PENT_MESH_STATS:	MeshStats			= MeshStats::new(
 				TRIANGLE_VERTEX_COUNT * PENTAGON_VERTEX_COUNT,
 				PENTAGON_VERTEX_COUNT,
 				PIECE_TYPE
 			);
-			pub const ADJACENT_PENT_MESH_STATS:	MeshStats<usize>	=
+			pub const ADJACENT_PENT_MESH_STATS:	MeshStats			=
 				MeshStats::new(3_usize * TRIANGLE_VERTEX_COUNT, 3_usize, PIECE_TYPE);
 			pub const MESH_STATS_SLICE:			MeshStatsRefSlice	= &[
 				&BASE_MESH_STATS,
@@ -768,27 +769,87 @@ mod gen {
 				&ADJACENT_PENT_MESH_STATS
 			];
 			pub const MESH_COUNT:				usize				= MESH_STATS_SLICE.len();
-			pub const MESH_STATS_SUM:			MeshStats<usize>	= MeshStats::sum_slice(MESH_STATS_SLICE);
+			pub const MESH_STATS_SUM:			MeshStats			= MeshStats::sum_slice(MESH_STATS_SLICE);
 		}
 
 		pub mod triangle {
 			use super::*;
 
+			const BASE_MESH_TRIS:				usize				= 2_usize * TRIANGLE_VERTEX_COUNT;
+
 			pub const PIECE_TYPE:				Type				= Type::Triangle;
-			pub const BASE_MESH_STATS:			MeshStats<usize>	= MeshStats::new_base(
-				2_usize * TRIANGLE_VERTEX_COUNT * TRIANGLE_VERTEX_COUNT,
-				2_usize * TRIANGLE_VERTEX_COUNT
-			);
-			pub const ADJACENT_PENT_MESH_STATS:	MeshStats<usize>	=
+			pub const BASE_MESH_STATS:			MeshStats			=
+				MeshStats::new_base(TRIANGLE_VERTEX_COUNT * BASE_MESH_TRIS, BASE_MESH_TRIS);
+			pub const ADJACENT_PENT_MESH_STATS:	MeshStats			=
 				MeshStats::new(TRIANGLE_VERTEX_COUNT, 1_usize, PIECE_TYPE);
 			pub const MESH_STATS_SLICE:			MeshStatsRefSlice	=
 				&[&BASE_MESH_STATS, &ADJACENT_PENT_MESH_STATS, &ADJACENT_PENT_MESH_STATS, &ADJACENT_PENT_MESH_STATS];
 			pub const MESH_COUNT:				usize				= MESH_STATS_SLICE.len();
-			pub const MESH_STATS_SUM:			MeshStats<usize>	= MeshStats::sum_slice(MESH_STATS_SLICE);
+			pub const MESH_STATS_SUM:			MeshStats			= MeshStats::sum_slice(MESH_STATS_SLICE);
 		}
 
-		pub const DESIGN_MESH_COUNT: usize = pentagon::MESH_COUNT + triangle::MESH_COUNT;
-		pub const DESIGN_MESH_STATS_SUM: MeshStats<usize> = MeshStats::sum_slice(&[
+		pub const DESIGN_MESH_COUNT:		usize		= pentagon::MESH_COUNT + triangle::MESH_COUNT;
+		pub const DESIGN_MESH_STATS_SUM:	MeshStats	= MeshStats::sum_slice(&[
+			&pentagon::MESH_STATS_SUM,
+			&triangle::MESH_STATS_SUM
+		]);
+	}
+
+	pub mod super_icosahedron {
+		use super::*;
+
+		pub mod pentagon {
+			use super::*;
+
+			const BASE_MESH_TRIS:				usize				= 2_usize * PENTAGON_VERTEX_COUNT;
+
+			pub const PIECE_TYPE:				Type				= Type::Pentagon;
+			pub const BASE_MESH_STATS:			MeshStats			=
+				MeshStats::new_base(TRIANGLE_VERTEX_COUNT * BASE_MESH_TRIS, BASE_MESH_TRIS);
+			pub const ADJACENT_TRI_MESH_STATS:	MeshStats			=
+				MeshStats::new(TRIANGLE_VERTEX_COUNT, 1_usize, PIECE_TYPE);
+			pub const MESH_STATS_SLICE:			MeshStatsRefSlice	= &[
+				&BASE_MESH_STATS,
+				&ADJACENT_TRI_MESH_STATS,
+				&ADJACENT_TRI_MESH_STATS,
+				&ADJACENT_TRI_MESH_STATS,
+				&ADJACENT_TRI_MESH_STATS,
+				&ADJACENT_TRI_MESH_STATS
+			];
+			pub const MESH_COUNT:				usize				= MESH_STATS_SLICE.len();
+			pub const MESH_STATS_SUM:			MeshStats			= MeshStats::sum_slice(MESH_STATS_SLICE);
+		}
+
+		pub mod triangle {
+			use super::*;
+
+			const BASE_MESH_TRIS:				usize				= TRIANGLE_VERTEX_COUNT + 1_usize;
+
+			pub const PIECE_TYPE:				Type				= Type::Triangle;
+			pub const BASE_MESH_STATS:			MeshStats			= MeshStats::new_base(
+				TRIANGLE_VERTEX_COUNT * BASE_MESH_TRIS,
+				BASE_MESH_TRIS
+			);
+			pub const PRIMARY_TRI_MESH_STATS:	MeshStats			= MeshStats::new(
+				TRIANGLE_VERTEX_COUNT,
+				1_usize,
+				PIECE_TYPE
+			);
+			pub const ADJACENT_TRI_MESH_STATS:	MeshStats			=
+				MeshStats::new(TRIANGLE_VERTEX_COUNT, 1_usize, PIECE_TYPE);
+			pub const MESH_STATS_SLICE:			MeshStatsRefSlice	= &[
+				&BASE_MESH_STATS,
+				&PRIMARY_TRI_MESH_STATS,
+				&ADJACENT_TRI_MESH_STATS,
+				&ADJACENT_TRI_MESH_STATS,
+				&ADJACENT_TRI_MESH_STATS
+			];
+			pub const MESH_COUNT:				usize				= MESH_STATS_SLICE.len();
+			pub const MESH_STATS_SUM:			MeshStats			= MeshStats::sum_slice(MESH_STATS_SLICE);
+		}
+
+		pub const DESIGN_MESH_COUNT:		usize		= pentagon::MESH_COUNT + triangle::MESH_COUNT;
+		pub const DESIGN_MESH_STATS_SUM:	MeshStats	= MeshStats::sum_slice(&[
 			&pentagon::MESH_STATS_SUM,
 			&triangle::MESH_STATS_SUM
 		]);
@@ -799,10 +860,12 @@ mod gen {
 	pub const TRIS_PER_QUAD:			usize	= 2_usize;
 	pub const TOTAL_MESH_COUNT:			usize	=
 		original_super_dodecahedron::DESIGN_MESH_COUNT +
-		custom_super_dodecahedron::DESIGN_MESH_COUNT;
-	pub const TOTAL_MESH_STATS_SUM: MeshStats<usize> = MeshStats::sum_slice(&[
+		custom_super_dodecahedron::DESIGN_MESH_COUNT +
+		super_icosahedron::DESIGN_MESH_COUNT;
+	pub const TOTAL_MESH_STATS_SUM: MeshStats = MeshStats::sum_slice(&[
 		&original_super_dodecahedron::DESIGN_MESH_STATS_SUM,
-		&custom_super_dodecahedron::DESIGN_MESH_STATS_SUM
+		&custom_super_dodecahedron::DESIGN_MESH_STATS_SUM,
+		&super_icosahedron::DESIGN_MESH_STATS_SUM
 	]);
 	pub const TOTAL_VERTEX_COUNT:		usize	= TOTAL_MESH_STATS_SUM.vertices;
 	pub const TOTAL_INDEX_COUNT:		usize	= TOTAL_MESH_STATS_SUM.indices;
@@ -834,10 +897,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 		let start:							u32					= params.mesh_headers_with_index.index as u32;
 
 		let pyramid_data:					&Data				= Data::get(params.piece_type.pyramid_polyhedron());
-		let icosahedron_data:				&Data				= Data::get(Polyhedron::Icosahedron);
-		let _dodecahedron_data:				&Data				= Data::get(Polyhedron::Dodecahedron);
 		let icosidodecahedron_data:			&Data				= Data::get(Polyhedron::Icosidodecahedron);
-		let _rhombic_triacontahedron_data:	&Data				= Data::get(Polyhedron::RhombicTriacontahedron);
 		let icosidodecahedron_verts:		&Vec<VertexData>	= &icosidodecahedron_data.verts;
 		let icosidodecahedron_vert_indices:	&Vec<usize>			= &icosidodecahedron_data.vert_indices;
 		let icosidodecahedron_faces:		&Vec<FaceData>		= &icosidodecahedron_data.faces;
@@ -868,12 +928,14 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 		};
 		let add_adjacent_face_indices_same_piece: &dyn Fn(&mut PieceHeaderParams, usize) -> () =
 			&|params: &mut PieceHeaderParams, vert_index: usize| -> () {
+				let index_offset: u8 = index_offset as u8;
+
 				params.mesh_attribute_data_with_stats.face_indices().extend(face_range
 					.clone()
 					.map(|face_index: usize| -> u8 {
 						let face_data: &FaceData = &icosidodecahedron_faces[face_index];
 
-						icosahedron_data.get_closest_vert_index(
+						icosidodecahedron_data.get_closest_face_index(
 							&(Quat::from_axis_angle(
 								icosidodecahedron_verts[
 									face_data.get_slice(icosidodecahedron_vert_indices)[vert_index]
@@ -881,13 +943,14 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 								PI
 							) * face_data.norm),
 							None
-						) as u8
+						) as u8 - index_offset
 					})
 				);
 			};
 		let add_adjacent_face_indices_other_piece: &dyn Fn(&mut PieceHeaderParams, usize) -> () =
 			&|params: &mut PieceHeaderParams, vert_index: usize| -> () {
 				let next_vert_index: usize = params.piece_type.next_side_index(vert_index);
+				let index_offset: u8 = params.piece_type.other().index_offset() as u8;
 
 				params.mesh_attribute_data_with_stats.face_indices().extend(face_range
 					.clone()
@@ -908,13 +971,13 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 							Some(&|query_face_index: usize, face_data: &FaceData| -> bool {
 								face_data.edges[edge_index] && query_face_index != face_index
 							})
-						) as u8
+						) as u8 - index_offset
 					})
 				);
 			};
 		let add_piece_range: &dyn Fn(&mut PieceHeaderParams) -> () = &|params: &mut PieceHeaderParams| -> () {
 			params.mesh_attribute_data_with_stats.face_indices().extend(
-				PENTAGON_PIECE_RANGE.map(<u8 as NumCast>::from).map(Option::unwrap)
+				params.piece_type.range().map(|piece_index: usize| -> u8 { (piece_index - index_offset) as u8 })
 			);
 		};
 		let add_regular_polygon: &dyn Fn(&mut PieceHeaderParams, &[Vec3], &Vec3, &Vec3, &Vec2, u32, bool) = &|
@@ -1003,21 +1066,21 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 		};
 
 		let mut mesh_index: usize = 0_usize;
-		let mut offset: MeshStats<usize> = params.mesh_attribute_data_with_stats.stats.clone();
+		let mut offset: MeshStats = params.mesh_attribute_data_with_stats.stats.clone();
 
 		let check_mesh_stats: &dyn Fn(
 			&PieceHeaderParams,
 			MeshStatsRefSlice,
-			&mut MeshStats<usize>,
+			&mut MeshStats,
 			&mut usize
 		) -> Result<(), ()> = &|
 			params:				&PieceHeaderParams,
 			mesh_stats_slice:	MeshStatsRefSlice,
-			offset:				&mut MeshStats<usize>,
+			offset:				&mut MeshStats,
 			mesh_index:			&mut usize
 		| -> Result<(), ()> {
-			let new_offset: MeshStats<usize> = params.mesh_attribute_data_with_stats.stats.clone();
-			let expected_offset: MeshStats<usize> = *offset + *mesh_stats_slice[*mesh_index];
+			let new_offset: MeshStats = params.mesh_attribute_data_with_stats.stats.clone();
+			let expected_offset: MeshStats = *offset + *mesh_stats_slice[*mesh_index];
 
 			if !warn_expect!(new_offset == expected_offset) {
 				warn_expr!(
@@ -1041,12 +1104,12 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 		let push_mesh_header: &dyn Fn(
 			&mut PieceHeaderParams,
 			MeshStatsRefSlice,
-			&MeshStats<usize>,
+			&MeshStats,
 			usize
 		) -> u32 = &|
 			params:				&mut PieceHeaderParams,
 			mesh_stats_slice:	MeshStatsRefSlice,
-			offset:				&MeshStats<usize>,
+			offset:				&MeshStats,
 			mesh_index:			usize
 		| -> u32 {
 			params.mesh_headers_with_index.push(MeshHeader::new(offset, mesh_stats_slice[mesh_index]));
@@ -1577,6 +1640,142 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 						}
 					}
 				}
+			},
+			Design::SuperIcosahedron => {
+				use super_icosahedron::*;
+
+				match params.piece_type {
+					Type::Pentagon => {
+						use pentagon::*;
+
+						// Safe: we will be writing into these cells, and Vec3 has no destructor
+						let mut vertices: [Vec3; PENTAGON_VERTEX_COUNT] = unsafe {
+							MaybeUninit::<[Vec3; PENTAGON_VERTEX_COUNT]>::uninit().assume_init()
+						};
+
+						face_iter(&mut vertices);
+
+						let center: Vec3 = transformation * pyramid_data.verts[0].vec;
+
+						// Add the base mesh
+						{
+							let vertices_offset: u32 =
+								push_mesh_header(&mut params, MESH_STATS_SLICE, &offset, mesh_index);
+
+							add_pyramid(
+								&mut params,
+								&vertices,
+								&mut vert_range.clone(),
+								&center,
+								vertices_offset,
+								false,
+								false,
+								false
+							);
+							add_pyramid(
+								&mut params,
+								&vertices,
+								&mut vert_range.clone(),
+								&Vec3::ZERO,
+								vertices_offset,
+								false,
+								false,
+								true
+							);
+							check_mesh_stats(&params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
+						}
+
+						// Add the adjacent tri meshes
+						for vert_index in vert_range.clone() {
+							let vertices_offset: u32 =
+								push_mesh_header(&mut params, MESH_STATS_SLICE, &offset, mesh_index);
+
+							add_pyramid(
+								&mut params,
+								&vertices,
+								&mut [vert_index].into_iter(),
+								&center,
+								vertices_offset,
+								true,
+								true,
+								false
+							);
+							add_adjacent_face_indices_other_piece(&mut params, vert_index);
+							check_mesh_stats(&params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
+						}
+					},
+					Type::Triangle => {
+						use triangle::*;
+
+						// Safe: we will be writing into these cells, and Vec3 has no destructor
+						let mut vertices: [[Vec3; TRIANGLE_VERTEX_COUNT]; 2_usize] = unsafe {
+							MaybeUninit::<[[Vec3; TRIANGLE_VERTEX_COUNT]; 2_usize]>::uninit().assume_init()
+						};
+						let [
+							outer_triangle,
+							midpoint_triangle
+						] = &mut vertices;
+
+						face_iter(outer_triangle);
+
+						for vert_index in vert_range.clone() {
+							midpoint_triangle[vert_index] = (outer_triangle[vert_index]
+								+ outer_triangle[PIECE_TYPE.next_side_index(vert_index)]
+							) * 0.5_f32;
+						}
+
+						// Add the base mesh
+						{
+							let vertices_offset: u32 =
+								push_mesh_header(&mut params, MESH_STATS_SLICE, &offset, mesh_index);
+
+							params.mesh_attribute_data_with_stats.push_vertex((Tri::from(outer_triangle.clone()), vertices_offset));
+							add_pyramid(
+								&mut params,
+								outer_triangle,
+								&mut vert_range.clone(),
+								&Vec3::ZERO,
+								vertices_offset,
+								false,
+								false,
+								true
+							);
+							check_mesh_stats(&params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
+						}
+
+						// Add the primary tri mesh
+						{
+							let vertices_offset: u32 =
+								push_mesh_header(&mut params, MESH_STATS_SLICE, &offset, mesh_index);
+
+							let mut tri: Tri = Tri::from(midpoint_triangle.clone());
+
+							tri.offset_all_along_plane(-PLANAR_OFFSET);
+							tri.offset_along_normal(NORMAL_OFFSET);
+							params.mesh_attribute_data_with_stats.push_vertex((tri, vertices_offset));
+							add_piece_range(&mut params);
+							check_mesh_stats(&params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
+						}
+
+						// Add the adjacent tri meshes
+						for vert_index in vert_range.clone() {
+							let vertices_offset: u32 =
+								push_mesh_header(&mut params, MESH_STATS_SLICE, &offset, mesh_index);
+
+							let mut tri: Tri = Tri::from([
+								outer_triangle[vert_index],
+								midpoint_triangle[vert_index],
+								midpoint_triangle[PIECE_TYPE.prev_side_index(vert_index)]
+							]);
+
+							tri.offset_all_along_plane(-PLANAR_OFFSET);
+							tri.offset_along_normal(NORMAL_OFFSET);
+							params.mesh_attribute_data_with_stats.push_vertex((tri, vertices_offset));
+							add_adjacent_face_indices_same_piece(&mut params, vert_index);
+							check_mesh_stats(&params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
+						}
+					}
+				}
 			}
 		}
 
@@ -1628,6 +1827,15 @@ impl PieceLibrary {
 				design_header.0[piece_type as usize] = PieceHeader::try_from(&mut piece_header_params)?;
 			}
 		}
+
+		warn_expect!(
+			piece_header_params.mesh_attribute_data_with_stats.stats == gen::TOTAL_MESH_STATS_SUM,
+			return Err(())
+		);
+		warn_expect!(
+			piece_header_params.mesh_headers_with_index.index == gen::TOTAL_MESH_COUNT,
+			return Err(())
+		);
 
 		Ok(())
 	}

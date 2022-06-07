@@ -741,20 +741,6 @@ macro_rules! break_assert {
 }
 
 #[macro_export]
-macro_rules! debug_break_assert {
-	($cond:expr $(, $($arg:tt)*)?) => {
-		{
-			{
-				#[cfg(debug_assertions)]
-				cond_break!(!($cond));
-			}
-
-			assert!($cond $(, $($arg)*)?);
-		}
-	}
-}
-
-#[macro_export]
 macro_rules! ignore {
 	($tt:tt) => {};
 }

@@ -1,5 +1,7 @@
 use {
+	std::f32::consts::PI,
 	bevy::{
+		math::Vec3Swizzles,
 		prelude::*,
 		render::color::{
 			Color as BevyColor,
@@ -20,10 +22,18 @@ use {
 			Visitor
 		},
 		Deserialize,
-		Deserializer
+		Deserializer,
+		Serialize,
+		Serializer
 	},
 	crate::{
-		math::polyhedra::Polyhedron,
+		math::polyhedra::{
+			data::{
+				Data,
+				FaceData
+			},
+			Polyhedron
+		},
 		preferences::Update,
 		prelude::*,
 		ui::UIPlugin,
@@ -157,16 +167,69 @@ impl Inspectable for ColAndMat {
 	}
 }
 
+impl Serialize for ColAndMat {
+	fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+		format!("{:08x}", u32::from(self.col)).serialize(serializer)
+	}
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct ColorDataWithMat {
 	pub polyhedron_to_colors: Vec<(Polyhedron, Vec<ColAndMat>)>,
 	pub base_color: ColAndMat
 }
 
+impl ColorDataWithMat {
+	fn tuple_for_polyhedron(polyhedron: Polyhedron) -> Result<(Polyhedron, Vec<ColAndMat>), ()> {
+		warn_expect!(polyhedron != Polyhedron::Icosidodecahedron, return Err(()));
+
+		let polyhedron_data: &Data = Data::get(polyhedron);
+		let primary_vec: Vec3 = Data::get(Polyhedron::Icosidodecahedron).faces[0_usize].norm;
+		let transformation: Mat4 =
+			Mat4::look_at_rh(Vec3::ZERO, -primary_vec, polyhedron_data.faces[0_usize].norm);
+
+		Ok((
+			polyhedron,
+			polyhedron_data
+				.faces
+				.iter()
+				.map(|face_data: &FaceData| -> ColAndMat { ColAndMat::from(Color(BevyColor::Hsla {
+					hue: {
+						let vec2: Vec2 =
+							transformation.transform_point3(face_data.norm).yx() * Vec2::new(1.0_f32, -1.0_f32);
+
+						let mut theta: f32 = 180.0_f32 * f32::atan2(vec2.y, vec2.x) / PI;
+
+						if theta < 0.0_f32 {
+							theta += 360.0_f32;
+						}
+
+						theta.round()
+					},
+					saturation: 1.0_f32,
+					lightness: 1.0_f32 - primary_vec.angle_between(face_data.norm) / PI,
+					alpha: 1.0_f32
+				})) })
+				.collect()
+		))
+	}
+}
+
+#[test]
+fn serialize_icosahedron_tuple() -> () {
+	Data::initialize();
+
+	ColorDataWithMat::tuple_for_polyhedron(Polyhedron::Icosahedron)
+		.unwrap()
+		.to_file(".ignore/icosahedron_color_tuple.ron")
+		.unwrap();
+}
+
 impl Default for ColorDataWithMat {
 	fn default() -> Self {
 		ColorDataWithMat {
 			polyhedron_to_colors: [
+				Self::tuple_for_polyhedron(Polyhedron::Icosahedron).unwrap(),
 				(
 					Polyhedron::Dodecahedron,
 					vec![
