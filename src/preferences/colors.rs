@@ -215,16 +215,6 @@ impl ColorDataWithMat {
 	}
 }
 
-#[test]
-fn serialize_icosahedron_tuple() -> () {
-	Data::initialize();
-
-	ColorDataWithMat::tuple_for_polyhedron(Polyhedron::Icosahedron)
-		.unwrap()
-		.to_file(".ignore/icosahedron_color_tuple.ron")
-		.unwrap();
-}
-
 impl Default for ColorDataWithMat {
 	fn default() -> Self {
 		ColorDataWithMat {
@@ -249,7 +239,8 @@ impl Default for ColorDataWithMat {
 						.iter()
 						.map(|slice: &&str| -> ColAndMat { Color::from(*slice).into() })
 						.collect()
-				)
+				),
+				Self::tuple_for_polyhedron(Polyhedron::RhombicTriacontahedron).unwrap()
 			]
 				.iter()
 				.cloned()
@@ -344,5 +335,32 @@ impl Plugin for ColorsPlugin {
 	fn build(&self, app: &mut App) -> () {
 		app
 			.add_startup_system(ColorData::startup_app.after(UIPlugin::startup));
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[cfg(feature = "non_unit_tests")]
+	#[test]
+	fn serialize_icosahedron_tuple() -> () {
+		Data::initialize();
+	
+		ColorDataWithMat::tuple_for_polyhedron(Polyhedron::Icosahedron)
+			.unwrap()
+			.to_file(".ignore/icosahedron_color_tuple.ron")
+			.unwrap();
+	}
+
+	#[cfg(feature = "non_unit_tests")]
+	#[test]
+	fn serialize_rhombic_triacontahedron_tuple() -> () {
+		Data::initialize();
+	
+		ColorDataWithMat::tuple_for_polyhedron(Polyhedron::RhombicTriacontahedron)
+			.unwrap()
+			.to_file(".ignore/rhombic_triacontahedron_color_tuple.ron")
+			.unwrap();
 	}
 }

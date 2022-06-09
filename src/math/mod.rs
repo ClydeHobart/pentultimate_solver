@@ -88,16 +88,31 @@ pub const fn const_sqrt_f64(square: f64) -> f64 {
 	root
 }
 
+pub enum ComputeInterpolantResult<T> {
+	Interpolant(T),
+	Coincident,
+	Parallel
+}
+
+pub enum ComputeIntersectionResult<T> {
+	Intersection(T),
+	Coincident,
+	Disjoint
+}
+
+impl<T> From<ComputeIntersectionResult<T>> for Option<T> {
+	fn from(cir: ComputeIntersectionResult<T>) -> Self {
+		match cir {
+			ComputeIntersectionResult::Intersection(intersection) => Some(intersection),
+			_ => None
+		}
+	}
+}
+
 pub mod two_d {
 	pub use super::*;
 
-	pub enum ComputeInterpolantResult {
-		Interpolants([f32; 2]),
-		Coincident,
-		Parallel
-	}
-
-	pub fn compute_interpolant(p1: Vec2, p2: Vec2, p3: Vec2, p4: Vec2) -> ComputeInterpolantResult {
+	pub fn compute_interpolant(p1: Vec2, p2: Vec2, p3: Vec2, p4: Vec2) -> ComputeInterpolantResult<[f32; 2_usize]> {
 		// This uses the math from Paul Bourke (though not the code from Damian Coventry) from the City College of New York:
 		// http://www-cs.ccny.cuny.edu/~wolberg/capstone/intersection/Intersection%20point%20of%20two%20lines.html
 		let diff_2_1: Vec2 = p2 - p1;
@@ -110,26 +125,11 @@ pub mod two_d {
 		);
 
 		if denominator.abs() > f32::EPSILON {
-			ComputeInterpolantResult::Interpolants(*(numerators / denominator).as_ref())
+			ComputeInterpolantResult::Interpolant(*(numerators / denominator).as_ref())
 		} else if numerators.abs_diff_eq(Vec2::ZERO, f32::EPSILON) {
 			ComputeInterpolantResult::Coincident
 		} else {
 			ComputeInterpolantResult::Parallel
-		}
-	}
-
-	pub enum ComputeIntersectionResult {
-		Intersection(Vec2),
-		Coincident,
-		Disjoint
-	}
-
-	impl From<ComputeIntersectionResult> for Option<Vec2> {
-		fn from(cir: ComputeIntersectionResult) -> Self {
-			match cir {
-				ComputeIntersectionResult::Intersection(intersection) => Some(intersection),
-				_ => None
-			}
 		}
 	}
 
@@ -165,23 +165,25 @@ pub mod two_d {
 		p3: Vec2,
 		p4: Vec2,
 		point_bit_array: PointBitArray,
-		optional_cir: Option<ComputeInterpolantResult>
-	) -> ComputeIntersectionResult {
+		optional_cir: Option<ComputeInterpolantResult<[f32; 2_usize]>>
+	) -> ComputeIntersectionResult<Vec2> {
 		match optional_cir.unwrap_or_else(|| compute_interpolant(p1, p2, p3, p4)) {
-			ComputeInterpolantResult::Interpolants(interpolants) => {
+			ComputeInterpolantResult::<[f32; 2_usize]>::Interpolant(interpolants) => {
 				let bit_slice: &BitSlice<u8> = point_bit_array.0.view_bits();
 
 				if (bit_slice[Point::P1 as usize] ||			interpolants[0_usize] >= -f32::EPSILON)
 				&& (bit_slice[Point::P2 as usize] || 1.0_f32 -	interpolants[0_usize] <= f32::EPSILON)
 				&& (bit_slice[Point::P3 as usize] ||			interpolants[1_usize] >= -f32::EPSILON)
 				&& (bit_slice[Point::P4 as usize] || 1.0_f32 -	interpolants[1_usize] <= f32::EPSILON) {
-					ComputeIntersectionResult::Intersection(p1 * (1.0_f32 - interpolants[0]) + p2 * interpolants[0])
+					ComputeIntersectionResult::<Vec2>::Intersection(
+						p1 * (1.0_f32 - interpolants[0]) + p2 * interpolants[0]
+					)
 				} else {
 					ComputeIntersectionResult::Disjoint
 				}
 			},
-			ComputeInterpolantResult::Coincident	=> ComputeIntersectionResult::Coincident,
-			ComputeInterpolantResult::Parallel		=> ComputeIntersectionResult::Disjoint
+			ComputeInterpolantResult::<[f32; 2_usize]>::Coincident	=> ComputeIntersectionResult::<Vec2>::Coincident,
+			ComputeInterpolantResult::<[f32; 2_usize]>::Parallel	=> ComputeIntersectionResult::<Vec2>::Disjoint
 		}
 	}
 
@@ -190,8 +192,8 @@ pub mod two_d {
 		p2: Vec2,
 		p3: Vec2,
 		p4: Vec2,
-		optional_cir: Option<ComputeInterpolantResult>
-	) -> ComputeIntersectionResult {
+		optional_cir: Option<ComputeInterpolantResult<[f32; 2_usize]>>
+	) -> ComputeIntersectionResult<Vec2> {
 		compute_intersection(p1, p2, p3, p4, PointBitArray::SEGMENTS, optional_cir)
 	}
 
@@ -200,8 +202,8 @@ pub mod two_d {
 		p2: Vec2,
 		p3: Vec2,
 		p4: Vec2,
-		optional_cir: Option<ComputeInterpolantResult>
-	) -> ComputeIntersectionResult {
+		optional_cir: Option<ComputeInterpolantResult<[f32; 2_usize]>>
+	) -> ComputeIntersectionResult<Vec2> {
 		compute_intersection(p1, p2, p3, p4, PointBitArray::LINES, optional_cir)
 	}
 
@@ -210,8 +212,77 @@ pub mod two_d {
 		p2: Vec2,
 		p3: Vec2,
 		p4: Vec2,
-		optional_cir: Option<ComputeInterpolantResult>
-	) -> ComputeIntersectionResult {
+		optional_cir: Option<ComputeInterpolantResult<[f32; 2_usize]>>
+	) -> ComputeIntersectionResult<Vec2> {
 		compute_intersection(p1, p2, p3, p4, PointBitArray::RAYS, optional_cir)
+	}
+}
+
+pub mod three_d {
+	use super::*;
+
+	/// Computes the interpolant (if there is one) necessary to compute the intersection between a line and a plane in
+	/// 3D space (taken from [Wikipedia](https://en.wikipedia.org/wiki/Line%E2%80%93plane_intersection))
+	/// 
+	/// # Arguments
+	/// 
+	/// * `l0` - A point on the line
+	/// * `l` - A vector in the direction of the line
+	/// * `p0` - A point on the plane
+	/// * `n` - A normal vector to the plane that need not be normalized
+	/// 
+	/// # Returns
+	/// 
+	/// A `ComputeInterpolantResult<f32>` containing either the `Interpolants` variant around an `f32` in the case of a
+	/// single intersection, the `Coincident` variant in the case of the line being fully along the plane, or the
+	/// `Parallel` variant in the case where the line is parallel to the plane, but never intersecting. To get the
+	/// intersection from the `f32` interpolant, compute `l0 + d * l`, where `d` is the interpolant `f32`.
+	pub fn compute_line_plane_interpolant(l0: Vec3, l: Vec3, p0: Vec3, n: Vec3) -> ComputeInterpolantResult<f32> {
+		let numerator: f32 = (p0 - l0).dot(n);
+		let denominator: f32 = l.dot(n);
+
+		if denominator.abs() > f32::EPSILON {
+			ComputeInterpolantResult::<f32>::Interpolant(numerator / denominator)
+		} else if numerator.abs() > f32::EPSILON {
+			ComputeInterpolantResult::Parallel
+		} else {
+			ComputeInterpolantResult::Coincident
+		}
+	}
+
+	/// Computes the intersection (if there are any) between a line and a plane in 3D space (taken from
+	/// [Wikipedia](https://en.wikipedia.org/wiki/Line%E2%80%93plane_intersection))
+	/// 
+	/// # Arguments
+	/// 
+	/// * `l0` - A point on the line
+	/// * `l` - A vector in the direction of the line
+	/// * `p0` - A point on the plane
+	/// * `n` - A normal vector to the plane that need not be normalized
+	/// * `optional_cir` - Optional argument corresponding to the result of calling `compute_line_plane_interpolant()`
+	///   with these same arguments. If this is `None`, the interpolant will be computed using all four args. If this is
+	///   `Some`, only `l0` and `l` will be used to compute the intersection. This is supplied in case the interpolant
+	///   itself is of use.
+	/// 
+	/// # Returns
+	/// 
+	/// A `ComputeIntersectionResult<f32>` containing either the `Intersection` variant around a `Vec3` in the case of a
+	/// single intersection, the `Coincident` variant in the case of the line being fully along the plane, or the
+	/// `Disjoint` variant in the case where the line is parallel to the plane, but never intersecting.
+	pub fn compute_line_plane_intersection(
+		l0:				Vec3,
+		l:				Vec3,
+		p0:				Vec3,
+		n:				Vec3,
+		optional_cir:	Option<ComputeInterpolantResult<f32>>
+	) -> ComputeIntersectionResult<Vec3> {
+		match optional_cir.unwrap_or_else(|| -> ComputeInterpolantResult<f32> {
+			compute_line_plane_interpolant(l0, l, p0, n)
+		}) {
+			ComputeInterpolantResult::<f32>::Interpolant(d) =>
+				ComputeIntersectionResult::<Vec3>::Intersection(l0 + d * l),
+			ComputeInterpolantResult::<f32>::Coincident	=> ComputeIntersectionResult::<Vec3>::Coincident,
+			ComputeInterpolantResult::<f32>::Parallel	=> ComputeIntersectionResult::<Vec3>::Disjoint
+		}
 	}
 }

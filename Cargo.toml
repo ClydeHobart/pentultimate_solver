@@ -47,7 +47,8 @@ uuid = "0.8.2"
 
 [features]
 # default = ["const_fn_floating_point_arithmetic", "io_read_to_string", "ron"]
-default = ["const_fn_floating_point_arithmetic", "io_read_to_string", "all_file_formats"]
+# default = ["const_fn_floating_point_arithmetic", "io_read_to_string", "all_file_formats"]
+default = ["const_fn_floating_point_arithmetic", "io_read_to_string", "all_file_formats", "non_unit_tests"]
 const_fn_floating_point_arithmetic = []
 io_read_to_string = []
 non_unit_tests = []

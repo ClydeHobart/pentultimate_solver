@@ -82,12 +82,45 @@ Preferences(
 						"FFFFA0", // Light Yellow,	9
 						"FFFF00", // Yellow,		10
 						"FF8000", // Orange,		11
+					]),
+					(RhombicTriacontahedron, [
+						"ffa5a5", // 0
+						"eda5ff", // 1
+						"edffa5", // 2
+						"ff5abd", // 3
+						"ffbd5a", // 4
+						"005a5a", // 5
+						"0042a5", // 6
+						"00a542", // 7
+						"12005a", // 8
+						"125a00", // 9
+						"5affff", // 10
+						"a5c9ff", // 11
+						"00b3ff", // 12
+						"a5ffc9", // 13
+						"00ffb3", // 14
+						"a50000", // 15
+						"ff004d", // 16
+						"5a0036", // 17
+						"ff4d00", // 18
+						"5a3600", // 19
+						"8000ff", // 20
+						"7b5aff", // 21
+						"ff00e6", // 22
+						"0019ff", // 23
+						"8400a5", // 24
+						"7fff00", // 25
+						"7bff5a", // 26
+						"ffe600", // 27
+						"00ff19", // 28
+						"84a500", // 29
 					])
 				],
 				base_color: "000000" // Black
 			)
 		),
-		design:	CustomSuperDodecahedron
+		// design:	CustomSuperDodecahedron
+		design:	RhombicTriacontahedron
 	),
 	speed:				SpeedData(
 		camera:							CameraSpeedData(
@@ -95,9 +128,9 @@ Preferences(
 			roll_speed:	50,
 		),
 		animation:						AnimationSpeedData(
-			// rotation_millis:					250,
+			rotation_millis:					250,
 			// rotation_millis:					50,
-			rotation_millis:					0,
+			// rotation_millis:					0,
 			uniform_transformation_duration:	false,
 			animate_undo_and_redo:				true,
 		),
