@@ -82,6 +82,7 @@ pub mod prelude {
 pub mod inspectable_bin_map;
 pub mod inspectable_bit_array;
 pub mod inspectable_num;
+pub mod triangular_array;
 
 mod log;
 

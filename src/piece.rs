@@ -118,16 +118,18 @@ pub enum Design {
 	OriginalSuperDodecahedron,
 	CustomSuperDodecahedron,
 	SuperIcosahedron,
-	RhombicTriacontahedron
+	RhombicTriacontahedron,
+	RoundedRhombicTriacontahedron
 }
 
 impl Design {
 	pub const fn as_polyhedron(self) -> Polyhedron {
 		match self {
-			Design::OriginalSuperDodecahedron	=> Polyhedron::Dodecahedron,
-			Design::CustomSuperDodecahedron		=> Polyhedron::Dodecahedron,
-			Design::SuperIcosahedron			=> Polyhedron::Icosahedron,
-			Design::RhombicTriacontahedron		=> Polyhedron::RhombicTriacontahedron
+			Design::OriginalSuperDodecahedron		=> Polyhedron::Dodecahedron,
+			Design::CustomSuperDodecahedron			=> Polyhedron::Dodecahedron,
+			Design::SuperIcosahedron				=> Polyhedron::Icosahedron,
+			Design::RhombicTriacontahedron			=> Polyhedron::RhombicTriacontahedron,
+			Design::RoundedRhombicTriacontahedron	=> Polyhedron::RhombicTriacontahedron
 		}
 	}
 }
@@ -347,7 +349,7 @@ impl std::ops::Mul<Tri> for &Mat4 {
 
 	fn mul(self, mut rhs: Tri) -> Self::Output {
 		for vertex in rhs.vertices.iter_mut() {
-			*vertex = self.transform_point3(*vertex);
+			*vertex = self.project_point3(*vertex);
 		}
 
 		rhs.update_normal();
@@ -423,6 +425,15 @@ struct MeshAttributeData {
 	uvs:			[Vec2;	gen::TOTAL_VERTEX_COUNT],
 	indices:		[u32;	gen::TOTAL_INDEX_COUNT],
 	face_indices:	[u8;	gen::TOTAL_FACE_INDEX_COUNT],
+}
+
+impl MeshAttributeData {
+	#[cfg(debug_assertions)]
+	fn zero(&mut self, range: Range<usize>) -> () {
+		self.positions[range.clone()].fill(Vec3::ZERO);
+		self.normals[range.clone()].fill(Vec3::ZERO);
+		self.uvs[range].fill(Vec2::ZERO);
+	}
 }
 
 impl Default for MeshAttributeData { fn default() -> Self { unsafe { MaybeUninit::<Self>::zeroed().assume_init() } } }
@@ -901,7 +912,106 @@ mod gen {
 			pub const MESH_STATS_SUM:		MeshStats			= MeshStats::sum_slice(MESH_STATS_SLICE);
 		}
 
-		pub const VERTS_PER_QUAD:			usize				= 4_usize;
+		pub const DESIGN_MESH_COUNT:		usize		= pentagon::MESH_COUNT + triangle::MESH_COUNT;
+		pub const DESIGN_MESH_STATS_SUM:	MeshStats	= MeshStats::sum_slice(&[
+			&pentagon::MESH_STATS_SUM,
+			&triangle::MESH_STATS_SUM
+		]);
+	}
+
+	pub mod rounded_rhombic_triacontahedron {
+		pub use crate::{
+			util::triangular_array::*,
+			Helpers,
+			TriangularArray
+		};
+
+		use super::*;
+
+		pub mod pentagon {
+			use super::*;
+
+			#[cfg(debug_assertions)]
+			pub mod render {
+				pub const RENDER_PIECE_TYPE:					bool = false;
+					pub const RENDER_BASE_MESH:					bool = RENDER_PIECE_TYPE && true;
+						pub const RENDER_TRI_ARRAYS:			bool = RENDER_BASE_MESH && true;
+							pub const RENDER_OUTER_TRI_ARRAYS:	bool = RENDER_TRI_ARRAYS && true;
+							pub const RENDER_INNER_TRI_ARRAYS:	bool = RENDER_TRI_ARRAYS && true;
+						pub const RENDER_DISC_SECTIONS:			bool = RENDER_BASE_MESH && false;
+						pub const RENDER_KITES:					bool = RENDER_BASE_MESH && false;
+					pub const RENDER_RHOMBUS_MESH:				bool = RENDER_PIECE_TYPE && false;
+			}
+
+			pub const PIECE_TYPE:				Type				= Type::Pentagon;
+			pub const DISC_SECTION_TRI_COUNT:	usize				= 2_usize * SUBDIVISION_COUNT;
+			pub const ARC_VERT_COUNT:			usize				= DISC_SECTION_TRI_COUNT + 1_usize;
+			pub const DISC_SECTION_VERT_COUNT:	usize				= ARC_VERT_COUNT + 1_usize;
+			pub const BASE_MESH_STATS:			MeshStats			= MeshStats::new_base(
+				PENTAGON_VERTEX_COUNT *
+					(2_usize * TRI_ARRAY_VERT_COUNT + DISC_SECTION_VERT_COUNT + VERTS_PER_QUAD),
+				PENTAGON_VERTEX_COUNT *
+					(2_usize * TRI_ARRAY_TRI_COUNT + DISC_SECTION_TRI_COUNT + TRIS_PER_QUAD)
+			);
+			pub const DISC_SECTION_MESH_STATS:	MeshStats			=
+				MeshStats::new(DISC_SECTION_VERT_COUNT, DISC_SECTION_TRI_COUNT, PIECE_TYPE);
+			pub const MESH_STATS_SLICE:			MeshStatsRefSlice	= &[
+				&BASE_MESH_STATS,
+				&DISC_SECTION_MESH_STATS,
+				&DISC_SECTION_MESH_STATS,
+				&DISC_SECTION_MESH_STATS,
+				&DISC_SECTION_MESH_STATS,
+				&DISC_SECTION_MESH_STATS
+			];
+			pub const MESH_COUNT:				usize				= MESH_STATS_SLICE.len();
+			pub const MESH_STATS_SUM:			MeshStats			= MeshStats::sum_slice(MESH_STATS_SLICE);
+		}
+
+		pub mod triangle {
+			use super::*;
+
+			#[cfg(debug_assertions)]
+			pub mod render {
+				pub const RENDER_PIECE_TYPE:			bool = true;
+					pub const RENDER_BASE_MESH:			bool = RENDER_PIECE_TYPE && true;
+						pub const RENDER_TRI_ARRAY:		bool = RENDER_BASE_MESH && true;
+						pub const RENDER_DISC_SECTIONS:	bool = RENDER_BASE_MESH && false;
+						pub const RENDER_KITES:			bool = RENDER_BASE_MESH && false;
+					pub const RENDER_RHOMBUS_MESH:		bool = RENDER_PIECE_TYPE && false;
+			}
+
+			pub const PIECE_TYPE:				Type				= Type::Triangle;
+			pub const DISC_SECTION_TRI_COUNT:	usize				= SUBDIVISION_COUNT;
+			pub const ARC_VERT_COUNT:			usize				= DISC_SECTION_TRI_COUNT + 1_usize;
+			pub const DISC_SECTION_VERT_COUNT:	usize				= ARC_VERT_COUNT + 1_usize;
+			pub const BASE_MESH_STATS:			MeshStats			= MeshStats::new_base(
+				TRIANGLE_VERTEX_COUNT * (DISC_SECTION_VERT_COUNT + VERTS_PER_QUAD) + TRI_ARRAY_VERT_COUNT,
+				TRIANGLE_VERTEX_COUNT * (DISC_SECTION_TRI_COUNT + TRIS_PER_QUAD) + TRI_ARRAY_TRI_COUNT
+			);
+			pub const DISC_SECTION_MESH_STATS:	MeshStats			=
+				MeshStats::new(DISC_SECTION_VERT_COUNT, DISC_SECTION_TRI_COUNT, PIECE_TYPE);
+			pub const MESH_STATS_SLICE:			MeshStatsRefSlice	= &[
+				&BASE_MESH_STATS,
+				&DISC_SECTION_MESH_STATS,
+				&DISC_SECTION_MESH_STATS,
+				&DISC_SECTION_MESH_STATS
+			];
+			pub const MESH_COUNT:				usize				= MESH_STATS_SLICE.len();
+			pub const MESH_STATS_SUM:			MeshStats			= MeshStats::sum_slice(MESH_STATS_SLICE);
+		}
+
+		// pub const SUBDIVISION_COUNT:		usize		= 16_usize;
+		// pub const SUBDIVISION_COUNT:		usize		= 8_usize;
+		pub const SUBDIVISION_COUNT:		usize		= 4_usize;
+		// pub const SUBDIVISION_COUNT:		usize		= 2_usize;
+		pub const SUBDIVISION_COUNT_F32:	f32			= SUBDIVISION_COUNT as f32;
+
+		pub type TriArray<T>							= TriangularArray!(T, SUBDIVISION_COUNT + 1_usize);
+		pub type TriArrayIndex							= Index<{ <Helpers!(TriArray<()>)>::SIDE_LEN }>;
+		pub type TriArrayIndexMap						= IndexMap<{ <Helpers!(TriArray<()>)>::SIDE_LEN }>;
+
+		pub const TRI_ARRAY_VERT_COUNT:		usize		= <Helpers!(TriArray<()>)>::FULL_SIZE;
+		pub const TRI_ARRAY_TRI_COUNT:		usize		= <Helpers!(TriArray<()>)>::TRI_COUNT;
 		pub const DESIGN_MESH_COUNT:		usize		= pentagon::MESH_COUNT + triangle::MESH_COUNT;
 		pub const DESIGN_MESH_STATS_SUM:	MeshStats	= MeshStats::sum_slice(&[
 			&pentagon::MESH_STATS_SUM,
@@ -911,17 +1021,21 @@ mod gen {
 
 	pub const PENTAGON_VERTEX_COUNT:	usize	= usize::PENTAGON_VERTEX_COUNT;
 	pub const TRIANGLE_VERTEX_COUNT:	usize	= usize::TRIANGLE_VERTEX_COUNT;
+	pub const MAX_VERTEX_COUNT:			usize	= max!(PENTAGON_VERTEX_COUNT, TRIANGLE_VERTEX_COUNT);
+	pub const VERTS_PER_QUAD:			usize	= 4_usize;
 	pub const TRIS_PER_QUAD:			usize	= 2_usize;
 	pub const TOTAL_MESH_COUNT:			usize	=
 		original_super_dodecahedron::DESIGN_MESH_COUNT +
 		custom_super_dodecahedron::DESIGN_MESH_COUNT +
 		super_icosahedron::DESIGN_MESH_COUNT +
-		rhombic_triacontahedron::DESIGN_MESH_COUNT;
+		rhombic_triacontahedron::DESIGN_MESH_COUNT +
+		rounded_rhombic_triacontahedron::DESIGN_MESH_COUNT;
 	pub const TOTAL_MESH_STATS_SUM: MeshStats = MeshStats::sum_slice(&[
 		&original_super_dodecahedron::DESIGN_MESH_STATS_SUM,
 		&custom_super_dodecahedron::DESIGN_MESH_STATS_SUM,
 		&super_icosahedron::DESIGN_MESH_STATS_SUM,
-		&rhombic_triacontahedron::DESIGN_MESH_STATS_SUM
+		&rhombic_triacontahedron::DESIGN_MESH_STATS_SUM,
+		&rounded_rhombic_triacontahedron::DESIGN_MESH_STATS_SUM
 	]);
 	pub const TOTAL_VERTEX_COUNT:		usize	= TOTAL_MESH_STATS_SUM.vertices;
 	pub const TOTAL_INDEX_COUNT:		usize	= TOTAL_MESH_STATS_SUM.indices;
@@ -941,6 +1055,39 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 
 	fn try_from(mut params: &mut PieceHeaderParams) -> Result<Self, ()> {
 		use gen::*;
+
+		type EmptyResult = Result<(), ()>;
+
+		macro_rules! err { () => { return Err(()) } }
+		macro_rules! ok { () => { return Ok(()) } }
+
+		#[cfg(debug_assertions)]
+		macro_rules! render_mesh_begin {
+			($x:ident, $render:expr) => {
+				let $x: usize = if $render {
+					usize::MAX
+				} else {
+					params.mesh_attribute_data_with_stats.stats.vertices
+				};
+			}
+		}
+
+		#[cfg(debug_assertions)]
+		macro_rules! render_mesh_end {
+			($x:ident) => {
+				if $x != usize::MAX {
+					params.mesh_attribute_data_with_stats.data.zero(
+						$x .. params.mesh_attribute_data_with_stats.stats.vertices
+					);
+				}
+			}
+		}
+
+		#[cfg(not(debug_assertions))]
+		macro_rules! render_mesh_begin { ($render:expr) => {} }
+
+		#[cfg(not(debug_assertions))]
+		macro_rules! render_mesh_end { () => {} }
 
 		fn next_vert_index<I: PrimInt>(curr_vert_index: I, vert_count: I) -> I {
 			(curr_vert_index + I::one()) % vert_count
@@ -997,7 +1144,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 							&(Quat::from_axis_angle(
 								icosidodecahedron_verts[
 									face_data.get_slice(icosidodecahedron_vert_indices)[vert_index]
-								].vec,
+								].vec.normalize(),
 								PI
 							) * face_data.norm),
 							None
@@ -1046,17 +1193,27 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 				params.piece_type.range().map(|piece_index: usize| -> u8 { (piece_index - index_offset) as u8 })
 			);
 		};
-		let add_regular_polygon: &dyn Fn(&mut PieceHeaderParams, &[Vec3], &Vec3, &Vec3, &Vec2, u32, bool) = &|
+		let add_rhombic_triacontahedron_face_indices: &dyn Fn(&mut PieceHeaderParams, usize) -> () =
+			&|params: &mut PieceHeaderParams, vert_index: usize| -> () {
+				params.mesh_attribute_data_with_stats.face_indices().extend(
+					params.piece_type.range().map(|face_index: usize| -> u8 {
+						icosidodecahedron_faces
+							[face_index]
+							.get_slice(icosidodecahedron_vert_indices)
+							[vert_index] as u8
+					})
+				);
+			};
+		let add_regular_polygon: &dyn Fn(&mut PieceHeaderParams, &[Vec3], &Vec3, &Vec3, u32, bool) = &|
 			params:		&mut PieceHeaderParams,
 			vert_loop:	&[Vec3],
 			center:		&Vec3,
 			normal:		&Vec3,
-			uv:			&Vec2,
 			offset:		u32,
 			flip_tris:	bool
 		| -> () {
 			let normal: Vec3 = *normal;
-			let uv: Vec2 = *uv;
+			let uv: Vec2 = Vec2::ZERO;
 			let offset: u32 = params.mesh_attribute_data_with_stats.stats.vertices as u32 - offset;
 
 			for vert in vert_loop {
@@ -1131,6 +1288,297 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 			}
 		};
 
+		let add_kite_group: &dyn Fn(
+			&mut PieceHeaderParams,
+			&[Vec3],
+			&[Vec3],
+			&mut dyn Iterator<Item = usize>,
+			&Vec3,
+			u32,
+			bool,
+			bool,
+			bool
+		) -> () = &|
+			params:					&mut PieceHeaderParams,
+			far_vertices:			&[Vec3],
+			near_vertices:			&[Vec3],
+			vert_index_iter:		&mut dyn Iterator<Item = usize>,
+			center:					&Vec3,
+			offset:					u32,
+			offset_along_plane:		bool,
+			offset_along_normal:	bool,
+			left_is_next:			bool
+		| -> () {
+			let uv: Vec2 = Vec2::ZERO;
+			let left_index: fn(usize, usize) -> usize = if left_is_next {
+				next_vert_index::<usize>
+			} else {
+				prev_vert_index::<usize>
+			};
+
+			for vert_index in vert_index_iter {
+				let offset: u32 = params.mesh_attribute_data_with_stats.stats.vertices as u32 - offset;
+				let mut vert_a: Vec3 = far_vertices[vert_index];
+				let mut vert_b: Vec3 = near_vertices[vert_index];
+				let mut vert_c: Vec3 = *center;
+				let mut vert_d: Vec3 = near_vertices[left_index(vert_index, vert_count)];
+
+				if offset_along_plane || offset_along_normal {
+					let mut left_tri: Tri = Tri::from([vert_c, vert_d, vert_a]);
+					let mut right_tri: Tri = Tri::from([vert_a, vert_b, vert_c]);
+
+					if offset_along_plane {
+						let mask: [bool; 3_usize] = [true, true, false];
+
+						left_tri.offset_along_plane(-PLANAR_OFFSET, mask);
+						right_tri.offset_along_plane(-PLANAR_OFFSET, mask);
+					}
+
+					if offset_along_normal {
+						left_tri.offset_along_normal(NORMAL_OFFSET);
+						right_tri.offset_along_normal(NORMAL_OFFSET);
+					}
+
+					[
+						vert_a,
+						vert_b,
+						vert_c
+					] = right_tri.vertices;
+					vert_d = left_tri[1_usize];
+				}
+
+				let normal: Vec3 = (vert_b - vert_a).cross(vert_d - vert_a);
+
+				params.mesh_attribute_data_with_stats.push_vertex(MeshVertexData {
+					position: vert_a,
+					normal,
+					uv
+				});
+				params.mesh_attribute_data_with_stats.push_vertex(MeshVertexData {
+					position: vert_b,
+					normal,
+					uv
+				});
+				params.mesh_attribute_data_with_stats.push_vertex(MeshVertexData {
+					position: vert_c,
+					normal,
+					uv
+				});
+				params.mesh_attribute_data_with_stats.push_vertex(MeshVertexData {
+					position: vert_d,
+					normal,
+					uv
+				});
+				params
+					.mesh_attribute_data_with_stats
+					.indices()
+					.extend([offset, offset + 1_u32, offset + 2_u32]);
+				params
+					.mesh_attribute_data_with_stats
+					.indices()
+					.extend([offset + 2_u32, offset + 3_u32, offset]);
+			}
+		};
+
+		let add_disc_section: &dyn Fn(
+			&mut PieceHeaderParams,
+			&[Vec3],
+			&Vec3,
+			&Vec3,
+			u32
+		) -> () = &|
+			params:		&mut PieceHeaderParams,
+			vert_arc:	&[Vec3],
+			center:		&Vec3,
+			normal:		&Vec3,
+			offset:		u32,
+		| -> () {
+			if vert_arc.len() < 2_usize {
+				return;
+			}
+
+			let normal: Vec3 = *normal;
+			let uv: Vec2 = Vec2::ZERO;
+			let offset: u32 = params.mesh_attribute_data_with_stats.stats.vertices as u32 - offset;
+
+			for vert in vert_arc {
+				params.mesh_attribute_data_with_stats.push_vertex(MeshVertexData {
+					position: *vert,
+					normal,
+					uv
+				});
+			}
+
+			params.mesh_attribute_data_with_stats.push_vertex(MeshVertexData {
+				position: *center,
+				normal,
+				uv
+			});
+
+			let vert_count: u32 = vert_arc.len() as u32;
+
+			for curr_vert_index in 0_u32 .. vert_count - 1_u32 {
+				params.mesh_attribute_data_with_stats.indices().extend(
+					[offset + vert_count, offset + curr_vert_index, offset + curr_vert_index + 1_u32]
+				);
+			}
+		};
+		let add_offset_disc_section: &dyn Fn(
+			&mut PieceHeaderParams,
+			&mut [Vec3],
+			&Vec3,
+			&Vec3,
+			u32
+		) -> () = &|
+			params:		&mut PieceHeaderParams,
+			vert_arc:	&mut [Vec3],
+			center:		&Vec3,
+			normal:		&Vec3,
+			offset:		u32,
+		| -> () {
+			warn_expect!(vert_arc.len() >= 2_usize, ?);
+
+			let arc_len: usize = vert_arc.len();
+			let arc_len_minus_1: usize = arc_len - 1_usize;
+
+			let mut center:			Vec3 = *center;
+			let mut arc_start:		Vec3 = vert_arc[0_usize];
+			let mut center_start:	Vec3 = center;
+			let mut arc_end:		Vec3 = vert_arc[arc_len_minus_1];
+			let mut center_end:		Vec3 = center;
+			let		normal:			Vec3 = *normal;
+
+			warn_expect!((arc_start - center_start).cross(arc_end - center_end).dot(normal) > 0.0_f32, ?);
+
+			// Convert vert_arc into 2D space (the normal is the Z axis)
+			let mat: Mat4 = Mat4::look_at_rh(
+				center,
+				center - normal,
+				normal.cross(vert_arc[0_usize] - center).normalize()
+			);
+
+			for vert in [&mut arc_start, &mut center_start, &mut arc_end, &mut center_end]
+				.into_iter()
+				.chain(vert_arc.iter_mut())
+			{
+				*vert = mat.project_point3(*vert);
+			}
+
+			let mut next_segment_start: Vec2;
+			let mut segment_offset: Vec2;
+			let (mut curr_segment_start_offset, mut curr_segment_end_offset): (Vec2, Vec2) = {
+				let curr_segment_start: Vec2 = vert_arc[0_usize].xy();
+				let curr_segment_end: Vec2 = vert_arc[1_usize].xy();
+
+				next_segment_start = curr_segment_end;
+				segment_offset = PLANAR_OFFSET * (curr_segment_end - curr_segment_start).perp().normalize();
+
+				(curr_segment_start + segment_offset, curr_segment_end + segment_offset)
+			};
+
+			vert_arc[0_usize] = curr_segment_start_offset.extend(0.0_f32);
+
+			for start_index in 1_usize .. arc_len_minus_1 {
+				let next_segment_end: Vec2 = vert_arc[start_index + 1_usize].xy();
+
+				segment_offset = PLANAR_OFFSET * (next_segment_end - next_segment_start).perp().normalize();
+
+				let next_segment_start_offset: Vec2 = next_segment_start + segment_offset;
+				let next_segment_end_offset: Vec2 = next_segment_end + segment_offset;
+
+				if let Some(intersection) = warn_expect_some!(Option::<Vec2>::from(
+					two_d::compute_line_intersection(
+						curr_segment_start_offset,
+						curr_segment_end_offset,
+						next_segment_start_offset,
+						next_segment_end_offset,
+						None
+					)
+				), =>) {
+					vert_arc[start_index] = intersection.extend(0.0_f32);
+				}
+
+				next_segment_start = next_segment_end;
+				curr_segment_start_offset = next_segment_start_offset;
+				curr_segment_end_offset = next_segment_end_offset;
+			}
+
+			vert_arc[arc_len_minus_1] = curr_segment_end_offset.extend(0.0_f32);
+
+			let mut arc_start_xy: Vec2 = arc_start.xy();
+			let mut center_start_xy: Vec2 = center_start.xy();
+			let offset_start: Vec2 = PLANAR_OFFSET * (arc_start_xy - center_start_xy).perp().normalize();
+
+			arc_start_xy += offset_start;
+			center_start_xy += offset_start;
+
+			for start_index in 0_usize .. arc_len_minus_1 {
+				// Use a ray test for both, since the start edge could've been pushed far enough to be past both points
+				if let Some(intersection) = Option::<Vec2>::from(two_d::compute_ray_intersection(
+					center_start_xy,
+					arc_start_xy,
+					vert_arc[start_index].xy(),
+					vert_arc[start_index + 1_usize].xy(),
+					None
+				)) {
+					vert_arc[start_index] = intersection.extend(0.0_f32);
+				} else {
+					// No more segments from this direction will intersect. Break the loop
+					break;
+				}
+			}
+
+			let mut arc_end_xy: Vec2 = arc_end.xy();
+			let mut center_end_xy: Vec2 = center_end.xy();
+			let offset_end: Vec2 = -PLANAR_OFFSET * (arc_end_xy - center_end_xy).perp().normalize();
+
+			arc_end_xy += offset_end;
+			center_end_xy += offset_end;
+
+			for end_index in (1_usize ..= arc_len_minus_1).into_iter().rev() {
+				// Use a ray test for both, since the start edge could've been pushed far enough to be past both points
+				if let Some(intersection) = Option::<Vec2>::from(two_d::compute_ray_intersection(
+					center_end_xy,
+					arc_end_xy,
+					vert_arc[end_index].xy(),
+					vert_arc[end_index - 1_usize].xy(),
+					None
+				)) {
+					vert_arc[end_index] = intersection.extend(0.0_f32);
+				} else {
+					// No more segments from this direction will intersect. Break the loop
+					break;
+				}
+			}
+
+			center = warn_expect_some!(Option::<Vec2>::from(two_d::compute_line_intersection(
+				arc_start_xy,
+				center_start_xy,
+				arc_end_xy,
+				center_end_xy,
+				None
+			)), =>).unwrap_or_else(|| -> Vec2 { 0.5_f32 * (center_start_xy + center_end_xy) }).extend(0.0_f32);
+
+			// Convert vert_arc back into its original 3D space
+			let inv: Mat4 = mat.inverse();
+
+			for vert in [&mut center]
+				.into_iter()
+				.chain(vert_arc.iter_mut())
+			{
+				vert.z = NORMAL_OFFSET;
+				*vert = inv.project_point3(*vert);
+			}
+
+			add_disc_section(
+				params,
+				vert_arc,
+				&center,
+				&normal,
+				offset
+			);
+		};
+
 		let mut mesh_index: usize = 0_usize;
 		let mut offset: MeshStats = params.mesh_attribute_data_with_stats.stats.clone();
 
@@ -1139,14 +1587,14 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 			MeshStatsRefSlice,
 			&mut MeshStats,
 			&mut usize
-		) -> Result<(), ()> = &|
+		) -> EmptyResult = &|
 			params:				&PieceHeaderParams,
 			mesh_stats_slice:	MeshStatsRefSlice,
 			offset:				&mut MeshStats,
 			mesh_index:			&mut usize
-		| -> Result<(), ()> {
-			let new_offset: MeshStats = params.mesh_attribute_data_with_stats.stats.clone();
-			let expected_offset: MeshStats = *offset + *mesh_stats_slice[*mesh_index];
+		| -> EmptyResult {
+			let new_offset:			MeshStats = params.mesh_attribute_data_with_stats.stats.clone();
+			let expected_offset:	MeshStats = *offset + *mesh_stats_slice[*mesh_index];
 
 			if !warn_expect!(new_offset == expected_offset) {
 				warn_expr!(
@@ -1362,7 +1810,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 								&vertices[OUTER_OUTER_INDEX],
 								vertices_offset
 							);
-							check_mesh_stats(&params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
+							check_mesh_stats(&mut params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
 						}
 
 						// Add the primary pent mesh
@@ -1395,7 +1843,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 								vertices_offset
 							);
 							add_piece_range(&mut params);
-							check_mesh_stats(&params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
+							check_mesh_stats(&mut params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
 						}
 
 						// Add the adjacent pent meshes
@@ -1435,12 +1883,11 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 								&circle_vertices,
 								&center,
 								&normal,
-								&uv,
 								vertices_offset,
 								false
 							);
 							add_adjacent_face_indices_same_piece(&mut params, vert_index);
-							check_mesh_stats(&params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
+							check_mesh_stats(&mut params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
 						}
 					},
 					Type::Triangle => {
@@ -1495,11 +1942,10 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 								inner_vert_loop,
 								&inner_center,
 								&(-inner_center).normalize(),
-								&uv,
 								vertices_offset,
 								true
 							);
-							check_mesh_stats(&params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
+							check_mesh_stats(&mut params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
 						}
 
 						// Add the adjacent pent meshes
@@ -1518,15 +1964,13 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 								false
 							);
 							add_adjacent_face_indices_other_piece(&mut params, vert_index);
-							check_mesh_stats(&params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
+							check_mesh_stats(&mut params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
 						}
 					}
 				}
 			},
 			Design::CustomSuperDodecahedron => {
 				use custom_super_dodecahedron::*;
-
-				let uv: Vec2 = Vec2::ZERO;
 
 				match params.piece_type {
 					Type::Pentagon => {
@@ -1574,7 +2018,6 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 								outer_pentagon,
 								&center,
 								&center.normalize(),
-								&uv,
 								vertices_offset,
 								false
 							);
@@ -1588,7 +2031,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 								false,
 								true
 							);
-							check_mesh_stats(&params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
+							check_mesh_stats(&mut params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
 						}
 
 						// Add the primary pent mesh
@@ -1609,7 +2052,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 							}
 
 							add_piece_range(&mut params);
-							check_mesh_stats(&params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
+							check_mesh_stats(&mut params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
 						}
 
 						// Add the adjacent pent meshes
@@ -1643,7 +2086,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 							}
 
 							add_adjacent_face_indices_same_piece(&mut params, vert_index);
-							check_mesh_stats(&params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
+							check_mesh_stats(&mut params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
 						}
 					},
 					Type::Triangle => {
@@ -1683,7 +2126,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 								false,
 								true
 							);
-							check_mesh_stats(&params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
+							check_mesh_stats(&mut params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
 						}
 
 						// Add the adjacent pent meshes
@@ -1702,7 +2145,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 								false
 							);
 							add_adjacent_face_indices_other_piece(&mut params, vert_index);
-							check_mesh_stats(&params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
+							check_mesh_stats(&mut params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
 						}
 					}
 				}
@@ -1748,7 +2191,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 								false,
 								true
 							);
-							check_mesh_stats(&params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
+							check_mesh_stats(&mut params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
 						}
 
 						// Add the adjacent tri meshes
@@ -1767,7 +2210,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 								false
 							);
 							add_adjacent_face_indices_other_piece(&mut params, vert_index);
-							check_mesh_stats(&params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
+							check_mesh_stats(&mut params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
 						}
 					},
 					Type::Triangle => {
@@ -1806,7 +2249,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 								false,
 								true
 							);
-							check_mesh_stats(&params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
+							check_mesh_stats(&mut params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
 						}
 
 						// Add the primary tri mesh
@@ -1820,7 +2263,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 							tri.offset_along_normal(NORMAL_OFFSET);
 							params.mesh_attribute_data_with_stats.push_vertex((tri, vertices_offset));
 							add_piece_range(&mut params);
-							check_mesh_stats(&params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
+							check_mesh_stats(&mut params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
 						}
 
 						// Add the adjacent tri meshes
@@ -1838,15 +2281,13 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 							tri.offset_along_normal(NORMAL_OFFSET);
 							params.mesh_attribute_data_with_stats.push_vertex((tri, vertices_offset));
 							add_adjacent_face_indices_same_piece(&mut params, vert_index);
-							check_mesh_stats(&params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
+							check_mesh_stats(&mut params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
 						}
 					}
 				}
 			},
 			Design::RhombicTriacontahedron => {
 				use rhombic_triacontahedron::*;
-
-				const MAX_VERTEX_COUNT: usize = max!(PENTAGON_VERTEX_COUNT, TRIANGLE_VERTEX_COUNT);
 
 				let rhombic_triacontahedron_data: &Data = Data::get(Polyhedron::RhombicTriacontahedron);
 				let center: Vec3 = pyramid_center();
@@ -1888,98 +2329,6 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 					Type::Pentagon => pentagon::MESH_STATS_SLICE,
 					Type::Triangle => triangle::MESH_STATS_SLICE
 				};
-				let uv: Vec2 = Vec2::ZERO;
-
-				let add_kite_group: &dyn Fn(
-					&mut PieceHeaderParams,
-					&[Vec3],
-					&[Vec3],
-					&mut dyn Iterator<Item = usize>,
-					&Vec3,
-					u32,
-					bool,
-					bool,
-					bool
-				) -> () = &|
-					params:					&mut PieceHeaderParams,
-					far_vertices:			&[Vec3],
-					near_vertices:			&[Vec3],
-					vert_index_iter:		&mut dyn Iterator<Item = usize>,
-					center:					&Vec3,
-					offset:					u32,
-					offset_along_plane:		bool,
-					offset_along_normal:	bool,
-					left_is_next:			bool
-				| -> () {
-					let left_index: fn(usize, usize) -> usize = if left_is_next {
-						next_vert_index::<usize>
-					} else {
-						prev_vert_index::<usize>
-					};
-
-					for vert_index in vert_index_iter {
-						let offset: u32 = params.mesh_attribute_data_with_stats.stats.vertices as u32 - offset;
-						let mut vert_a: Vec3 = far_vertices[vert_index];
-						let mut vert_b: Vec3 = near_vertices[vert_index];
-						let mut vert_c: Vec3 = *center;
-						let mut vert_d: Vec3 = near_vertices[left_index(vert_index, vert_count)];
-
-						if offset_along_plane || offset_along_normal {
-							let mut left_tri: Tri = Tri::from([vert_c, vert_d, vert_a]);
-							let mut right_tri: Tri = Tri::from([vert_a, vert_b, vert_c]);
-
-							if offset_along_plane {
-								let mask: [bool; 3_usize] = [true, true, false];
-
-								left_tri.offset_along_plane(-PLANAR_OFFSET, mask);
-								right_tri.offset_along_plane(-PLANAR_OFFSET, mask);
-							}
-
-							if offset_along_normal {
-								left_tri.offset_along_normal(NORMAL_OFFSET);
-								right_tri.offset_along_normal(NORMAL_OFFSET);
-							}
-
-							[
-								vert_a,
-								vert_b,
-								vert_c
-							] = right_tri.vertices;
-							vert_d = left_tri[1_usize];
-						}
-
-						let normal: Vec3 = (vert_b - vert_a).cross(vert_d - vert_a);
-
-						params.mesh_attribute_data_with_stats.push_vertex(MeshVertexData {
-							position: vert_a,
-							normal,
-							uv
-						});
-						params.mesh_attribute_data_with_stats.push_vertex(MeshVertexData {
-							position: vert_b,
-							normal,
-							uv
-						});
-						params.mesh_attribute_data_with_stats.push_vertex(MeshVertexData {
-							position: vert_c,
-							normal,
-							uv
-						});
-						params.mesh_attribute_data_with_stats.push_vertex(MeshVertexData {
-							position: vert_d,
-							normal,
-							uv
-						});
-						params
-							.mesh_attribute_data_with_stats
-							.indices()
-							.extend([offset, offset + 1_u32, offset + 2_u32]);
-						params
-							.mesh_attribute_data_with_stats
-							.indices()
-							.extend([offset + 2_u32, offset + 3_u32, offset]);
-					}
-				};
 
 				// Add the base mesh
 				{
@@ -2007,7 +2356,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 						false,
 						true
 					);
-					check_mesh_stats(&params, mesh_stats_slice, &mut offset, &mut mesh_index)?;
+					check_mesh_stats(&mut params, mesh_stats_slice, &mut offset, &mut mesh_index)?;
 				}
 
 				// Add the rhombus meshes
@@ -2026,15 +2375,635 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 						false
 					);
 
-					params.mesh_attribute_data_with_stats.face_indices().extend(
-						params.piece_type.range().map(|face_index: usize| -> u8 {
-							icosidodecahedron_faces
-								[face_index]
-								.get_slice(icosidodecahedron_vert_indices)
-								[vert_index] as u8
-						})
-					);
-					check_mesh_stats(&params, mesh_stats_slice, &mut offset, &mut mesh_index)?;
+					add_rhombic_triacontahedron_face_indices(&mut params, vert_index);
+					check_mesh_stats(&mut params, mesh_stats_slice, &mut offset, &mut mesh_index)?;
+				}
+			},
+			Design::RoundedRhombicTriacontahedron => {
+				use rounded_rhombic_triacontahedron::*;
+
+				const RADIUS: f32 = {
+					const BASE_VECTOR_0: [f32; 3_usize] =
+						unsafe { transmute::<Vec3, [f32; 3_usize]>(ICOSIDODECAHEDRON.base_vectors[0_usize]) };
+					const BASE_VECTOR_1: [f32; 3_usize] =
+						unsafe { transmute::<Vec3, [f32; 3_usize]>(ICOSIDODECAHEDRON.base_vectors[1_usize]) };
+
+					/* MIDPOINT is the mean of BASE_VECTOR_0 and BASE_VECTOR_1. Since both base vectors lie on the
+					same sphere, the radius through MIDPOINT is perpendicular to the line segment between the two
+					base vectors */
+					const MIDPOINT: [f32; 3_usize] = [
+						0.5_f32 * (BASE_VECTOR_0[0_usize] + BASE_VECTOR_1[0_usize]),
+						0.5_f32 * (BASE_VECTOR_0[1_usize] + BASE_VECTOR_1[1_usize]),
+						0.5_f32 * (BASE_VECTOR_0[2_usize] + BASE_VECTOR_1[2_usize])
+					];
+					const MIDPOINT_RADIUS: f32 = const_sqrt_f64((
+						MIDPOINT[0_usize] * MIDPOINT[0_usize] +
+						MIDPOINT[1_usize] * MIDPOINT[1_usize] +
+						MIDPOINT[2_usize] * MIDPOINT[2_usize]
+					) as f64) as f32;
+
+					/* The length we want is the radius that goes through MIDPOINT, terminating when the segment
+					between BASE_VECTOR_0 and the endpoint is perpendicular to the radius through BASE_VECTOR_0.
+					BASE_VECTOR_0: B
+					MIDPOINT: M
+					center: C
+					"segment endpoint": X (we want the length of segment XC, which is essentially the magnitude of
+						X, since C is the origin)
+					
+					Triangle BMC and triangle XBC are similar, since C, M, and X are colinear.
+					Thus, |X| == |B| ^ 2 / |M| */
+					BASE_VECTOR_0[0_usize] * BASE_VECTOR_0[0_usize] / MIDPOINT_RADIUS
+				};
+				const GENEROUS_EPSILON: f32 = 5.0_f32 * f32::EPSILON;
+
+				fn length_is_radius(v: Vec3) -> bool { (v.length() - RADIUS).abs() < GENEROUS_EPSILON }
+
+				macro_rules! warn_expect_length_is_radius { ($vert:expr) => {
+					if !warn_expect!(length_is_radius($vert)) {
+						warn_expr!($vert.length(), $vert.length() - RADIUS, GENEROUS_EPSILON);
+
+						debug_break();
+
+						err!();
+					}
+				} }
+
+				fn resize_to_sphere(v: Vec3) -> Result<Vec3, ()> {
+					if warn_expect!(v.is_finite()) {
+						Ok(RADIUS * v.normalize())
+					} else {
+						warn_expr!(v);
+
+						err!();
+					}
+				}
+				fn init_arc_vertices<const AVC: usize>(
+					disc_centers: &[Vec3; MAX_VERTEX_COUNT],
+					disc_kisses: &[Vec3; MAX_VERTEX_COUNT],
+					arc_vertices: &mut [[Vec3; AVC]],
+					angle: f32,
+					piece_type: Type
+				) -> EmptyResult {
+					warn_expect!(!arc_vertices.is_empty(), return Err(()));
+
+					let disc_section_tri_count_inv: f32 = 1.0_f32 / if matches!(piece_type, Type::Pentagon) {
+						pentagon::DISC_SECTION_TRI_COUNT
+					} else {
+						triangle::DISC_SECTION_TRI_COUNT
+					} as f32;
+
+					for (center_index, arc_vertices) in arc_vertices.iter_mut().enumerate() {
+						let axis: Vec3 = disc_centers[center_index].normalize();
+						let initial_vert: Vec3 = disc_kisses[center_index];
+
+						warn_expect_length_is_radius!(initial_vert);
+
+						let final_vert: Vec3 = disc_kisses[piece_type.prev_side_index(center_index)];
+
+						warn_expect_length_is_radius!(final_vert);
+
+						for (arc_vert_index, arc_vert) in arc_vertices.iter_mut().enumerate() {
+							*arc_vert = Quat::from_axis_angle(
+								axis,
+								arc_vert_index as f32 * angle * disc_section_tri_count_inv
+							) * initial_vert;
+
+							warn_expect_length_is_radius!(*arc_vert);
+						}
+					}
+
+					ok!();
+				}
+
+				let index_map: &TriArrayIndexMap = &TriArrayIndexMap::default();
+
+				// Safe: we will be writing into these cells (those that are needed), and Vec3 has no destructor
+				let mut vertices: [[Vec3; MAX_VERTEX_COUNT]; 2_usize] = unsafe {
+					MaybeUninit::<[[Vec3; MAX_VERTEX_COUNT]; 2_usize]>::uninit().assume_init()
+				};
+
+				let [
+					disc_centers,
+					disc_kisses
+				] = &mut vertices;
+
+				face_iter(disc_centers);
+
+				for vert_index in vert_range.clone() {
+					disc_kisses[vert_index] = resize_to_sphere(
+						disc_centers[vert_index] + disc_centers[params.piece_type.next_side_index(vert_index)]
+					)?;
+				}
+
+				let angle: f32 = {
+					let center: Vec3 = disc_centers[0_usize];
+					let center_to_first_vert: Vec3 = disc_kisses[0_usize] - center;
+					let center_to_last_vert: Vec3 = disc_kisses[params.piece_type.prev_side_index(0_usize)] - center;
+					let cross_dot_center: f32 = center_to_first_vert.cross(center_to_last_vert).normalize().dot(center.normalize());
+
+					if !warn_expect!((cross_dot_center - 1.0_f32).abs() < f32::EPSILON) {
+						warn_expr!(cross_dot_center);
+
+						return Err(());
+					}
+
+					center_to_first_vert.angle_between(center_to_last_vert)
+				};
+				let init_border: &dyn Fn(&mut TriArray<Vec3>, IndexType2D) -> () =
+					&|tri_array: &mut TriArray<Vec3>, border: IndexType2D| -> () {
+						let first_index: TriArrayIndex = TriArrayIndex::corner(border);
+						let first_vert: Vec3 = tri_array[(index_map, &first_index)];
+						let last_vert: Vec3 = tri_array[(index_map, &first_index.last_in_row())];
+						let axis: Vec3 = first_vert.cross(last_vert).normalize();
+						let angle: f32 = first_vert.angle_between(last_vert);
+
+						tri_array.init_border(
+							index_map,
+							border,
+							(0_usize ..= SUBDIVISION_COUNT).map(|index_2: usize| -> Vec3 {
+								Quat::from_axis_angle(axis, index_2 as f32 * angle / SUBDIVISION_COUNT_F32)
+									* first_vert
+							})
+						);
+					};
+				let bisect_and_connect: &dyn Fn(&mut TriArray<Vec3>) -> EmptyResult =
+					&|tri_array: &mut TriArray<Vec3>| -> EmptyResult {
+						for big_step_exponent in (1_u32 .. SUBDIVISION_COUNT.trailing_zeros()).rev() {
+							let big_step_size: usize = 1_usize << big_step_exponent;
+							let small_step_size: usize = big_step_size >> 1_u32;
+			
+							for index_1 in (big_step_size .. SUBDIVISION_COUNT).step_by(big_step_size) {
+								for index_2 in (SUBDIVISION_COUNT - index_1 .. SUBDIVISION_COUNT)
+									.step_by(big_step_size)
+								{
+									for index_type in IndexType2D::iter() {
+										tri_array[(
+											index_map,
+											&TriArrayIndex::new(index_type, index_1, index_2 + small_step_size)
+										)] = resize_to_sphere(
+											tri_array[(
+												index_map,
+												&TriArrayIndex::new(index_type, index_1, index_2)
+											)] + tri_array[(
+												index_map,
+												&TriArrayIndex::new(
+													index_type,
+													index_1,
+													index_2 + big_step_size
+												)
+											)]
+										)?;
+									}
+								}
+							}
+						}
+
+						ok!();
+					};
+				let add_tri_array: &dyn Fn(&mut PieceHeaderParams, &[Vec3; TRI_ARRAY_VERT_COUNT], u32, u32) -> () =
+					&|params: &mut PieceHeaderParams, tri_array: &[Vec3; TRI_ARRAY_VERT_COUNT], offset: u32, tri_array_index: u32| -> () {
+						let uv: Vec2 = Vec2::ZERO;
+						let offset: u32 = params.mesh_attribute_data_with_stats.stats.vertices as u32 - offset;
+
+						let mut dbg_local_vert_index: u32 = 0_u32;
+						let mut dbg_vertex_pairs: Vec<(u32, u32, Vec3)> = Vec::<(u32, u32, Vec3)>::with_capacity(tri_array.len());
+
+						let dbg_transform: Mat4 = Mat4::look_at_rh(tri_array[0_usize], Vec3::ZERO, (tri_array[1_usize] - tri_array[0_usize]).normalize());
+						let mut dbg_min: Vec2 = Vec2::splat(f32::INFINITY);
+						let mut dbg_max: Vec2 = -dbg_min;
+
+						for vert in tri_array {
+							params.mesh_attribute_data_with_stats.push_vertex(MeshVertexData {
+								position: *vert,
+								normal: vert.normalize(),
+								uv
+							});
+
+							let dbg_vert: Vec3 = dbg_transform.project_point3(*vert);
+
+							dbg_vertex_pairs.push((offset + dbg_local_vert_index, dbg_local_vert_index, dbg_vert));
+							dbg_local_vert_index += 1_u32;
+							dbg_min = dbg_min.min(dbg_vert.xy());
+							dbg_max = dbg_max.max(dbg_vert.xy());
+						}
+
+						const BOUNDS_OFFSET: Vec2 = glam::const_vec2!([0.25_f32, 0.25_f32]);
+						dbg_min -= BOUNDS_OFFSET;
+						dbg_max += BOUNDS_OFFSET;
+
+						{
+							use plotters::{
+								coord::{
+									types::RangedCoordf32,
+									Shift
+								},
+								prelude::*
+							};
+
+							let file_path: String = format!("./images/tri_array_{}.svg", tri_array_index);
+							let root_area: DrawingArea<SVGBackend, Shift> =
+							SVGBackend::new(&file_path, (600_u32, 600_u32)).into_drawing_area();
+
+							root_area.fill(&WHITE).unwrap();
+
+							let mut context: ChartContext<SVGBackend, Cartesian2d<RangedCoordf32, RangedCoordf32>> =
+								ChartBuilder::on(&root_area)
+								.build_cartesian_2d(
+									dbg_min.x .. dbg_max.x,
+									dbg_min.y .. dbg_max.y
+								)
+								.unwrap();
+
+							context.configure_mesh().draw().unwrap();
+
+							context.draw_series(dbg_vertex_pairs.iter().map(|vertex_pair: &(u32, u32, Vec3)| -> Circle<(f32, f32), f32> {
+								Circle::new(vertex_pair.2.xy().into(), 1.0_f32, &BLACK)
+							})).unwrap();
+							context.plotting_area().draw(&PathElement::<(f32, f32)>::new(dbg_vertex_pairs
+								.iter()
+								.map(|vertex_pair: &(u32, u32, Vec3)| -> (f32, f32) {
+									vertex_pair.2.xy().into()
+								})
+								.collect::<Vec<(f32, f32)>>(),
+								&RED
+							)).unwrap();
+						}
+
+						let mut dbg_vertex_trio_pairs: Vec<(UVec3, UVec3, Vec3)> = Vec::<(UVec3, UVec3, Vec3)>::new();
+
+						for (index_a, index_b, index_c)
+							in TriArrayIndex::iter_mapped_trio_indices(index_map)
+						{
+							params.mesh_attribute_data_with_stats.indices().extend([
+								offset + index_a as u32,
+								offset + index_b as u32,
+								offset + index_c as u32
+							]);
+
+							dbg_vertex_trio_pairs.push((
+								UVec3::new(offset + index_a as u32, offset + index_b as u32, offset + index_c as u32),
+								UVec3::new(index_a as u32, index_b as u32, index_c as u32),
+								Vec3::new(
+									tri_array[index_a].distance(tri_array[index_b]),
+									tri_array[index_b].distance(tri_array[index_c]),
+									tri_array[index_c].distance(tri_array[index_a])
+								)
+							));
+						}
+
+						let mut dbg_string: String = String::with_capacity(2024_usize);
+
+						use std::fmt::Write;
+
+						write!(dbg_string, "tri_array {}:\n\ndbg_vertex_pairs:\n", tri_array_index).unwrap();
+
+						for (index, vertex_pair) in dbg_vertex_pairs.into_iter().enumerate() {
+							write!(dbg_string, "  {: >2}: {: >2},  {: >2}, {: <+12?}\n", index, vertex_pair.0, vertex_pair.1, vertex_pair.2).unwrap();
+						}
+
+						write!(dbg_string, "\n\ndbg_vertex_trio_pairs:\n").unwrap();
+
+						for (index, vertex_trio_pair) in dbg_vertex_trio_pairs.into_iter().enumerate() {
+							write!(dbg_string, "  {: >2}: {: >2?}, {: >2?}, {: <12?}\n", index, vertex_trio_pair.0, vertex_trio_pair.1, vertex_trio_pair.2).unwrap();
+						}
+
+						log::debug!("{}", dbg_string);
+					};
+
+				match params.piece_type {
+					Type::Pentagon => {
+						use pentagon::*;
+
+						#[cfg(debug_assertions)]
+						use render::*;
+
+						render_mesh_begin!(x, RENDER_PIECE_TYPE);
+
+						let mut arc_vertices: [[Vec3; ARC_VERT_COUNT]; PENTAGON_VERTEX_COUNT] = unsafe {
+							MaybeUninit::<[[Vec3; ARC_VERT_COUNT]; PENTAGON_VERTEX_COUNT]>::uninit().assume_init()
+						};
+
+						init_arc_vertices(disc_centers, disc_kisses, &mut arc_vertices, angle, params.piece_type)?;
+
+						// Add the base mesh
+						{
+							render_mesh_begin!(x, RENDER_BASE_MESH);
+
+							let vertices_offset: u32 =
+								push_mesh_header(&mut params, MESH_STATS_SLICE, &offset, mesh_index);
+							let center: Vec3 =
+								resize_to_sphere(transformation * icosidodecahedron_faces[0_usize].norm)?;
+
+							let mut tri_arrays: [[[Vec3; TRI_ARRAY_VERT_COUNT]; PENTAGON_VERTEX_COUNT]; 2_usize] =
+								unsafe {
+									MaybeUninit
+										::<[[[Vec3; TRI_ARRAY_VERT_COUNT]; PENTAGON_VERTEX_COUNT]; 2_usize]>
+										::uninit()
+										.assume_init()
+								};
+
+							let [
+								outer_tri_arrays,
+								inner_tri_arrays
+							] = &mut tri_arrays;
+
+							fn iter_tri_arrays(
+								tri_arrays: &mut [[Vec3; TRI_ARRAY_VERT_COUNT]; PENTAGON_VERTEX_COUNT]
+							) -> impl Iterator<Item = &mut TriArray<Vec3>> {
+								tri_arrays
+									.iter_mut()
+									.map(|tri_array: &mut [Vec3; TRI_ARRAY_VERT_COUNT]| -> &mut TriArray<Vec3> {
+										tri_array.fill(Vec3::NAN);
+
+										AsMut::<TriArray<Vec3>>::as_mut(tri_array)
+									})
+							}
+
+							for (center_index, (outer_tri_array, inner_tri_array))
+								in iter_tri_arrays(outer_tri_arrays).zip(iter_tri_arrays(inner_tri_arrays)).enumerate()
+							{
+								// Initialize border IJ for the outer tri with the corresponding stretch of arc verts
+								outer_tri_array.init_border(
+									index_map,
+									IndexType2D::IJ,
+									arc_vertices
+										[center_index]
+										[0_usize ..= SUBDIVISION_COUNT]
+										.iter()
+										.cloned()
+								);
+
+								// Initialize border JK for the outer tri with the corresponding stretch of arc verts
+								outer_tri_array.init_border(
+									index_map,
+									IndexType2D::JK,
+									arc_vertices
+										[PIECE_TYPE.prev_side_index(center_index)]
+										[SUBDIVISION_COUNT ..= 2_usize * SUBDIVISION_COUNT]
+										.iter()
+										.cloned()
+								);
+
+								/* The K and I corners have both been initialized now, so just fill in border KI from
+								those two points */
+								init_border(outer_tri_array, IndexType2D::KI);
+
+								for border_vert in TriArrayIndex::iter_mapped_border_indices(index_map)
+									.map(|index: usize| -> Vec3 { outer_tri_array[index] })
+								{
+									warn_expect_length_is_radius!(border_vert);
+								}
+
+								// Fill in the rest of the outer tri
+								bisect_and_connect(outer_tri_array)?;
+
+								for vert in TriArrayIndex::iter_mapped_all_indices(index_map)
+									.map(|index: usize| -> Vec3 { outer_tri_array[index] })
+								{
+									warn_expect_length_is_radius!(vert);
+								}
+
+								/* Copy border KI from the outer array to border KI of the inner array, keeping in mind
+								that the directions flip */
+								inner_tri_array.init_border(
+									index_map,
+									IndexType2D::KI,
+									TriArrayIndex::corner(IndexType2D::KI)
+										.iter_mapped_row_indices(index_map)
+										.rev()
+										.map(|index: usize| -> Vec3 { outer_tri_array[index] })
+								);
+
+								// Initialize the J corner
+								inner_tri_array[(index_map, &TriArrayIndex::corner(IndexType2D::JK))] =
+									center;
+
+								/* The I and J corners have both been initialized now, so just fill in border KI from
+								those two points */
+								init_border(inner_tri_array, IndexType2D::IJ);
+
+								/* The J and K corners have both been initialized now, so just fill in border KI from
+								those two points */
+								init_border(inner_tri_array, IndexType2D::JK);
+
+								for border_vert in TriArrayIndex::iter_mapped_border_indices(index_map)
+									.map(|index: usize| -> Vec3 { inner_tri_array[index] })
+								{
+									warn_expect_length_is_radius!(border_vert);
+								}
+
+								// Fill in the rest of the inner tri
+								bisect_and_connect(inner_tri_array)?;
+
+								for vert in TriArrayIndex::iter_mapped_all_indices(index_map)
+									.map(|index: usize| -> Vec3 { inner_tri_array[index] })
+								{
+									warn_expect_length_is_radius!(vert);
+								}
+							}
+
+							{
+								render_mesh_begin!(x, RENDER_DISC_SECTIONS);
+
+								for (center_index, arc_vertices) in arc_vertices.iter().enumerate() {
+									let center: &Vec3 = &disc_centers[center_index];
+	
+									add_disc_section(
+										&mut params,
+										arc_vertices,
+										center,
+										&center.normalize(),
+										vertices_offset
+									);
+								}
+
+								render_mesh_end!(x);
+							}
+
+							{
+								render_mesh_begin!(x, RENDER_TRI_ARRAYS);
+
+								let mut dbg_tri_array_index: u32 = 0_u32;
+
+								{
+									render_mesh_begin!(x, RENDER_OUTER_TRI_ARRAYS);
+
+									for tri_array in outer_tri_arrays {
+										add_tri_array(&mut params, tri_array, vertices_offset, dbg_tri_array_index);
+										dbg_tri_array_index += 1_u32;
+									}
+
+									render_mesh_end!(x);
+								}
+
+								{
+									render_mesh_begin!(x, RENDER_INNER_TRI_ARRAYS);
+
+									for tri_array in inner_tri_arrays {
+										add_tri_array(&mut params, tri_array, vertices_offset, dbg_tri_array_index);
+										dbg_tri_array_index += 1_u32;
+									}
+
+									render_mesh_end!(x);
+								}
+
+								render_mesh_end!(x);
+							}
+
+							{
+								render_mesh_begin!(x, RENDER_KITES);
+								add_kite_group(
+									&mut params,
+									disc_kisses,
+									disc_centers,
+									&mut vert_range.clone(),
+									&Vec3::ZERO,
+									vertices_offset,
+									false,
+									false,
+									true
+								);
+								render_mesh_end!(x);
+							}
+
+							check_mesh_stats(&mut params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
+							render_mesh_end!(x);
+						}
+
+						{
+							render_mesh_begin!(x, RENDER_RHOMBUS_MESH);
+
+							// Add the disc section meshes
+							for (center_index, arc_vertices) in arc_vertices.iter_mut().enumerate() {
+								let vertices_offset: u32 =
+									push_mesh_header(&mut params, MESH_STATS_SLICE, &offset, mesh_index);
+
+								let center: Vec3 = disc_centers[center_index];
+
+								add_offset_disc_section(
+									&mut params,
+									arc_vertices,
+									&center,
+									&center.normalize(),
+									vertices_offset
+								);
+								add_rhombic_triacontahedron_face_indices(&mut params, center_index);
+								check_mesh_stats(&mut params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
+							}
+
+							render_mesh_end!(x);
+						}
+
+						render_mesh_end!(x);
+					},
+					Type::Triangle => {
+						use triangle::*;
+
+						#[cfg(debug_assertions)]
+						use render::*;
+
+						render_mesh_begin!(x, RENDER_PIECE_TYPE);
+
+						let mut arc_vertices: [[Vec3; ARC_VERT_COUNT]; TRIANGLE_VERTEX_COUNT] = unsafe {
+							MaybeUninit::<[[Vec3; ARC_VERT_COUNT]; TRIANGLE_VERTEX_COUNT]>::uninit().assume_init()
+						};
+
+						init_arc_vertices(disc_centers, disc_kisses, &mut arc_vertices, angle, params.piece_type)?;
+
+						// Add the base mesh
+						{
+							render_mesh_begin!(x, RENDER_BASE_MESH);
+
+							let vertices_offset: u32 =
+								push_mesh_header(&mut params, MESH_STATS_SLICE, &offset, mesh_index);
+
+							let mut tri_array: [Vec3; TRI_ARRAY_VERT_COUNT] =
+								unsafe { MaybeUninit::<[Vec3; TRI_ARRAY_VERT_COUNT]>::uninit().assume_init() };
+
+							{
+								let tri_array: &mut TriArray<Vec3> = tri_array.as_mut();
+
+								// Copy each border from the arc vertices
+								for (border, arc_vertices)
+									in IndexType2D::iter().zip(arc_vertices.iter())
+								{
+									tri_array.init_border(index_map, border, arc_vertices.iter().cloned());
+								}
+
+								// All borders have been initialized, so fill in the rest
+								bisect_and_connect(tri_array)?;
+							}
+
+							{
+								render_mesh_begin!(x, RENDER_DISC_SECTIONS);
+
+								for (center_index, arc_vertices) in arc_vertices.iter().enumerate() {
+									let center: &Vec3 = &disc_centers[center_index];
+
+									add_disc_section(
+										&mut params,
+										arc_vertices,
+										center,
+										&center.normalize(),
+										vertices_offset
+									);
+								}
+
+								render_mesh_end!(x);
+							}
+
+							{
+								render_mesh_begin!(x, RENDER_TRI_ARRAY);
+								add_tri_array(&mut params, &tri_array, vertices_offset, 10_u32);
+								render_mesh_end!(x);
+							}
+
+							{
+								render_mesh_begin!(x, RENDER_KITES);
+								add_kite_group(
+									&mut params,
+									disc_kisses,
+									disc_centers,
+									&mut vert_range.clone(),
+									&Vec3::ZERO,
+									vertices_offset,
+									false,
+									false,
+									true
+								);
+								render_mesh_end!(x);
+							}
+
+							check_mesh_stats(&mut params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
+							render_mesh_end!(x);
+						}
+
+						{
+							render_mesh_begin!(x, RENDER_RHOMBUS_MESH);
+
+							// Add the disc section meshes
+							for (center_index, arc_vertices) in arc_vertices.iter_mut().enumerate() {
+								let vertices_offset: u32 =
+									push_mesh_header(&mut params, MESH_STATS_SLICE, &offset, mesh_index);
+
+								let center: Vec3 = disc_centers[center_index];
+
+								add_offset_disc_section(
+									&mut params,
+									arc_vertices,
+									&center,
+									&center.normalize(),
+									vertices_offset
+								);
+								add_rhombic_triacontahedron_face_indices(&mut params, center_index);
+								check_mesh_stats(&mut params, MESH_STATS_SLICE, &mut offset, &mut mesh_index)?;
+							}
+
+							render_mesh_end!(x);
+						}
+
+						render_mesh_end!(x);
+					}
 				}
 			}
 		}
