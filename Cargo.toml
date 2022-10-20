@@ -18,6 +18,7 @@ egui = "0.18.1"
 env_logger = "0.8.3"
 epaint = "0.18.1"
 fnv = "1.0.7"
+glam = { version = "0.20.5", features = ["default", "debug-glam-assert"] }
 gltf-json = "0.16.0"
 hexf = "0.2.1"
 json5 = { version = "0.3.0", optional = true }
@@ -27,6 +28,7 @@ log = { version = "0.4.14", features = ["serde"] }
 memmap = "0.7.0"
 num-format = "0.4.0"
 num-traits = "0.2.15"
+plotters = "0.3.2"
 rand = "0.8.4"
 rfd = "0.6.4"
 ron = { version = "0.7.0", optional = true }

@@ -1,4 +1,5 @@
-#![feature(core_intrinsics, const_fn_floating_point_arithmetic, io_read_to_string)]
+#![allow(clippy::all)]
+#![feature(core_intrinsics, const_fn_floating_point_arithmetic, io_read_to_string, slice_flatten)]
 
 #[macro_use]
 extern crate lazy_static;

@@ -120,7 +120,7 @@ Preferences(
 			)
 		),
 		// design:	CustomSuperDodecahedron
-		design:	RhombicTriacontahedron
+		design:	RoundedRhombicTriacontahedron
 	),
 	speed:				SpeedData(
 		camera:							CameraSpeedData(
