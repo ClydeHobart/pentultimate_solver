@@ -933,14 +933,14 @@ mod gen {
 
 			#[cfg(debug_assertions)]
 			pub mod render {
-				pub const RENDER_PIECE_TYPE:					bool = false;
+				pub const RENDER_PIECE_TYPE:					bool = true;
 					pub const RENDER_BASE_MESH:					bool = RENDER_PIECE_TYPE && true;
 						pub const RENDER_TRI_ARRAYS:			bool = RENDER_BASE_MESH && true;
 							pub const RENDER_OUTER_TRI_ARRAYS:	bool = RENDER_TRI_ARRAYS && true;
 							pub const RENDER_INNER_TRI_ARRAYS:	bool = RENDER_TRI_ARRAYS && true;
-						pub const RENDER_DISC_SECTIONS:			bool = RENDER_BASE_MESH && false;
-						pub const RENDER_KITES:					bool = RENDER_BASE_MESH && false;
-					pub const RENDER_RHOMBUS_MESH:				bool = RENDER_PIECE_TYPE && false;
+						pub const RENDER_DISC_SECTIONS:			bool = RENDER_BASE_MESH && true;
+						pub const RENDER_KITES:					bool = RENDER_BASE_MESH && true;
+					pub const RENDER_RHOMBUS_MESH:				bool = RENDER_PIECE_TYPE && true;
 			}
 
 			pub const PIECE_TYPE:				Type				= Type::Pentagon;
@@ -975,9 +975,9 @@ mod gen {
 				pub const RENDER_PIECE_TYPE:			bool = true;
 					pub const RENDER_BASE_MESH:			bool = RENDER_PIECE_TYPE && true;
 						pub const RENDER_TRI_ARRAY:		bool = RENDER_BASE_MESH && true;
-						pub const RENDER_DISC_SECTIONS:	bool = RENDER_BASE_MESH && false;
-						pub const RENDER_KITES:			bool = RENDER_BASE_MESH && false;
-					pub const RENDER_RHOMBUS_MESH:		bool = RENDER_PIECE_TYPE && false;
+						pub const RENDER_DISC_SECTIONS:	bool = RENDER_BASE_MESH && true;
+						pub const RENDER_KITES:			bool = RENDER_BASE_MESH && true;
+					pub const RENDER_RHOMBUS_MESH:		bool = RENDER_PIECE_TYPE && true;
 			}
 
 			pub const PIECE_TYPE:				Type				= Type::Triangle;
@@ -1000,10 +1000,7 @@ mod gen {
 			pub const MESH_STATS_SUM:			MeshStats			= MeshStats::sum_slice(MESH_STATS_SLICE);
 		}
 
-		// pub const SUBDIVISION_COUNT:		usize		= 16_usize;
-		// pub const SUBDIVISION_COUNT:		usize		= 8_usize;
-		pub const SUBDIVISION_COUNT:		usize		= 4_usize;
-		// pub const SUBDIVISION_COUNT:		usize		= 2_usize;
+		pub const SUBDIVISION_COUNT:		usize		= 16_usize;
 		pub const SUBDIVISION_COUNT_F32:	f32			= SUBDIVISION_COUNT as f32;
 
 		pub type TriArray<T>							= TriangularArray!(T, SUBDIVISION_COUNT + 1_usize);
@@ -2560,17 +2557,10 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 
 						ok!();
 					};
-				let add_tri_array: &dyn Fn(&mut PieceHeaderParams, &[Vec3; TRI_ARRAY_VERT_COUNT], u32, u32) -> () =
-					&|params: &mut PieceHeaderParams, tri_array: &[Vec3; TRI_ARRAY_VERT_COUNT], offset: u32, tri_array_index: u32| -> () {
+				let add_tri_array: &dyn Fn(&mut PieceHeaderParams, &[Vec3; TRI_ARRAY_VERT_COUNT], u32) -> () =
+					&|params: &mut PieceHeaderParams, tri_array: &[Vec3; TRI_ARRAY_VERT_COUNT], offset: u32| -> () {
 						let uv: Vec2 = Vec2::ZERO;
 						let offset: u32 = params.mesh_attribute_data_with_stats.stats.vertices as u32 - offset;
-
-						let mut dbg_local_vert_index: u32 = 0_u32;
-						let mut dbg_vertex_pairs: Vec<(u32, u32, Vec3)> = Vec::<(u32, u32, Vec3)>::with_capacity(tri_array.len());
-
-						let dbg_transform: Mat4 = Mat4::look_at_rh(tri_array[0_usize], Vec3::ZERO, (tri_array[1_usize] - tri_array[0_usize]).normalize());
-						let mut dbg_min: Vec2 = Vec2::splat(f32::INFINITY);
-						let mut dbg_max: Vec2 = -dbg_min;
 
 						for vert in tri_array {
 							params.mesh_attribute_data_with_stats.push_vertex(MeshVertexData {
@@ -2578,58 +2568,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 								normal: vert.normalize(),
 								uv
 							});
-
-							let dbg_vert: Vec3 = dbg_transform.project_point3(*vert);
-
-							dbg_vertex_pairs.push((offset + dbg_local_vert_index, dbg_local_vert_index, dbg_vert));
-							dbg_local_vert_index += 1_u32;
-							dbg_min = dbg_min.min(dbg_vert.xy());
-							dbg_max = dbg_max.max(dbg_vert.xy());
 						}
-
-						const BOUNDS_OFFSET: Vec2 = glam::const_vec2!([0.25_f32, 0.25_f32]);
-						dbg_min -= BOUNDS_OFFSET;
-						dbg_max += BOUNDS_OFFSET;
-
-						{
-							use plotters::{
-								coord::{
-									types::RangedCoordf32,
-									Shift
-								},
-								prelude::*
-							};
-
-							let file_path: String = format!("./images/tri_array_{}.svg", tri_array_index);
-							let root_area: DrawingArea<SVGBackend, Shift> =
-							SVGBackend::new(&file_path, (600_u32, 600_u32)).into_drawing_area();
-
-							root_area.fill(&WHITE).unwrap();
-
-							let mut context: ChartContext<SVGBackend, Cartesian2d<RangedCoordf32, RangedCoordf32>> =
-								ChartBuilder::on(&root_area)
-								.build_cartesian_2d(
-									dbg_min.x .. dbg_max.x,
-									dbg_min.y .. dbg_max.y
-								)
-								.unwrap();
-
-							context.configure_mesh().draw().unwrap();
-
-							context.draw_series(dbg_vertex_pairs.iter().map(|vertex_pair: &(u32, u32, Vec3)| -> Circle<(f32, f32), f32> {
-								Circle::new(vertex_pair.2.xy().into(), 1.0_f32, &BLACK)
-							})).unwrap();
-							context.plotting_area().draw(&PathElement::<(f32, f32)>::new(dbg_vertex_pairs
-								.iter()
-								.map(|vertex_pair: &(u32, u32, Vec3)| -> (f32, f32) {
-									vertex_pair.2.xy().into()
-								})
-								.collect::<Vec<(f32, f32)>>(),
-								&RED
-							)).unwrap();
-						}
-
-						let mut dbg_vertex_trio_pairs: Vec<(UVec3, UVec3, Vec3)> = Vec::<(UVec3, UVec3, Vec3)>::new();
 
 						for (index_a, index_b, index_c)
 							in TriArrayIndex::iter_mapped_trio_indices(index_map)
@@ -2639,35 +2578,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 								offset + index_b as u32,
 								offset + index_c as u32
 							]);
-
-							dbg_vertex_trio_pairs.push((
-								UVec3::new(offset + index_a as u32, offset + index_b as u32, offset + index_c as u32),
-								UVec3::new(index_a as u32, index_b as u32, index_c as u32),
-								Vec3::new(
-									tri_array[index_a].distance(tri_array[index_b]),
-									tri_array[index_b].distance(tri_array[index_c]),
-									tri_array[index_c].distance(tri_array[index_a])
-								)
-							));
 						}
-
-						let mut dbg_string: String = String::with_capacity(2024_usize);
-
-						use std::fmt::Write;
-
-						write!(dbg_string, "tri_array {}:\n\ndbg_vertex_pairs:\n", tri_array_index).unwrap();
-
-						for (index, vertex_pair) in dbg_vertex_pairs.into_iter().enumerate() {
-							write!(dbg_string, "  {: >2}: {: >2},  {: >2}, {: <+12?}\n", index, vertex_pair.0, vertex_pair.1, vertex_pair.2).unwrap();
-						}
-
-						write!(dbg_string, "\n\ndbg_vertex_trio_pairs:\n").unwrap();
-
-						for (index, vertex_trio_pair) in dbg_vertex_trio_pairs.into_iter().enumerate() {
-							write!(dbg_string, "  {: >2}: {: >2?}, {: >2?}, {: <12?}\n", index, vertex_trio_pair.0, vertex_trio_pair.1, vertex_trio_pair.2).unwrap();
-						}
-
-						log::debug!("{}", dbg_string);
 					};
 
 				match params.piece_type {
@@ -2728,7 +2639,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 									IndexType2D::IJ,
 									arc_vertices
 										[center_index]
-										[0_usize ..= SUBDIVISION_COUNT]
+										[SUBDIVISION_COUNT ..= 2_usize * SUBDIVISION_COUNT]
 										.iter()
 										.cloned()
 								);
@@ -2739,7 +2650,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 									IndexType2D::JK,
 									arc_vertices
 										[PIECE_TYPE.prev_side_index(center_index)]
-										[SUBDIVISION_COUNT ..= 2_usize * SUBDIVISION_COUNT]
+										[0_usize ..= SUBDIVISION_COUNT]
 										.iter()
 										.cloned()
 								);
@@ -2823,14 +2734,11 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 							{
 								render_mesh_begin!(x, RENDER_TRI_ARRAYS);
 
-								let mut dbg_tri_array_index: u32 = 0_u32;
-
 								{
 									render_mesh_begin!(x, RENDER_OUTER_TRI_ARRAYS);
 
 									for tri_array in outer_tri_arrays {
-										add_tri_array(&mut params, tri_array, vertices_offset, dbg_tri_array_index);
-										dbg_tri_array_index += 1_u32;
+										add_tri_array(&mut params, tri_array, vertices_offset);
 									}
 
 									render_mesh_end!(x);
@@ -2840,8 +2748,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 									render_mesh_begin!(x, RENDER_INNER_TRI_ARRAYS);
 
 									for tri_array in inner_tri_arrays {
-										add_tri_array(&mut params, tri_array, vertices_offset, dbg_tri_array_index);
-										dbg_tri_array_index += 1_u32;
+										add_tri_array(&mut params, tri_array, vertices_offset);
 									}
 
 									render_mesh_end!(x);
@@ -2924,9 +2831,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 								let tri_array: &mut TriArray<Vec3> = tri_array.as_mut();
 
 								// Copy each border from the arc vertices
-								for (border, arc_vertices)
-									in IndexType2D::iter().zip(arc_vertices.iter())
-								{
+								for (border, arc_vertices) in IndexType2D::iter().zip(arc_vertices.iter().rev()) {
 									tri_array.init_border(index_map, border, arc_vertices.iter().cloned());
 								}
 
@@ -2954,7 +2859,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 
 							{
 								render_mesh_begin!(x, RENDER_TRI_ARRAY);
-								add_tri_array(&mut params, &tri_array, vertices_offset, 10_u32);
+								add_tri_array(&mut params, &tri_array, vertices_offset);
 								render_mesh_end!(x);
 							}
 
