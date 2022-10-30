@@ -13,8 +13,9 @@ use pentultimate_solver::{
 			GenusIndexBitArray,
 			Library
 		},
-		InflatedPieceStateComponent as PSC,
-		InflatedPuzzleState
+		InflatedPieceStateComponent as PieceSC,
+		InflatedPuzzleState,
+		InflatedPuzzleStateComponent as PuzzleSC
 	},
 	util::StaticDataLibrary
 };
@@ -68,7 +69,7 @@ fn is_end_state(inflated_puzzle_state: &InflatedPuzzleState) -> bool {
 
 	(rot_sum[0_usize] + rot_sum[1_usize] + rot_sum[2_usize] + rot_sum[3_usize]
 		+ rot_sum[4_usize] + rot_sum[5_usize] + rot_sum[6_usize] + rot_sum[7_usize]
-	) % PSC::PENTAGON_VERTEX_COUNT as u32 != 0_u32
+	) % PieceSC::PENTAGON_VERTEX_COUNT as u32 != 0_u32
 }
 
 #[cfg(not(all(target_arch = "x86_64", target_feature = "avx2")))]
@@ -77,19 +78,19 @@ fn is_end_state(inflated_puzzle_state: &InflatedPuzzleState) -> bool {
 
 	inflated_puzzle_state.standardize();
 
-	let (pos, rot): (&InflatedPuzzleStateComponent, &InflatedPuzzleStateComponent) =
+	let (pos, rot): (&PuzzleSC, &PuzzleSC) =
 		inflated_puzzle_state.arrays();
 	let mut pent_rots: u32 = 0_u32;
 
 	for pentagon_index in PENTAGON_PIECE_RANGE {
-		if pos[pentagon_index] != pentagon_index as InflatedPieceStateComponent {
+		if pos[pentagon_index] != pentagon_index as PieceSC {
 			return false;
 		}
 
 		pent_rots += rot[pentagon_index] as u32;
 	}
 
-	pent_rots % PENTAGON_VERTEX_COUNT as u32 != 0_u32
+	pent_rots % u32::PENTAGON_VERTEX_COUNT != 0_u32
 }
 
 fn main() -> () {

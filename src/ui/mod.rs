@@ -21,7 +21,8 @@ use {
 	},
 	bevy::{
 		app::CoreStage,
-		prelude::*
+		prelude::*,
+		window::WindowMode as BevyWindowMode
 	},
 	bevy_egui::{
 		EguiContext as BevyEguiContext,
@@ -46,6 +47,7 @@ use {
 		Vec2,
 		Window as EguiWindow
 	},
+	serde::Deserialize,
 	crate::{
 		app::prelude::*,
 		preferences::Update,
@@ -73,6 +75,57 @@ use {
 pub mod camera;
 pub mod input;
 
+/// Copied from bevy_window::window::WindowMode
+#[derive(Clone, Copy, Deserialize, Inspectable, PartialEq)]
+pub enum WindowMode {
+	/// Creates a window that uses the given size
+	Windowed,
+	/// Creates a borderless window that uses the full size of the screen
+	BorderlessFullscreen,
+	/// Creates a fullscreen window that will render at desktop resolution. The app will use the closest supported size
+	/// from the given size and scale it to fit the screen.
+	SizedFullscreen,
+	/// Creates a fullscreen window that uses the maximum supported size
+	Fullscreen,
+}
+
+impl Default for WindowMode { fn default() -> Self { Self::Windowed } }
+
+impl From<WindowMode> for BevyWindowMode {
+	fn from(window_mode: WindowMode) -> Self {
+		match window_mode {
+			WindowMode::Windowed				=> Self::Windowed,
+			WindowMode::BorderlessFullscreen	=> Self::BorderlessFullscreen,
+			WindowMode::SizedFullscreen			=> Self::SizedFullscreen,
+			WindowMode::Fullscreen				=> Self::Fullscreen,
+		}
+	}
+}
+
+#[derive(Clone, Default, Deserialize, Inspectable, PartialEq)]
+pub struct UIData {
+	window_mode: WindowMode
+}
+
+impl UIData {
+	fn update_window_mode(&self, windows: &mut Windows) -> () {
+		debug_expect_some!(windows.get_primary_mut(), |window: &mut Window| -> () {
+			window.set_mode(self.window_mode.into());
+			window.set_maximized(true);
+		});
+	}
+}
+
+impl Update for UIData {
+	fn update(&self, other: &Self, world: &mut World, _: &Preferences) -> () {
+		if self != other {
+			debug_expect_some!(world.get_resource_mut::<Windows>(), |mut windows: Mut<Windows>| -> () {
+				self.update_window_mode(windows.as_mut());
+			});
+		}
+	}
+}
+
 pub enum View {
 	Main,
 	Preferences(Box<Preferences>),
@@ -86,7 +139,7 @@ impl UIPlugin {
 		mut windows:		ResMut<Windows>
 	) -> () {
 		*preferences = Preferences::from_file_or_default(STRING_DATA.files.preferences.as_ref());
-		debug_expect_some!(windows.get_primary_mut(), |window: &mut Window| -> () { window.set_maximized(true); });
+		preferences.ui.update_window_mode(windows.as_mut());
 		warn_expect_ok!(create_dir_all(&STRING_DATA.files.saves));
 	}
 
@@ -148,6 +201,10 @@ impl UIPlugin {
 								close_menu = true;
 							}
 						});
+
+						if ui.button("Quit").clicked() {
+							exit_app(world);
+						}
 
 						if close_menu {
 							ui.close_menu();
@@ -354,15 +411,17 @@ impl UIPlugin {
 				}
 
 				Grid::new("ModifierTable").show(ui, |ui: &mut Ui| -> () {
+					use KeyPressAction as KPA;
+
 					let input: &InputData = &preferences.input;
 
 					ui.end_row();
 
-					macro_rules! modifier_row {
-						($toggle:ident, $action:ident, $modifier_name:expr) => {
+					let mut modifier_row =
+						|modifier: bool, kpa: KPA, name: &str, requiring_genus: Option<GenusIndex>| -> () {
 							let text_stroke: &mut Stroke = &mut ui.visuals_mut().widgets.noninteractive.fg_stroke;
 
-							if toggles.$toggle {
+							if modifier {
 								text_stroke.color = Color32::WHITE;
 								text_stroke.width = 1.5_f32;
 							} else {
@@ -370,17 +429,47 @@ impl UIPlugin {
 								text_stroke.width = 1.0_f32;
 							}
 
-							ui.label(format!("{:?}", input.key_presses[KeyPressAction::$action]));
-							ui.label($modifier_name);
+							ui.label(format!("{:?}", input.key_presses[kpa]));
+							ui.label(
+								format!("{}{}",
+								name,
+								if requiring_genus.is_some() &&
+									requiring_genus.unwrap() == input_state.toggles.genus_index
+								{ " (required by genus)" } else { "" }
+							));
 							ui.end_row();
-						}
-					}
+						};
 
-					modifier_row!(enable_modifiers,		EnableModifiers,	"Enable Modifiers");
-					modifier_row!(rotate_twice,			RotateTwice,		"Rotate Twice");
-					modifier_row!(counter_clockwise,	CounterClockwise,	"Counter Clockwise");
-					modifier_row!(alt_hemi,				AltHemi,			"Alternate Hemisphere");
-					modifier_row!(disable_recentering,	DisableRecentering,	"Disable Recentering");
+					modifier_row(
+						toggles.enable_recentering,
+						KPA::EnableRecentering,
+						"Enable Recentering",
+						Some(GenusIndex::REORIENTATION)
+					);
+					modifier_row(
+						toggles.enable_modifiers,
+						KPA::EnableModifiers,
+						"Enable Modifiers",
+						Some(GenusIndex::SIMPLE)
+					);
+					modifier_row(
+						toggles.rotate_twice,
+						KPA::RotateTwice,
+						"Rotate Twice",
+						None
+					);
+					modifier_row(
+						toggles.counter_clockwise,
+						KPA::CounterClockwise,
+						"Counter Clockwise",
+						None
+					);
+					modifier_row(
+						toggles.alt_hemi,
+						KPA::AlternateHemisphere,
+						"Alternate Hemisphere",
+						None
+					);
 				});
 			});
 	}

@@ -918,7 +918,7 @@ impl SolverPlugin {
 		mut solver:		ResMut<Solver>
 	) -> () {
 		solver.run_cycle(Duration::from_micros(
-			(preferences.speed.solver_cycle_duration_millis * 1000.0_f32) as u64
+			(preferences.speed.solver.cycle_duration_millis * 1000.0_f32) as u64
 		));
 	}
 

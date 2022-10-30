@@ -305,7 +305,7 @@ impl Update for ColorDataWithMat {
 
 #[derive(Clone, Debug, Default, Deserialize, Inspectable, PartialEq)]
 pub struct ColorData {
-	#[inspectable(collapse)]
+	#[inspectable(ignore)]
 	colors_without_mat: ColorDataWithoutMat,
 	#[inspectable(collapse)]
 	pub colors_with_mat: ColorDataWithMat

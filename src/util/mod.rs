@@ -29,8 +29,14 @@ use {
 	},
 	bevy::{
 		app::AppExit,
-		ecs::event::EventWriter,
-		render::color::Color
+		ecs::{
+			event::Events,
+			world::{
+				Mut,
+				World
+			}
+		},
+		render::color::Color,
 	},
 	bit_field::{
 		BitArray,
@@ -72,6 +78,7 @@ pub mod prelude {
 		ToResult,
 		WithLengthAndCapacity,
 		debug_break,
+		exit_app,
 		red_to_green,
 		to_pretty_string,
 		untracked_ref,
@@ -620,8 +627,10 @@ pub trait ToFile: Serialize {
 
 impl<T: Serialize> ToFile for T {}
 
-pub fn exit_app(mut exit: EventWriter<AppExit>) -> () {
-	exit.send(AppExit);
+pub fn exit_app(world: &mut World) -> () {
+	debug_expect_some!(world.get_resource_mut::<Events<AppExit>>(), |mut app_exit_events: Mut<Events<AppExit>>| -> () {
+		app_exit_events.send(AppExit);
+	});
 }
 
 pub trait ShortSlerp where Self: Sized {

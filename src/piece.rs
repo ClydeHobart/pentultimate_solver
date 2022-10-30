@@ -94,10 +94,10 @@ pub mod consts {
 	}
 
 	impl TypeConsts for IPSC {
-		const PENTAGON_PIECE_COUNT:		Self = Type::Pentagon.instance_count()	as u32;
-		const PENTAGON_VERTEX_COUNT:	Self = Type::Pentagon.vertex_count()	as u32;
-		const TRIANGLE_PIECE_COUNT:		Self = Type::Triangle.instance_count()	as u32;
-		const TRIANGLE_VERTEX_COUNT:	Self = Type::Triangle.vertex_count()	as u32;
+		const PENTAGON_PIECE_COUNT:		Self = Type::Pentagon.instance_count()	as IPSC;
+		const PENTAGON_VERTEX_COUNT:	Self = Type::Pentagon.vertex_count()	as IPSC;
+		const TRIANGLE_PIECE_COUNT:		Self = Type::Triangle.instance_count()	as IPSC;
+		const TRIANGLE_VERTEX_COUNT:	Self = Type::Triangle.vertex_count()	as IPSC;
 		const PIECE_COUNT:				Self = Self::PENTAGON_PIECE_COUNT + Self::TRIANGLE_PIECE_COUNT;
 	}
 

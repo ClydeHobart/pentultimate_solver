@@ -19,7 +19,8 @@ pub mod prelude {
 			tools::ToolsData,
 			ui::{
 				camera::LightAndCameraData,
-				input::InputData
+				input::InputData,
+				UIData
 			}
 		},
 		super::{
@@ -88,7 +89,7 @@ define_struct_with_default!(
 
 		pub uniform_transformation_duration:	bool	= false,
 
-		pub animate_undo_and_redo:				bool	= false
+		pub animate_undo_and_redo:				bool	= true
 	}
 );
 
@@ -103,16 +104,24 @@ define_struct_with_default!(
 	}
 );
 
+define_struct_with_default!(
+	#[derive(Clone, Deserialize, Inspectable, PartialEq)]
+	pub struct SolverSpeedData {
+		#[inspectable(min = 1.0_f32, max = 60.0_f32)]
+		pub cycle_duration_millis:	f32	= 30.0_f32
+	}
+);
+
 #[derive(Clone, Default, Deserialize, Inspectable, PartialEq)]
 pub struct SpeedData {
 	#[inspectable(collapse)]
-	pub camera:							CameraSpeedData,
+	pub camera:		CameraSpeedData,
 
 	#[inspectable(collapse)]
-	pub animation:						AnimationSpeedData,
+	pub animation:	AnimationSpeedData,
 
-	#[inspectable(min = 1.0_f32, max = 60.0_f32)]
-	pub solver_cycle_duration_millis:	f32
+	#[inspectable(collapse)]
+	pub solver:		SolverSpeedData
 }
 
 #[derive(Clone, Default, Deserialize, Inspectable, PartialEq)]
@@ -129,11 +138,14 @@ pub struct Preferences {
 	pub speed:				SpeedData,
 	#[inspectable(collapse)]
 	pub tools:				ToolsData,
+	#[inspectable(collapse)]
+	pub ui:					UIData,
 }
 
 impl Update for Preferences {
 	fn update(&self, other: &Self, world: &mut World, preferences: &Preferences) -> () {
 		self.light_and_camera.update(&other.light_and_camera, world, preferences);
 		self.puzzle.update(&other.puzzle, world, preferences);
+		self.ui.update(&other.ui, world, preferences);
 	}
 }

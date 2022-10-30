@@ -632,12 +632,12 @@ macro_rules! key_presses {
 }
 
 key_presses!(
-	Rot0:						"Numpad0",
-	Rot1:						"Numpad1",
-	Rot2:						"Numpad4",
-	Rot3:						"Numpad5",
-	Rot4:						"Numpad6",
-	Rot5:						"Numpad3",
+	Pentagon1:					"Numpad0",
+	Pentagon2:					"Numpad1",
+	Pentagon3:					"Numpad4",
+	Pentagon4:					"Numpad5",
+	Pentagon5:					"Numpad6",
+	Pentagon6:					"Numpad3",
 	RecenterCamera:				"Space",
 	Undo:						"^Z",
 	Redo:						"^Y",
@@ -645,11 +645,11 @@ key_presses!(
 	CycleFamilyDown:			"Down",
 	CycleGenusUpWithinFamily:	"Right",
 	CycleGenusDownWithinFamily:	"Left",
-	EnableModifiers:			"E",
+	EnableRecentering:			"C",
+	EnableModifiers:			"F",
 	RotateTwice:				"D",
 	CounterClockwise:			"S",
-	AltHemi:					"A",
-	DisableRecentering:			"X"
+	AlternateHemisphere:		"A"
 );
 
 impl KeyPressAction {
@@ -841,9 +841,9 @@ define_struct_with_default!(
 	#[derive(Clone, Deserialize, Inspectable, PartialEq)]
 	pub struct InputData {
 		#[inspectable(collapse, max = Some(usize::PENTAGON_PIECE_COUNT - 1_usize))]
-		pub default_positions:		[usize; HALF_PENTAGON_PIECE_COUNT]		= generate_default_positions(),
+		pub default_species:	[usize; HALF_PENTAGON_PIECE_COUNT]		= generate_default_positions(),
 		#[inspectable(collapse)]
-		pub key_presses:			KeyPresses								= KeyPresses::default()
+		pub key_presses:		KeyPresses								= KeyPresses::default()
 	}
 );
 
@@ -1287,28 +1287,28 @@ impl FileAction {
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
 pub struct InputToggles {
-	pub enable_modifiers:		bool,
-	pub rotate_twice:			bool,
-	pub counter_clockwise:		bool,
-	pub alt_hemi:				bool,
-	pub disable_recentering:	bool,
-	pub genus_index:			GenusIndex,
+	pub enable_recentering:	bool,
+	pub enable_modifiers:	bool,
+	pub rotate_twice:		bool,
+	pub counter_clockwise:	bool,
+	pub alt_hemi:			bool,
+	pub genus_index:		GenusIndex,
 }
 
 impl InputToggles {
-	fn half_addr(&self, default_position: usize) -> HalfAddr {
-		HalfAddr::new(self.line_index(default_position), self.word_index())
+	fn half_addr(&self, species_index: usize) -> HalfAddr {
+		HalfAddr::new(self.species_index(species_index), self.organism_index())
 	}
 
-	fn line_index(&self, default_position: usize) -> usize {
+	fn species_index(&self, species_index: usize) -> usize {
 		if self.alt_hemi {
-			InflatedPuzzleState::invert_position(default_position)
+			InflatedPuzzleState::invert_position(species_index)
 		} else {
-			default_position
+			species_index
 		}
 	}
 
-	fn word_index(&self) -> usize {
+	fn organism_index(&self) -> usize {
 		if self.enable_modifiers {
 			(
 				1_i32
@@ -1326,6 +1326,18 @@ impl InputToggles {
 	fn update(&mut self, key_presses: &KeyPresses, keyboard_input: &Input<KeyCode>) -> () {
 		use KeyPressAction as KPA;
 
+		if self.genus_index.is_reorientation() {
+			self.enable_recentering = true;
+		} else if key_presses[KPA::EnableRecentering].is_active(keyboard_input) {
+			self.enable_recentering = !self.enable_recentering;
+		}
+
+		if self.genus_index.is_simple() {
+			self.enable_modifiers = true;
+		} else if key_presses[KPA::EnableModifiers].is_active(keyboard_input) {
+			self.enable_modifiers = !self.enable_modifiers;
+		}
+
 		macro_rules! update_toggle {
 			($($toggle:ident: $action:ident),*) => {
 				$(
@@ -1337,11 +1349,9 @@ impl InputToggles {
 		}
 
 		update_toggle!(
-			enable_modifiers:		EnableModifiers,
-			rotate_twice:			RotateTwice,
-			counter_clockwise:		CounterClockwise,
-			alt_hemi:				AltHemi,
-			disable_recentering:	DisableRecentering
+			rotate_twice:		RotateTwice,
+			counter_clockwise:	CounterClockwise,
+			alt_hemi:			AlternateHemisphere
 		);
 
 		if let Some(should_increment) = if key_presses
@@ -1361,6 +1371,12 @@ impl InputToggles {
 					+ if should_increment { 1_usize } else { family_count - 1_usize }
 				) % family_count
 			);
+
+			if self.genus_index.is_simple() {
+				self.enable_modifiers = true;
+			} else if self.genus_index.is_reorientation() {
+				self.enable_recentering = true;
+			}
 		} else if let Some(should_increment) = if key_presses
 			[KPA::CycleGenusUpWithinFamily]
 			.is_active(keyboard_input)
@@ -1391,12 +1407,12 @@ impl InputToggles {
 impl Default for InputToggles {
 	fn default() -> Self {
 		Self {
-			enable_modifiers:		true,
-			rotate_twice:			false,
-			counter_clockwise:		false,
-			alt_hemi:				false,
-			disable_recentering:	false,
-			genus_index:			GenusIndex::SIMPLE
+			enable_modifiers:	true,
+			rotate_twice:		false,
+			counter_clockwise:	false,
+			alt_hemi:			false,
+			enable_recentering:	true,
+			genus_index:		GenusIndex::SIMPLE
 		}
 	}
 }
@@ -1572,12 +1588,12 @@ impl InputPlugin {
 		let input_data:				&InputData					= &preferences.input;
 		let speed_data:				&SpeedData					= &preferences.speed;
 		let mut puzzle_action_type:	Option<PuzzleActionType>	= None;
-		let mut default_position:	Option<usize>				= None;
+		let mut default_species:	Option<usize>				= None;
 
 		for rot_action_index in 0_usize .. HALF_PENTAGON_PIECE_COUNT {
 			if input_data.key_presses[KPA::from_usize(rot_action_index)].is_active(keyboard_input) {
 				puzzle_action_type = Some(PuzzleActionType::Transformation);
-				default_position = Some(input_data.default_positions[rot_action_index]);
+				default_species = Some(input_data.default_species[rot_action_index]);
 
 				break;
 			}
@@ -1613,7 +1629,7 @@ impl InputPlugin {
 						input_state.toggles.genus_index,
 						input_state
 							.toggles
-							.half_addr(default_position.unwrap())
+							.half_addr(default_species.unwrap())
 					)) + camera_start,
 					camera_start
 				),
@@ -1641,7 +1657,7 @@ impl InputPlugin {
 			}
 
 			let (camera_orientation, has_camera_orientation): (Quat, bool) = if recenter_camera
-				|| !input_state.toggles.disable_recentering
+				|| input_state.toggles.enable_recentering
 			{
 				(camera_orientation, true)
 			} else {

@@ -84,29 +84,20 @@ macro_rules! define_tool {
 			)*
 		}
 
-		const fn tool_count() -> usize {
-			#![allow(path_statements)]
-
-			let mut count: usize = 0_usize;
-
-			$(
-				Tool::$tool;
-				count += 1_usize;
-			)*
-
-			count
-		}
-
 		impl Tool {
-			fn as_str(self) -> &'static str {
-				const TOOL_STRS: [&str; TOOL_COUNT] = [
-					$(
-						stringify!($tool),
-					)*
-				];
+			const COUNT: usize = Self::count();
+			const ALL_TOOLS: [Self; Self::COUNT] = [
+				$(
+					Self::$tool,
+				)*
+			];
+			const ALL_STRS: [&'static str; Self::COUNT] = [
+				$(
+					stringify!($tool),
+				)*
+			];
 
-				TOOL_STRS[self as usize]
-			}
+			fn as_str(self) -> &'static str { Self::ALL_STRS[self as usize] }
 
 			fn new_data(self) -> ToolDataBox {
 				match self {
@@ -135,6 +126,19 @@ macro_rules! define_tool {
 					false
 				}
 			}
+
+			const fn count() -> usize {
+				#![allow(path_statements)]
+	
+				let mut count: usize = 0_usize;
+	
+				$(
+					Tool::$tool;
+					count += 1_usize;
+				)*
+	
+				count
+			}
 		}
 
 		$(
@@ -157,9 +161,7 @@ define_tool!(
 	Stack
 );
 
-const TOOL_COUNT: usize = tool_count();
-
-const_assert!(TOOL_COUNT <= ToolInner::MAX as usize);
+const_assert!(Tool::COUNT <= ToolInner::MAX as usize);
 
 mod data {
 	pub use crate::puzzle::{
@@ -215,24 +217,33 @@ impl TryFrom<usize> for Tool {
 	type Error = usize;
 
 	fn try_from(value: usize) -> Result<Self, Self::Error> {
-		if value < TOOL_COUNT {
+		if value < Self::COUNT {
 			Ok(unsafe { transmute::<ToolInner, Self>(value as ToolInner) })
 		} else {
 			// Return how much out of range the value is
-			Err(value - TOOL_COUNT + 1_usize)
+			Err(value - Self::COUNT + 1_usize)
 		}
 	}
 }
 
-type ToolsBitArray = BitArr!(for TOOL_COUNT, in u32);
+type ToolsBitArray = BitArr!(for Tool::COUNT, in u32);
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct ToolsData {
 	active_tools:		ToolsBitArray,
 	tool_data_boxes:	Vec<ToolDataBox>
 }
 
 impl ToolsData {
+	pub fn all() -> Self { Tool::ALL_TOOLS.iter().into() }
+
+	pub fn none() -> Self {
+		Self {
+			active_tools:		ToolsBitArray::default(),
+			tool_data_boxes:	Vec::<ToolDataBox>::new()
+		}
+	}
+
 	pub fn should_render(&self) -> bool { !self.tool_data_boxes.is_empty() }
 
 	pub fn is_tool_active(&self, tool: Tool) -> bool { self.active_tools[tool as usize] }
@@ -251,7 +262,7 @@ impl ToolsData {
 			.show(ui, |ui: &mut Ui| -> () {
 				let mut tool_data_index: usize = 0_usize;
 
-				for tool_index in 0_usize .. TOOL_COUNT {
+				for tool_index in 0_usize .. Tool::COUNT {
 					let tool: Tool = Tool::try_from(tool_index).unwrap();
 
 					if self.is_tool_active(tool) {
@@ -271,21 +282,31 @@ impl ToolsData {
 	}
 }
 
+impl Default for ToolsData {
+	fn default() -> Self { Self::none() }
+}
+
 impl<'de> Deserialize<'de> for ToolsData {
 	fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-		let mut tools: Self = <Self as Default>::default();
+		Ok(Vec::<Tool>::deserialize(deserializer)?.iter().into())
+	}
+}
 
-		for tool in Vec::<Tool>::deserialize(deserializer)? {
-			tools.active_tools.set(tool as usize, true);
+impl<'a, T: Iterator<Item = &'a Tool>> From<T> for ToolsData {
+	fn from(tool_iter: T) -> Self {
+		let mut tools_data: Self = Self::none();
+
+		for tool in tool_iter {
+			tools_data.active_tools.set(*tool as usize, true);
 		}
 
-		for tool_index in 0_usize .. TOOL_COUNT {
-			if tools.active_tools[tool_index] {
-				tools.tool_data_boxes.push(Tool::try_from(tool_index).unwrap().new_data());
+		for tool_index in 0_usize .. Tool::COUNT {
+			if tools_data.active_tools[tool_index] {
+				tools_data.tool_data_boxes.push(Tool::try_from(tool_index).unwrap().new_data());
 			}
 		}
 
-		Ok(tools)
+		tools_data
 	}
 }
 
@@ -296,7 +317,7 @@ impl Inspectable for ToolsData {
 		let mut changed: bool = false;
 		let mut tool_data_index: usize = 0_usize;
 
-		for tool_index in 0_usize .. TOOL_COUNT {
+		for tool_index in 0_usize .. Tool::COUNT {
 			let tool: Tool = Tool::try_from(tool_index).unwrap();
 			let mut tool_bool: bool = self.active_tools[tool_index];
 

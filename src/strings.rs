@@ -15,7 +15,6 @@ define_struct_with_default!(
 	pub struct Files<String> {
 		pub library					= config!("library.ron"),
 		pub preferences				= config!("preferences.ron"),
-		pub piece_library_data		= config!("pieceLibraryData.ron"),
 		pub rust_log				= config!("rustLog.ron"),
 		pub saves					= saves!()
 	}
