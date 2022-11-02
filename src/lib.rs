@@ -1,4 +1,3 @@
-#![allow(clippy::all)]
 #![feature(
     core_intrinsics,
     const_fn_floating_point_arithmetic,
