@@ -21,6 +21,7 @@ fnv = "1.0.7"
 glam = { version = "0.20.5", features = ["default", "debug-glam-assert"] }
 gltf-json = "0.16.0"
 hexf = "0.2.1"
+itertools = "0.10.5"
 json5 = { version = "0.3.0", optional = true }
 lazy_static = "1.4.0"
 libc = "0.2.99"
@@ -39,7 +40,7 @@ static_assertions = "1.1.0"
 strum = "0.24.0"
 strum_macros = "0.24.0"
 toml = { version = "0.5.8", optional = true }
-tracing-subscriber = "0.3.8" # for testing
+tracing-subscriber = "0.3.8"                                               # for testing
 
 [dev-dependencies]
 criterion = "0.3.4"
@@ -50,14 +51,24 @@ uuid = "0.8.2"
 [features]
 # default = ["const_fn_floating_point_arithmetic", "io_read_to_string", "ron"]
 # default = ["const_fn_floating_point_arithmetic", "io_read_to_string", "all_file_formats"]
-default = ["const_fn_floating_point_arithmetic", "io_read_to_string", "all_file_formats", "non_unit_tests"]
+default = [
+    "const_fn_floating_point_arithmetic",
+    "io_read_to_string",
+    "all_file_formats",
+    "non_unit_tests",
+]
 const_fn_floating_point_arithmetic = []
 io_read_to_string = []
 non_unit_tests = []
 
 # specialization = []
 
-all_file_formats = ["bincode", "json5", "serde_json", "ron"] # toml is left out due to lack of supported types
+all_file_formats = [
+    "bincode",
+    "json5",
+    "serde_json",
+    "ron",
+] # toml is left out due to lack of supported types
 
 [[bench]]
 name = "criterion_benchmarks"
