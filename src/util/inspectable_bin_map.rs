@@ -73,7 +73,7 @@ impl<'a, T: Default + KVP> Inspectable for InspectableBinMapMut<'a, T> {
             let mut to_delete: Option<usize> = None;
 
             for (i, kvp) in self.map.iter_mut().enumerate() {
-                ui.horizontal(|ui: &mut Ui| -> () {
+                ui.horizontal(|ui: &mut Ui| {
                     if Self::label_button(ui, "✖", Color32::RED) {
                         to_delete = Some(i);
                     }
@@ -125,11 +125,11 @@ impl<'a, T: Default + KVP> Inspectable for InspectableBinMapMut<'a, T> {
 }
 
 pub trait AsInspectableBinMapMut<T: Default + KVP> {
-    fn as_inspectable_bin_map_mut<'a>(&'a mut self) -> InspectableBinMapMut<'a, T>;
+    fn as_inspectable_bin_map_mut(&mut self) -> InspectableBinMapMut<T>;
 }
 
 impl<T: Default + KVP> AsInspectableBinMapMut<T> for Vec<T> {
-    fn as_inspectable_bin_map_mut<'a>(&'a mut self) -> InspectableBinMapMut<'a, T> {
+    fn as_inspectable_bin_map_mut(&mut self) -> InspectableBinMapMut<T> {
         InspectableBinMapMut::<T> { map: self }
     }
 }
@@ -151,11 +151,11 @@ impl<'a, T: Default + KVP> InspectableBinMap<'a, T> {
 }
 
 pub trait AsInspectableBinMap<T: Default + KVP> {
-    fn as_inspectable_bin_map<'a>(&'a self) -> InspectableBinMap<'a, T>;
+    fn as_inspectable_bin_map(&self) -> InspectableBinMap<T>;
 }
 
 impl<T: Default + KVP> AsInspectableBinMap<T> for Vec<T> {
-    fn as_inspectable_bin_map<'a>(&'a self) -> InspectableBinMap<'a, T> {
+    fn as_inspectable_bin_map(&self) -> InspectableBinMap<T> {
         InspectableBinMap::<T> { map: self }
     }
 }

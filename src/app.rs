@@ -61,7 +61,7 @@ impl Plugin for AppPlugin {
 struct AppPluginGroup;
 
 impl PluginGroup for AppPluginGroup {
-    fn build(&mut self, group: &mut PluginGroupBuilder) -> () {
+    fn build(&mut self, group: &mut PluginGroupBuilder) {
         group
             .add(LogPlugin)
             .add(PolyhedraDataPlugin)
@@ -73,7 +73,7 @@ impl PluginGroup for AppPluginGroup {
     }
 }
 
-pub fn main() -> () {
+pub fn main() {
     set_rust_log_env_var();
 
     #[cfg(debug_assertions)]

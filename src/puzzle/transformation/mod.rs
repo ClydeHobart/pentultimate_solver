@@ -80,9 +80,8 @@ impl FullMask {
 
             let mut half_mask: HalfMask = HalfMask::default();
 
-            for pent_index in 0_usize..usize::PIECE_COUNT {
-                half_mask |=
-                    ((faces[pent_index].norm.dot(face_normal) > 0.0_f32) as HalfMask) << pent_index;
+            for (pent_index, face) in faces.iter().enumerate() {
+                half_mask |= ((face.norm.dot(face_normal) > 0.0_f32) as HalfMask) << pent_index;
             }
 
             Self {
@@ -171,7 +170,7 @@ impl HalfAddr {
         FullAddr::from((GenusIndex::SIMPLE, self))
     }
 
-    pub fn invalidate(&mut self) -> () {
+    pub fn invalidate(&mut self) {
         self.0 = Self::INVALID;
     }
 
@@ -192,7 +191,7 @@ impl HalfAddr {
 
     pub fn get_orientation(self) -> Option<&'static Quat> {
         if self.is_valid() {
-            Some(&Library::get_orientation(self))
+            Some(Library::get_orientation(self))
         } else {
             None
         }
@@ -286,13 +285,13 @@ impl Add<FullAddr> for HalfAddr {
 }
 
 impl AddAssign for HalfAddr {
-    fn add_assign(&mut self, rhs: Self) -> () {
+    fn add_assign(&mut self, rhs: Self) {
         *self = *self + rhs;
     }
 }
 
 impl AddAssign<FullAddr> for HalfAddr {
-    fn add_assign(&mut self, rhs: FullAddr) -> () {
+    fn add_assign(&mut self, rhs: FullAddr) {
         *self = *self + rhs;
     }
 }
@@ -424,7 +423,7 @@ impl Inspectable for HalfAddr {
     fn ui(&mut self, ui: &mut Ui, options: Self::Attributes, context: &mut Context) -> bool {
         let mut changed: bool = false;
 
-        ui.vertical_centered(|ui: &mut Ui| -> () {
+        ui.vertical_centered(|ui: &mut Ui| {
             Grid::new(context.id()).show(ui, |ui: &mut Ui| {
                 if ui.small_button("Zero").clicked() && *self != Self::ORIGIN {
                     *self = Self::ORIGIN;
@@ -565,7 +564,7 @@ impl FullAddr {
         if self.is_genus_index_reorientation() {
             1_u32
         } else {
-            Self::get_simple_slice_cycles(&self.get_simple_slice())
+            Self::get_simple_slice_cycles(self.get_simple_slice())
         }
     }
 
@@ -587,15 +586,15 @@ impl FullAddr {
         Self::is_valid_half_addr(self.half_addr)
     }
 
-    pub fn invalidate(&mut self) -> () {
+    pub fn invalidate(&mut self) {
         *self = Self::default()
     }
 
-    pub fn invalidate_genus_index(&mut self) -> () {
+    pub fn invalidate_genus_index(&mut self) {
         self.genus_index = GenusIndex::INVALID;
     }
 
-    pub fn invalidate_half_addr(&mut self) -> () {
+    pub fn invalidate_half_addr(&mut self) {
         self.half_addr.invalidate();
     }
 
@@ -769,7 +768,7 @@ impl Add<HalfAddr> for FullAddr {
 }
 
 impl AddAssign<HalfAddr> for FullAddr {
-    fn add_assign(&mut self, rhs: HalfAddr) -> () {
+    fn add_assign(&mut self, rhs: HalfAddr) {
         *self = *self + rhs;
     }
 }
@@ -924,7 +923,7 @@ impl Sub<HalfAddr> for FullAddr {
 }
 
 impl SubAssign<HalfAddr> for FullAddr {
-    fn sub_assign(&mut self, rhs: HalfAddr) -> () {
+    fn sub_assign(&mut self, rhs: HalfAddr) {
         *self = *self - rhs;
     }
 }
@@ -1171,13 +1170,13 @@ impl<A: Addr + Sized, T> GetWord<A, T> for Class<T> {
 pub struct TransformationPlugin;
 
 impl TransformationPlugin {
-    pub fn startup() -> () {
+    pub fn startup() {
         Library::build();
     }
 }
 
 impl Plugin for TransformationPlugin {
-    fn build(&self, app: &mut App) -> () {
+    fn build(&self, app: &mut App) {
         app.add_startup_system(Self::startup.after(PolyhedraDataPlugin::startup));
     }
 }

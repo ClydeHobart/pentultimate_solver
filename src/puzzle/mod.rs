@@ -6,7 +6,9 @@ use {
     rand::prelude::*,
     serde::{Deserialize, Serialize},
     std::{
+        cmp::Ordering,
         fmt::{Debug, Error, Formatter, Write},
+        hash::{Hash, Hasher},
         mem::{size_of, take, transmute},
         ops::{Add, AddAssign, Range, Sub},
     },
@@ -31,7 +33,7 @@ pub mod deflated {
 
     pub type PieceState = u8;
 
-    #[derive(Debug, Eq, Hash)]
+    #[derive(Debug, Eq)]
     #[repr(align(32))]
     pub struct PuzzleState {
         pub pieces: [PieceState; usize::PIECE_COUNT],
@@ -119,6 +121,12 @@ pub mod deflated {
         }
     }
 
+    impl Hash for PuzzleState {
+        fn hash<H: Hasher>(&self, state: &mut H) {
+            self.pieces.hash(state);
+        }
+    }
+
     impl PartialEq for PuzzleState {
         fn eq(&self, other: &Self) -> bool {
             unsafe {
@@ -137,6 +145,26 @@ pub mod inflated {
     use super::*;
 
     pub type PieceStateComponent = u32;
+
+    #[macro_export]
+    macro_rules! psc_to_num {
+        ($psc:expr, u32) => {
+            $psc
+        };
+        ($psc:expr, $num:ty) => {{
+            $psc as $num
+        }};
+    }
+
+    #[macro_export]
+    macro_rules! num_to_psc {
+        ($psc:expr, u32) => {
+            $psc
+        };
+        ($psc:expr, $num:ty) => {{
+            $psc as $crate::puzzle::InflatedPieceStateComponent
+        }};
+    }
 
     pub type PuzzleStateComponent = [PieceStateComponent; usize::PIECE_COUNT];
     pub type PosAndRot<'p, 'r> = (&'p PuzzleStateComponent, &'r PuzzleStateComponent);
@@ -292,7 +320,7 @@ pub mod inflated {
             const_assert!(usize::PIECE_COUNT <= PSC::BITS as usize);
 
             let mut present_positions: u32 = 0_u32;
-            let mut tri_rot_sum: PSC = 0 as PSC;
+            let mut tri_rot_sum: PSC = num_to_psc!(0_u32, u32);
 
             for pent_index in PENTAGON_PIECE_RANGE {
                 let pos: PSC = self.pos[pent_index];
@@ -303,7 +331,7 @@ pub mod inflated {
                     return false;
                 }
 
-                present_positions |= 1_u32 << pos as u32;
+                present_positions |= 1_u32 << psc_to_num!(pos, u32);
             }
 
             for tri_index in TRIANGLE_PIECE_RANGE {
@@ -315,7 +343,7 @@ pub mod inflated {
                     return false;
                 }
 
-                present_positions |= 1_u32 << pos as u32;
+                present_positions |= 1_u32 << psc_to_num!(pos, u32);
                 tri_rot_sum += self.rot[tri_index];
             }
 
@@ -323,7 +351,7 @@ pub mod inflated {
         }
 
         pub fn naive_add(&self, transformation: &Transformation) -> Self {
-            Self::naive_add_inline(&self, transformation)
+            Self::naive_add_inline(self, transformation)
         }
 
         #[inline]
@@ -335,12 +363,12 @@ pub mod inflated {
             dest_state
         }
 
-        pub fn naive_add_assign(&mut self, transformation: &Transformation) -> () {
+        pub fn naive_add_assign(&mut self, transformation: &Transformation) {
             Self::naive_add_assign_inline(self, transformation);
         }
 
         #[inline]
-        fn naive_add_assign_inline(&mut self, transformation: &Transformation) -> () {
+        fn naive_add_assign_inline(&mut self, transformation: &Transformation) {
             puzzle_state_add!(self, transformation, self);
         }
 
@@ -379,7 +407,7 @@ pub mod inflated {
             self
         }
 
-        pub fn update_pieces(&self, piece_query: &mut PieceQueryMut) -> () {
+        pub fn update_pieces(&self, piece_query: &mut PieceQueryMut) {
             for mut piece_components_mut_item in piece_query.iter_mut() {
                 piece_components_mut_item.transform.rotation = *self
                     .half_addr(piece_components_mut_item.piece_component.index)
@@ -419,20 +447,20 @@ pub mod inflated {
 
     impl<'a> AddAssign<&'a Transformation> for PuzzleState {
         #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-        fn add_assign(self: &mut PuzzleState, transformation: &'a Transformation) -> () {
+        fn add_assign(self: &mut PuzzleState, transformation: &'a Transformation) {
             use crate::util::simd;
 
             crate::util_simd_inflated_add_assign!(self, PuzzleState, transformation, Transformation)
         }
 
         #[cfg(not(all(target_arch = "x86_64", target_feature = "avx2")))]
-        fn add_assign(self: &mut PuzzleState, transformation: &'a Transformation) -> () {
+        fn add_assign(self: &mut PuzzleState, transformation: &'a Transformation) {
             Self::naive_add_assign_inline(self, transformation);
         }
     }
 
     impl AddAssign<HalfAddr> for PuzzleState {
-        fn add_assign(&mut self, rhs: HalfAddr) -> () {
+        fn add_assign(&mut self, rhs: HalfAddr) {
             if let Some(transformation) = rhs.as_reorientation().get_transformation() {
                 *self += transformation;
             }
@@ -440,7 +468,7 @@ pub mod inflated {
     }
 
     impl AddAssign<FullAddr> for PuzzleState {
-        fn add_assign(&mut self, rhs: FullAddr) -> () {
+        fn add_assign(&mut self, rhs: FullAddr) {
             if let Some(transformation) = rhs.get_transformation() {
                 *self += transformation;
             }
@@ -631,19 +659,19 @@ pub mod inflated {
             range: &Range<usize>,
             reorientation: HalfAddr,
             camera: &mut HalfAddr,
-        ) -> () {
+        ) {
             let range: Range<usize> = self.sanitize_action_range(range);
-            let reorient_actions_internal = |old_actions: &Vec<Action>,
-                                             puzzle_state: &mut PuzzleState,
-                                             actions: &mut Vec<Action>,
-                                             curr_action: Option<&mut usize>|
-             -> () {
-                let reorientation_line_index: PieceStateComponent =
-                    reorientation.get_species_index() as PieceStateComponent;
+            let reorient_actions_internal =
+                |old_actions: &Vec<Action>,
+                 puzzle_state: &mut PuzzleState,
+                 actions: &mut Vec<Action>,
+                 curr_action: Option<&mut usize>| {
+                    let reorientation_line_index: PieceStateComponent =
+                        reorientation.get_species_index() as PieceStateComponent;
 
-                /* new_origin_word_offset may be >= WORD_COUNT, but any summation it's involved in
-                will need to be %'ed anyway */
-                let (new_origin_piece_index, new_origin_word_offset): (usize, usize) = puzzle_state
+                    /* new_origin_word_offset may be >= WORD_COUNT, but any summation it's involved in
+                    will need to be %'ed anyway */
+                    let (new_origin_piece_index, new_origin_word_offset): (usize, usize) = puzzle_state
                     .pos
                     .iter()
                     .enumerate()
@@ -659,26 +687,27 @@ pub mod inflated {
                     })
                     .unwrap_or_default();
 
-                for old_action in old_actions[range.clone()].iter() {
-                    let action: Action = *old_action + {
-                        let new_origin: HalfAddr = puzzle_state.half_addr(new_origin_piece_index);
+                    for old_action in old_actions[range.clone()].iter() {
+                        let action: Action = *old_action + {
+                            let new_origin: HalfAddr =
+                                puzzle_state.half_addr(new_origin_piece_index);
 
-                        HalfAddr::new(
-                            new_origin.get_species_index(),
-                            (new_origin.get_organism_index() + new_origin_word_offset)
-                                % Library::ORGANISMS_PER_SPECIES,
-                        )
-                    };
+                            HalfAddr::new(
+                                new_origin.get_species_index(),
+                                (new_origin.get_organism_index() + new_origin_word_offset)
+                                    % Library::ORGANISMS_PER_SPECIES,
+                            )
+                        };
 
-                    *puzzle_state += action.transformation;
-                    *puzzle_state += action.standardization();
-                    actions.push(action);
-                }
+                        *puzzle_state += action.transformation;
+                        *puzzle_state += action.standardization();
+                        actions.push(action);
+                    }
 
-                if let Some(curr_action) = curr_action {
-                    *curr_action = (*curr_action).min(range.end);
-                }
-            };
+                    if let Some(curr_action) = curr_action {
+                        *curr_action = (*curr_action).min(range.end);
+                    }
+                };
 
             if self.curr_action < range.start {
                 /* Don't bother modifying self.puzzle_state, since we'd need to revert back to the
@@ -714,7 +743,7 @@ pub mod inflated {
             }
         }
 
-        pub fn set_camera_start(&mut self, range: &Range<usize>, camera_start: HalfAddr) -> () {
+        pub fn set_camera_start(&mut self, range: &Range<usize>, camera_start: HalfAddr) {
             let range: Range<usize> = self.sanitize_action_range(range);
 
             for action in self.actions[range].iter_mut() {
@@ -726,7 +755,7 @@ pub mod inflated {
             &mut self,
             range: &Range<usize>,
             mut camera_start: HalfAddr,
-        ) -> () {
+        ) {
             let range: Range<usize> = self.sanitize_action_range(range);
 
             for action in self.actions[range].iter_mut() {
@@ -735,7 +764,7 @@ pub mod inflated {
             }
         }
 
-        pub fn simplify_actions(&mut self, range: &Range<usize>) -> () {
+        pub fn simplify_actions(&mut self, range: &Range<usize>) {
             let range: Range<usize> = self.sanitize_action_range(range);
             let mut actions: Vec<Action> = Vec::<Action>::with_capacity(self.actions.len());
             let mut curr_action: usize = self.curr_action;
@@ -804,20 +833,24 @@ pub mod inflated {
             range.start.min(self.actions.len())..range.end.min(self.actions.len())
         }
 
-        fn skip_to_action(&mut self, action: usize) -> () {
+        fn skip_to_action(&mut self, action: usize) {
             let action: usize = action.min(self.actions.len());
 
-            if self.curr_action < action {
-                for action in self.actions[self.curr_action..action].iter() {
-                    self.puzzle_state += action.transformation;
-                    self.puzzle_state += action.standardization();
+            match self.curr_action.cmp(&action) {
+                Ordering::Less => {
+                    for action in self.actions[self.curr_action..action].iter() {
+                        self.puzzle_state += action.transformation;
+                        self.puzzle_state += action.standardization();
+                    }
                 }
-            } else if self.curr_action > action {
-                for action in self.actions[action..self.curr_action].iter().rev() {
-                    let inverted_action: Action = action.invert();
+                Ordering::Equal => {}
+                Ordering::Greater => {
+                    for action in self.actions[action..self.curr_action].iter().rev() {
+                        let inverted_action: Action = action.invert();
 
-                    self.puzzle_state += inverted_action.transformation;
-                    self.puzzle_state += inverted_action.standardization();
+                        self.puzzle_state += inverted_action.transformation;
+                        self.puzzle_state += inverted_action.standardization();
+                    }
                 }
             }
 
@@ -833,13 +866,13 @@ impl PuzzlePlugin {
         mut extended_puzzle_state: ResMut<ExtendedPuzzleState>,
         mut input_state: ResMut<InputState>,
         mut queries: ParamSet<(CameraQueryMut, PieceQueryMut)>,
-    ) -> () {
+    ) {
         if input_state.puzzle_action.is_some()
             && input_state
                 .puzzle_action
                 .as_mut()
                 .unwrap()
-                .update(&mut *extended_puzzle_state, &mut queries)
+                .update(&mut extended_puzzle_state, &mut queries)
         {
             input_state.puzzle_action = None;
         }
@@ -847,7 +880,7 @@ impl PuzzlePlugin {
 }
 
 impl Plugin for PuzzlePlugin {
-    fn build(&self, app: &mut App) -> () {
+    fn build(&self, app: &mut App) {
         app.insert_resource(ExtendedPuzzleState::default())
             .add_system(Self::run);
     }
@@ -856,13 +889,13 @@ impl Plugin for PuzzlePlugin {
 pub struct PuzzlePluginGroup;
 
 impl Plugin for PuzzlePluginGroup {
-    fn build(&self, app: &mut App) -> () {
+    fn build(&self, app: &mut App) {
         app.add_plugins(Self);
     }
 }
 
 impl PluginGroup for PuzzlePluginGroup {
-    fn build(&mut self, group: &mut PluginGroupBuilder) -> () {
+    fn build(&mut self, group: &mut PluginGroupBuilder) {
         group
             .add(TransformationPlugin)
             .add(PuzzlePlugin)
@@ -999,7 +1032,7 @@ mod tests {
     }
 
     #[test]
-    fn test_default_conversions() -> () {
+    fn test_default_conversions() {
         init_env_logger();
 
         let deflated_puzzle_state: DeflatedPuzzleState = DeflatedPuzzleState::default();
@@ -1016,7 +1049,7 @@ mod tests {
     }
 
     #[test]
-    fn test_base_case_conversions() -> () {
+    fn test_base_case_conversions() {
         init_env_logger();
 
         let mut deflated_puzzle_state: DeflatedPuzzleState = DeflatedPuzzleState::default();
@@ -1043,7 +1076,7 @@ mod tests {
     }
 
     #[test]
-    fn test_random_conversions() -> () {
+    fn test_random_conversions() {
         const RANDOM_TEST_COUNT: u32 = 500_u32;
 
         init_env_logger();

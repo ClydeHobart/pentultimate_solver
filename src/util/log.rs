@@ -26,7 +26,7 @@ pub mod macros {
         };
 
         ($item:expr) => {
-            crate::log_concat!(std::module_path!(), $item)
+            $crate::log_concat!(std::module_path!(), $item)
         };
     }
 
@@ -45,10 +45,10 @@ pub mod macros {
     #[macro_export(local_inner_macros)]
     macro_rules! log_error {
         (target: $target:expr, $($levels:expr, $messages:expr),+) => {{
-            let mut log_error = LogError {
+            let mut log_error = LogError::new(LogErrorData {
                 target: $target.to_string(),
                 ..Default::default()
-            };
+            });
 
             __log_error_set_message!(log_error, $($levels, $messages),+);
 
@@ -368,21 +368,25 @@ pub mod macros {
         } };
 
         ($level:path, $expr:expr $(, $some_closure:expr $(, $none_closure:expr)?)?) => {
-            if let Some(_some) = $expr {
-                $(
-                    ($some_closure)(_some)
-                )?
-            } else {
-                #[cfg(debug_assertions)]
-                $level!("\"{}\" was None", std::stringify!($expr));
+            {
+                #![allow(clippy::redundant_closure_call)]
 
-                $(
-                    crate::ignore!($some_closure);
+                if let Some(_some) = $expr {
+                    $(
+                        ($some_closure)(_some)
+                    )?
+                } else {
+                    #[cfg(debug_assertions)]
+                    $level!("\"{}\" was None", std::stringify!($expr));
 
                     $(
-                        ($none_closure)()
+                        $crate::ignore!($some_closure);
+
+                        $(
+                            ($none_closure)()
+                        )?
                     )?
-                )?
+                }
             }
         };
     }
@@ -584,23 +588,27 @@ pub mod macros {
         } };
 
         ($level:path, $expr:expr $(, $ok_closure:expr $(, $err_closure:expr)?)?) => {
-            match $expr {
-                Ok(_ok) => {
-                    $(
-                        ($ok_closure)(_ok)
-                    )?
-                },
-                Err(_error) => {
-                    #[cfg(debug_assertions)]
-                    $level!("\"{}\" was Err: {:#?}", std::stringify!($expr), _error);
+            {
+                #![allow(clippy::redundant_closure_call)]
 
-                    $(
-                        crate::ignore!($ok_closure);
+                match $expr {
+                    Ok(_ok) => {
+                        $(
+                            ($ok_closure)(_ok)
+                        )?
+                    },
+                    Err(_error) => {
+                        #[cfg(debug_assertions)]
+                        $level!("\"{}\" was Err: {:#?}", std::stringify!($expr), _error);
 
                         $(
-                            ($err_closure)()
+                            $crate::ignore!($ok_closure);
+
+                            $(
+                                ($err_closure)()
+                            )?
                         )?
-                    )?
+                    }
                 }
             }
         };
@@ -744,7 +752,7 @@ pub mod macros {
 
 pub mod prelude {
     pub use {
-        super::{init_env_logger, set_rust_log_env_var, LogError, LogErrorResult},
+        super::{init_env_logger, set_rust_log_env_var, LogError, LogErrorData, LogErrorResult},
         crate::{
             debug_expect, debug_expect_ok, debug_expect_some, debug_expr, error_expect,
             error_expect_ok, error_expect_some, error_expr, info_expect, info_expect_ok,
@@ -789,7 +797,7 @@ impl Default for Module {
 }
 
 #[derive(Clone, Default)]
-pub struct LogError {
+pub struct LogErrorData {
     pub target: String,
     pub error: String,
     pub warn: String,
@@ -798,10 +806,17 @@ pub struct LogError {
     pub trace: String,
 }
 
+#[derive(Clone, Default)]
+pub struct LogError(Box<LogErrorData>);
+
 pub type LogErrorResult<T = ()> = Result<T, LogError>;
 
 impl LogError {
-    pub fn log(&self) -> () {
+    pub fn new(data: LogErrorData) -> Self {
+        Self(Box::new(data))
+    }
+
+    pub fn log(&self) {
         let mut has_logged: bool = false;
 
         if !self.error.is_empty() {
@@ -870,6 +885,20 @@ impl LogError {
     }
 }
 
+impl std::ops::Deref for LogError {
+    type Target = LogErrorData;
+
+    fn deref(&self) -> &LogErrorData {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for LogError {
+    fn deref_mut(&mut self) -> &mut LogErrorData {
+        &mut self.0
+    }
+}
+
 impl std::ops::Index<Level> for LogError {
     type Output = String;
 
@@ -914,15 +943,15 @@ impl std::error::Error for LogError {
     }
 }
 
-pub fn init_env_logger() -> () {
-    INIT_ENV_LOGGER.call_once(|| -> () {
+pub fn init_env_logger() {
+    INIT_ENV_LOGGER.call_once(|| {
         set_rust_log_env_var();
         env_logger::init();
     });
 }
 
-pub fn set_rust_log_env_var() -> () {
-    SET_ENV_VAR.call_once(|| -> () {
+pub fn set_rust_log_env_var() {
+    SET_ENV_VAR.call_once(|| {
         type Iter<'a> = StdIter<'a, String, Module>;
         type Item<'a> = <Iter<'a> as Iterator>::Item;
         type PeekableIter<'a> = Peekable<Iter<'a>>;
@@ -936,38 +965,27 @@ pub fn set_rust_log_env_var() -> () {
             iter_stack.push(module.m.iter().peekable());
 
             while !iter_stack.is_empty() {
-                fn process_iter_stack<'b, 'a: 'b>(
-                    iter_stack: &'b mut Vec<PeekableIter<'a>>,
-                    module_path: &mut String,
-                    env_var_val: &mut String,
-                ) -> Option<PeekableIter<'a>> {
+                if let Some(iter) = {
                     let insert_colons: bool = iter_stack.len() > 1;
-                    let iter_option = iter_stack.last_mut().unwrap().peek();
 
-                    if iter_option.is_some() {
-                        let (sub_module_path, sub_module): &Item<'a> = iter_option.unwrap();
+                    iter_stack.last_mut().unwrap().peek().map(
+                        |(sub_module_path, sub_module): &(&String, &Module)| -> PeekableIter {
+                            module_path.push_str(
+                                format!(
+                                    "{}{}",
+                                    if insert_colons { "::" } else { "" },
+                                    sub_module_path
+                                )
+                                .as_str(),
+                            );
+                            env_var_val
+                                .push_str(format!(",{}={}", module_path, sub_module.f).as_str());
 
-                        module_path.push_str(
-                            format!(
-                                "{}{}",
-                                if insert_colons { "::" } else { "" },
-                                sub_module_path
-                            )
-                            .as_str(),
-                        );
-                        env_var_val.push_str(format!(",{}={}", module_path, sub_module.f).as_str());
-
-                        Some(sub_module.m.iter().peekable())
-                    } else {
-                        None
-                    }
-                }
-
-                let iter_option: Option<PeekableIter> =
-                    process_iter_stack(&mut iter_stack, &mut module_path, &mut env_var_val);
-
-                if iter_option.is_some() {
-                    iter_stack.push(iter_option.unwrap());
+                            sub_module.m.iter().peekable()
+                        },
+                    )
+                } {
+                    iter_stack.push(iter);
                 } else {
                     iter_stack.pop();
 
@@ -1005,7 +1023,7 @@ pub fn set_rust_log_env_var() -> () {
 pub struct LogPlugin;
 
 impl Plugin for LogPlugin {
-    fn build(&self, app: &mut App) -> () {
+    fn build(&self, app: &mut App) {
         app.add_startup_system_to_stage(StartupStage::PreStartup, set_rust_log_env_var);
     }
 }

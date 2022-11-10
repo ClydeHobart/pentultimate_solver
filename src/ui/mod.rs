@@ -22,7 +22,7 @@ use {
     serde::Deserialize,
     std::{
         boxed::Box,
-        ffi::{OsStr, OsString},
+        ffi::OsStr,
         fs::{create_dir_all, read_dir, DirEntry, Metadata, ReadDir},
         io::Result as IoResult,
         mem::swap,
@@ -73,8 +73,8 @@ pub struct UIData {
 }
 
 impl UIData {
-    fn update_window_mode(&self, windows: &mut Windows) -> () {
-        debug_expect_some!(windows.get_primary_mut(), |window: &mut Window| -> () {
+    fn update_window_mode(&self, windows: &mut Windows) {
+        debug_expect_some!(windows.get_primary_mut(), |window: &mut Window| {
             window.set_mode(self.window_mode.into());
             window.set_maximized(true);
         });
@@ -82,12 +82,11 @@ impl UIData {
 }
 
 impl Update for UIData {
-    fn update(&self, other: &Self, world: &mut World, _: &Preferences) -> () {
+    fn update(&self, other: &Self, world: &mut World, _: &Preferences) {
         if self != other {
             debug_expect_some!(world.get_resource_mut::<Windows>(), |mut windows: Mut<
                 Windows,
-            >|
-             -> () {
+            >| {
                 self.update_window_mode(windows.as_mut());
             });
         }
@@ -102,15 +101,15 @@ pub enum View {
 pub struct UIPlugin;
 
 impl UIPlugin {
-    pub fn startup(mut preferences: ResMut<Preferences>, mut windows: ResMut<Windows>) -> () {
+    pub fn startup(mut preferences: ResMut<Preferences>, mut windows: ResMut<Windows>) {
         *preferences = Preferences::from_file_or_default(STRING_DATA.files.preferences.as_ref());
         preferences.ui.update_window_mode(windows.as_mut());
         warn_expect_ok!(create_dir_all(&STRING_DATA.files.saves));
     }
 
-    fn run(world: &mut World) -> () {
+    fn run(world: &mut World) {
         world.resource_scope(
-            |world: &mut World, mut bevy_egui_context: Mut<BevyEguiContext>| -> () {
+            |world: &mut World, mut bevy_egui_context: Mut<BevyEguiContext>| {
                 let mut context: Context =
                     Context::new_world_access(Some(bevy_egui_context.ctx_mut()), world);
 
@@ -126,24 +125,24 @@ impl UIPlugin {
         );
     }
 
-    fn render_menu(context: &mut Context) -> () {
-        TopBottomPanel::top("Menu").show(context.ui_ctx.unwrap(), |ui: &mut Ui| -> () {
-            egui::menu::bar(ui, |ui: &mut Ui| -> () {
-                ui.menu_button("File", |ui: &mut Ui| -> () {
-                    ui.group(|ui: &mut Ui| -> () {
+    fn render_menu(context: &mut Context) {
+        TopBottomPanel::top("Menu").show(context.ui_ctx.unwrap(), |ui: &mut Ui| {
+            egui::menu::bar(ui, |ui: &mut Ui| {
+                ui.menu_button("File", |ui: &mut Ui| {
+                    ui.group(|ui: &mut Ui| {
                         let world: &mut World = unsafe { context.world_mut() }.unwrap();
                         let mut close_menu: bool = false;
 
-                        world.resource_scope(|world: &mut World, mut view: Mut<View>| -> () {
+                        world.resource_scope(|world: &mut World, mut view: Mut<View>| {
                             if ui.button("Preferences").clicked() {
-                                Self::on_preferences_clicked(world, &mut *view);
+                                Self::on_preferences_clicked(world, &mut view);
                                 close_menu = true;
                             }
                         });
 
                         world.resource_scope(
-                            |world: &mut World, mut input_state: Mut<InputState>| -> () {
-                                let input_state: &mut InputState = &mut *input_state;
+                            |world: &mut World, mut input_state: Mut<InputState>| {
+                                let input_state: &mut InputState = &mut input_state;
 
                                 ui.set_enabled(!input_state.has_active_action());
 
@@ -187,7 +186,7 @@ impl UIPlugin {
         });
     }
 
-    fn on_preferences_clicked(world: &World, view: &mut View) -> () {
+    fn on_preferences_clicked(world: &World, view: &mut View) {
         *view = View::Preferences(Box::new(
             world
                 .get_resource::<Preferences>()
@@ -195,7 +194,7 @@ impl UIPlugin {
         ));
     }
 
-    fn on_reset_clicked(world: &mut World, input_state: &mut InputState) -> () {
+    fn on_reset_clicked(world: &mut World, input_state: &mut InputState) {
         if let (Some(camera_orientation), Some(preferences)) = (
             world.query::<CameraComponents>().iter(world).next().map(
                 |camera_components_item: CameraComponentsItem| -> Quat {
@@ -215,7 +214,7 @@ impl UIPlugin {
         }
     }
 
-    fn on_randomize_clicked(world: &mut World, input_state: &mut InputState) -> () {
+    fn on_randomize_clicked(world: &mut World, input_state: &mut InputState) {
         if let (Some(camera_orientation), Some(preferences), Some(extended_puzzle_state)) = (
             world
                 .query::<(&CameraComponent, &Transform)>()
@@ -239,8 +238,8 @@ impl UIPlugin {
         }
     }
 
-    fn on_solve_clicked(world: &mut World, input_state: &mut InputState) -> () {
-        world.resource_scope(|world: &mut World, mut solver: Mut<Solver>| -> () {
+    fn on_solve_clicked(world: &mut World, input_state: &mut InputState) {
+        world.resource_scope(|world: &mut World, mut solver: Mut<Solver>| {
             if let Some(extended_puzzle_state) = world.get_resource::<ExtendedPuzzleState>() {
                 solver.init(&extended_puzzle_state.puzzle_state);
                 input_state.is_solving = true;
@@ -248,7 +247,7 @@ impl UIPlugin {
         });
     }
 
-    fn on_save_clicked(input_state: &mut InputState) -> () {
+    fn on_save_clicked(input_state: &mut InputState) {
         input_state.file_action = Some(FileAction::new(
             Mutex::new(Box::pin(async {
                 rfd::AsyncFileDialog::new()
@@ -271,7 +270,7 @@ impl UIPlugin {
         ));
     }
 
-    fn on_load_clicked(input_state: &mut InputState) -> () {
+    fn on_load_clicked(input_state: &mut InputState) {
         input_state.file_action = Some(FileAction::new(
             Mutex::new(Box::pin(async {
                 rfd::AsyncFileDialog::new()
@@ -313,8 +312,7 @@ impl UIPlugin {
                                 .unwrap_or_default()
                                 .as_ref()
                                 .map(DirEntry::file_name)
-                                .as_ref()
-                                .map(OsString::as_os_str)
+                                .as_deref()
                                 .and_then(OsStr::to_str)
                                 .unwrap_or("puzzleState1")
                                 .into()
@@ -328,13 +326,13 @@ impl UIPlugin {
         ));
     }
 
-    fn render_main(context: &mut Context) -> () {
+    fn render_main(context: &mut Context) {
         Self::render_input_state(&mut context.with_id(0_u64));
         Self::render_action_stack(&mut context.with_id(1_u64));
         Self::render_tools(&mut context.with_id(2_u64));
     }
 
-    fn render_input_state(context: &mut Context) -> () {
+    fn render_input_state(context: &mut Context) {
         const OFFSET: f32 = 20.0_f32;
         const INPUT_STATE_OFFSET: Vec2 = Vec2::new(OFFSET, -OFFSET);
 
@@ -346,7 +344,7 @@ impl UIPlugin {
 
         Area::new("InputState")
             .anchor(Align2::LEFT_BOTTOM, INPUT_STATE_OFFSET)
-            .show(context.ui_ctx.unwrap(), |ui: &mut Ui| -> () {
+            .show(context.ui_ctx.unwrap(), |ui: &mut Ui| {
                 use GenusIndexType as GIT;
 
                 let toggles: &InputToggles = &input_state.toggles;
@@ -356,10 +354,7 @@ impl UIPlugin {
                     let genus_range: Range<GIT> = Library::get_family_genus_range(family_index);
 
                     if genus_range.contains(&genus_index) {
-                        ui.colored_label(
-                            Color32::WHITE,
-                            format!("{:?}", GenusIndex::try_from(toggles.genus_index).unwrap()),
-                        );
+                        ui.colored_label(Color32::WHITE, format!("{:?}", toggles.genus_index));
                     } else {
                         ui.colored_label(
                             Color32::GRAY,
@@ -368,43 +363,43 @@ impl UIPlugin {
                     }
                 }
 
-                Grid::new("ModifierTable").show(ui, |ui: &mut Ui| -> () {
+                Grid::new("ModifierTable").show(ui, |ui: &mut Ui| {
                     use KeyPressAction as KPA;
 
                     let input: &InputData = &preferences.input;
 
                     ui.end_row();
 
-                    let mut modifier_row = |modifier: bool,
-                                            kpa: KPA,
-                                            name: &str,
-                                            requiring_genus: Option<GenusIndex>|
-                     -> () {
-                        let text_stroke: &mut Stroke =
-                            &mut ui.visuals_mut().widgets.noninteractive.fg_stroke;
+                    let mut modifier_row =
+                        |modifier: bool,
+                         kpa: KPA,
+                         name: &str,
+                         requiring_genus: Option<GenusIndex>| {
+                            let text_stroke: &mut Stroke =
+                                &mut ui.visuals_mut().widgets.noninteractive.fg_stroke;
 
-                        if modifier {
-                            text_stroke.color = Color32::WHITE;
-                            text_stroke.width = 1.5_f32;
-                        } else {
-                            text_stroke.color = Color32::GRAY;
-                            text_stroke.width = 1.0_f32;
-                        }
-
-                        ui.label(format!("{:?}", input.key_presses[kpa]));
-                        ui.label(format!(
-                            "{}{}",
-                            name,
-                            if requiring_genus.is_some()
-                                && requiring_genus.unwrap() == input_state.toggles.genus_index
-                            {
-                                " (required by genus)"
+                            if modifier {
+                                text_stroke.color = Color32::WHITE;
+                                text_stroke.width = 1.5_f32;
                             } else {
-                                ""
+                                text_stroke.color = Color32::GRAY;
+                                text_stroke.width = 1.0_f32;
                             }
-                        ));
-                        ui.end_row();
-                    };
+
+                            ui.label(format!("{:?}", input.key_presses[kpa]));
+                            ui.label(format!(
+                                "{}{}",
+                                name,
+                                if requiring_genus.is_some()
+                                    && requiring_genus.unwrap() == input_state.toggles.genus_index
+                                {
+                                    " (required by genus)"
+                                } else {
+                                    ""
+                                }
+                            ));
+                            ui.end_row();
+                        };
 
                     modifier_row(
                         toggles.enable_recentering,
@@ -435,7 +430,7 @@ impl UIPlugin {
             });
     }
 
-    fn render_action_stack(context: &mut Context) -> () {
+    fn render_action_stack(context: &mut Context) {
         const OFFSET: f32 = 20.0_f32;
         const ACTION_STACK_OFFSET: Vec2 = Vec2::new(-OFFSET, -OFFSET);
 
@@ -449,18 +444,18 @@ impl UIPlugin {
 
         Area::new("ActionStack")
             .anchor(Align2::RIGHT_BOTTOM, ACTION_STACK_OFFSET)
-            .show(context.ui_ctx.unwrap(), |ui: &mut Ui| -> () {
+            .show(context.ui_ctx.unwrap(), |ui: &mut Ui| {
                 ScrollArea::vertical()
                     .max_height(max_height)
                     // This isn't reliable, but if it was, it'd be better than always_show_scroll()
                     // .min_scrolled_height(max_height)
                     .always_show_scroll(!extended_puzzle_state.actions.is_empty())
                     .stick_to_bottom()
-                    .show(ui, |ui: &mut Ui| -> () {
+                    .show(ui, |ui: &mut Ui| {
                         Grid::new("ActionStackGrid")
                             .min_col_width(0.0_f32)
                             .spacing(ui.spacing().item_spacing * Vec2::Y)
-                            .show(ui, |ui: &mut Ui| -> () {
+                            .show(ui, |ui: &mut Ui| {
                                 let stack_debug: Option<&Stack> = context
                                     .world()
                                     .and_then(World::get_resource::<Preferences>)
@@ -520,8 +515,8 @@ impl UIPlugin {
                                             transformation_half_addr.get_organism_index()
                                         ));
                                     } else {
-                                        ui.label(format!("(-1, "));
-                                        ui.label(format!("-1) "));
+                                        ui.label("(-1, ");
+                                        ui.label("-1) ");
                                     }
 
                                     if camera_half_addr.is_valid() {
@@ -534,8 +529,8 @@ impl UIPlugin {
                                             camera_half_addr.get_organism_index()
                                         ));
                                     } else {
-                                        ui.label(format!("(-1, "));
-                                        ui.label(format!("-1)"));
+                                        ui.label("(-1, ");
+                                        ui.label("-1)");
                                     }
 
                                     if let Some(stack_debug) = stack_debug {
@@ -564,8 +559,8 @@ impl UIPlugin {
                                                     transformation_half_addr.get_organism_index()
                                                 ));
                                             } else {
-                                                ui.label(format!("(-1, "));
-                                                ui.label(format!("-1)"));
+                                                ui.label("(-1, ");
+                                                ui.label("-1)");
                                             }
                                         }
                                     }
@@ -577,7 +572,7 @@ impl UIPlugin {
             });
     }
 
-    fn render_tools(context: &mut Context) -> () {
+    fn render_tools(context: &mut Context) {
         const OFFSET: f32 = 20.0_f32;
         const TOOLS_OFFSET: Vec2 = Vec2::new(OFFSET, OFFSET);
         const FILL_ALPHA: u8 = 0xF0_u8;
@@ -620,7 +615,7 @@ impl UIPlugin {
 
                             $(
                                 count += 1_usize;
-                                $gray;
+                                ignore!($gray);
                             )*
 
                             count
@@ -651,15 +646,15 @@ impl UIPlugin {
                 ExtremeBgColor,          10_u8, curr_style.visuals.extreme_bg_color,
                 CodeBgColor,             64_u8, curr_style.visuals.code_bg_color;
             Stroke, Color32::from_gray =>
-                NoninteractiveBg, 060_u8, curr_style.visuals.widgets.noninteractive.bg_stroke.color,
+                NoninteractiveBg,  60_u8, curr_style.visuals.widgets.noninteractive.bg_stroke.color,
                 NoninteractiveFg, 140_u8, curr_style.visuals.widgets.noninteractive.fg_stroke.color,
-                InactiveBg,       000_u8, curr_style.visuals.widgets.inactive.bg_stroke.color,
+                InactiveBg,         0_u8, curr_style.visuals.widgets.inactive.bg_stroke.color,
                 InactiveFg,       180_u8, curr_style.visuals.widgets.inactive.fg_stroke.color,
                 HoveredBg,        150_u8, curr_style.visuals.widgets.hovered.bg_stroke.color,
                 HoveredFg,        240_u8, curr_style.visuals.widgets.hovered.fg_stroke.color,
                 ActiveBg,         255_u8, curr_style.visuals.widgets.active.bg_stroke.color,
                 ActiveFg,         255_u8, curr_style.visuals.widgets.active.fg_stroke.color,
-                OpenBg,           060_u8, curr_style.visuals.widgets.open.bg_stroke.color,
+                OpenBg,            60_u8, curr_style.visuals.widgets.open.bg_stroke.color,
                 OpenFg,           210_u8, curr_style.visuals.widgets.open.fg_stroke.color
         );
 
@@ -669,13 +664,13 @@ impl UIPlugin {
         EguiWindow::new("Tools")
             .anchor(Align2::LEFT_TOP, TOOLS_OFFSET)
             .title_bar(false)
-            .show(egui_context, |ui: &mut Ui| -> () {
+            .show(egui_context, |ui: &mut Ui| {
                 preferences.tools.render(ui, context);
             });
         context.ui_ctx.unwrap().set_style(prev_style);
     }
 
-    fn render_preferences(context: &mut Context) -> () {
+    fn render_preferences(context: &mut Context) {
         let egui_context: &EguiContext = warn_expect_some!(context.ui_ctx, return);
         let world: &mut World = warn_expect_some!(unsafe { context.world_mut() }, return);
 
@@ -692,12 +687,12 @@ impl UIPlugin {
 
         let mut closing_action: ClosingAction = ClosingAction::None;
 
-        world.resource_scope(|world: &mut World, mut view: Mut<View>| -> () {
+        world.resource_scope(|world: &mut World, mut view: Mut<View>| {
             if let View::Preferences(preferences) = &mut (*view) {
-                CentralPanel::default().show(egui_context, |ui: &mut Ui| -> () {
-                    ScrollArea::vertical().show(ui, |ui: &mut Ui| -> () {
+                CentralPanel::default().show(egui_context, |ui: &mut Ui| {
+                    ScrollArea::vertical().show(ui, |ui: &mut Ui| {
                         preferences.ui(ui, (), &mut context.with_id(0_u64));
-                        ui.horizontal(|ui: &mut Ui| -> () {
+                        ui.horizontal(|ui: &mut Ui| {
                             if ui.button("Reset").clicked() {
                                 closing_action = ClosingAction::Reset;
                             }
@@ -719,7 +714,7 @@ impl UIPlugin {
                     }
                     ClosingAction::Save => {
                         world.resource_scope(
-                            |world: &mut World, mut res_preferences: Mut<Preferences>| -> () {
+                            |world: &mut World, mut res_preferences: Mut<Preferences>| {
                                 preferences.update(&*res_preferences, world, preferences);
                                 swap(&mut *res_preferences, &mut *preferences);
                             },

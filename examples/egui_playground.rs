@@ -33,28 +33,28 @@ static mut DEBUG_STATE: DebugState = DebugState {
 	error_message: false
 };
 
-fn run(mut egui_context: ResMut<EguiContext>) -> () {
+fn run(mut egui_context: ResMut<EguiContext>) {
 	let debug_state: &mut DebugState = unsafe { &mut DEBUG_STATE };
 
-	CentralPanel::default().show(egui_context.ctx_mut(), |ui: &mut Ui| -> () {
+	CentralPanel::default().show(egui_context.ctx_mut(), |ui: &mut Ui| {
 		const MIN_COL_WIDTH_SCALE: f32 = 2.0_f32;
 		let col_width: f32 = ui.spacing().interact_size.x * MIN_COL_WIDTH_SCALE;
 		Grid::new(0_u64)
 			.num_columns(1_usize)
 			.min_col_width(2.0_f32 * col_width)
-			.show(ui, |ui: &mut Ui| -> () {
-				const STRS: [&'static str; 4_usize] = [
+			.show(ui, |ui: &mut Ui| {
+				const STRS: [&str; 4_usize] = [
 					"Alt",
 					"Ctrl",
 					"Shift",
 					"Win"
 				];
 
-				ui.centered_and_justified(|ui: &mut Ui| -> () {
+				ui.centered_and_justified(|ui: &mut Ui| {
 					ComboBox::from_id_source(0_u64)
 						.width(2.0_f32 * col_width)
-						.selected_text(format!("{}", STRS[debug_state.index as usize]))
-						.show_ui(ui, |ui: &mut Ui| -> () {
+						.selected_text(STRS[debug_state.index as usize].to_string())
+						.show_ui(ui, |ui: &mut Ui| {
 							for index in 0_u32 .. STRS.len() as u32 {
 								if ui.selectable_label(index == debug_state.index, format!("{}", index)).clicked() {
 									debug_state.index = index;
@@ -68,12 +68,12 @@ fn run(mut egui_context: ResMut<EguiContext>) -> () {
 				Grid::new(1_u64)
 					.num_columns(2_usize)
 					.min_col_width(col_width)
-					.show(ui, |ui: &mut Ui| -> () {
+					.show(ui, |ui: &mut Ui| {
 						for modifier in 0_usize .. STRS.len() {
 							let mut button = |
 								ui: &mut Ui,
 								s: &str
-							| -> () {
+							| {
 								// ui.centered_and_justified(|ui: &mut Ui| -> () {
 									if ui.add_sized(
 										ui.spacing().interact_size
@@ -101,4 +101,4 @@ fn run(mut egui_context: ResMut<EguiContext>) -> () {
 	});
 }
 
-fn main() -> () { App::new().add_plugins(DefaultPlugins).add_plugin(EguiPlugin).add_system(run).run(); }
+fn main() { App::new().add_plugins(DefaultPlugins).add_plugin(EguiPlugin).add_system(run).run(); }

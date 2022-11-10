@@ -3,7 +3,7 @@ use {
     std::{
         convert::{AsMut, TryFrom},
         marker::PhantomData,
-        mem::{transmute, MaybeUninit},
+        mem::{transmute, MaybeUninit as MU},
         ops::{Index as IndexTrait, IndexMut},
     },
     strum_macros::EnumIter,
@@ -47,7 +47,7 @@ pub struct TriangularArray<T: Clone + Default, const SL: usize, const FS: usize>
 
 impl<T: Clone + Default, const SL: usize, const FS: usize> TriangularArray<T, SL, FS> {
     #[cfg(debug_assertions)]
-    pub const SIDE_LEN_IS_AT_LEAST_1: u8 = 1_u8 / if SL >= 1_usize { 1_u8 } else { 0_u8 };
+    pub const SIDE_LEN_IS_AT_LEAST_1: u8 = 1_u8 / (SL >= 1_usize) as u8;
 
     pub const fn side_len() -> usize {
         <Helpers!(Self)>::SIDE_LEN
@@ -62,7 +62,7 @@ impl<T: Clone + Default, const SL: usize, const FS: usize> TriangularArray<T, SL
         index_map: &IndexMap<SL>,
         border: IndexType2D,
         iter: I,
-    ) -> () {
+    ) {
         for (index, t) in Index::<SL>::corner(border).iter_row_indices().zip(iter) {
             self.0[index_map[&index]] = t;
         }
@@ -386,11 +386,9 @@ impl<const SL: usize> Iterator for RowIndicesIterator<SL> {
         if self.index.index_2 < self.end {
             let old_index: Index<SL> = self.index;
 
-            self.index = self.index.next_in_row().unwrap_or_else(|| -> Index<SL> {
-                Index::<SL> {
-                    index_2: self.end,
-                    ..self.index
-                }
+            self.index = self.index.next_in_row().unwrap_or(Index::<SL> {
+                index_2: self.end,
+                ..self.index
             });
 
             Some(old_index)
@@ -494,7 +492,7 @@ impl<'im, const SL: usize> MappedTrioIndicesIterator<'im, SL> {
         }
     }
 
-    fn reset(&mut self, index_a: Index<SL>) -> () {
+    fn reset(&mut self, index_a: Index<SL>) {
         self.index_a = index_a;
         self.checked_1 = false;
         self.checked_2 = false;
@@ -562,62 +560,72 @@ pub struct IndexMap<const SL: usize>([[[usize; SL]; SL]; 3_usize]);
 
 impl<const SL: usize> IndexMap<SL> {
     fn default() -> Self {
-        let mut index_map: Self = unsafe { MaybeUninit::<Self>::uninit().assume_init() };
+        let mut index_map: MU<Self> = MU::<Self>::uninit();
 
-        // Initialize ij 2D array
         {
-            let ij_2d_array: &mut [[usize; SL]; SL] = &mut index_map.0[0_usize];
-            let mut index: usize = 0_usize;
+            let [ij_2d_array, jk_2d_array, ki_2d_array] =
+                /* Safe: size and alignment is maintained, we have a unique mutable borrow, and
+                we're transmuting into a type that requires no initialization */
+                unsafe { transmute::<&mut MU<Self>, &mut [[[MU<usize>; SL]; SL]; 3_usize]>(&mut index_map) };
 
-            for i in 0_usize..<Helpers!(Self)>::SIDE_LEN {
-                let j_array: &mut [usize; SL] = &mut ij_2d_array[i];
+            // Initialize ij_2d_array
+            {
+                let mut index: usize = 0_usize;
 
-                for j in (0_usize..<Helpers!(Self)>::SIDE_LEN).rev() {
-                    if i + j >= <Helpers!(Self)>::SIDE_LEN_MINUS_1 {
-                        j_array[j] = index;
+                for (i, j_array) in ij_2d_array.iter_mut().enumerate() {
+                    for (j, element) in j_array.iter_mut().enumerate().rev() {
+                        if i + j >= <Helpers!(Self)>::SIDE_LEN_MINUS_1 {
+                            element.write(index);
+                            index += 1_usize;
+                        } else {
+                            element.write(usize::MAX);
+                        }
+                    }
+                }
+            }
 
-                        index += 1_usize;
-                    } else {
-                        j_array[j] = usize::MAX;
+            /* Safe: size and alignment is maintained, we have a unique mutable borrow, and
+            ij_2d_array was just fully initialized */
+            let ij_2d_array: &[[usize; SL]; SL] = unsafe { transmute(ij_2d_array) };
+
+            // Initialize jk and ki 2D arrays
+            {
+                // For jk_2d_array, jk represents j; for ki_2d_array, jk represents k
+                for (jk, (k_array, i_array)) in jk_2d_array
+                    .iter_mut()
+                    .zip(ki_2d_array.iter_mut())
+                    .enumerate()
+                {
+                    let index_sum_minus_jk: usize = <Helpers!(Self)>::INDEX_SUM - jk;
+
+                    // For k_array, ki represents k; for i_array, ki represents i
+                    for (ki, (jk_element, ki_element)) in
+                        (k_array.iter_mut().zip(i_array.iter_mut())).enumerate()
+                    {
+                        // Application of the invariant
+                        let ij: usize = index_sum_minus_jk - ki;
+
+                        /* ij could be invalid here, pointing to cells outside the actual triangle.
+                        Check for that, and use usize::MAX in that case*/
+                        if ij < <Helpers!(Self)>::SIDE_LEN {
+                            /* In both the cases where we iterate on j then k or k then i, we
+                            already have one of the variables used in the ij 2D array. Variable ij
+                            represents the missing index of the two for the corresponding cell. Fill
+                            these two tables then (jk and ki) using the already established indices
+                            from the corresponding cell of the ij table */
+                            jk_element.write(ij_2d_array[ij][jk]);
+                            ki_element.write(ij_2d_array[ki][ij]);
+                        } else {
+                            jk_element.write(usize::MAX);
+                            ki_element.write(usize::MAX);
+                        }
                     }
                 }
             }
         }
 
-        // Initialize jk and ki 2D arrays
-        {
-            let [ij_2d_array, jk_2d_array, ki_2d_array] = &mut index_map.0;
-
-            // For jk_2d_array, jk represents j; for ki_2d_array, jk represents k
-            for jk in 0_usize..<Helpers!(Self)>::SIDE_LEN {
-                let index_sum_minus_jk: usize = <Helpers!(Self)>::INDEX_SUM - jk;
-                let k_array: &mut [usize; SL] = &mut jk_2d_array[jk];
-                let i_array: &mut [usize; SL] = &mut ki_2d_array[jk];
-
-                // For k_array, ki represents k; for i_array, ki represents i
-                for ki in 0_usize..<Helpers!(Self)>::SIDE_LEN {
-                    // Application of the invariant
-                    let ij: usize = index_sum_minus_jk - ki;
-
-                    /* ij could be invalid here, pointing to cells outside the actual triangle.
-                    Check for that, and use usize::MAX in that case*/
-                    if ij < <Helpers!(Self)>::SIDE_LEN {
-                        /* In both the cases where we iterate on j then k or k then i, we already
-                        have one of the variables used in the ij 2D array. Variable ij represents
-                        the missing index of the two for the corresponding cell. Fill these two
-                        tables then (jk and ki) using the already established indices from the
-                        corresponding cell of the ij table */
-                        k_array[ki] = ij_2d_array[ij][jk];
-                        i_array[ki] = ij_2d_array[ki][ij];
-                    } else {
-                        k_array[ki] = usize::MAX;
-                        i_array[ki] = usize::MAX;
-                    }
-                }
-            }
-        }
-
-        index_map
+        // Safe: index_map is now fully initialized
+        unsafe { index_map.assume_init() }
     }
 }
 
@@ -674,7 +682,7 @@ mod tests {
     )*] } }
 
     #[test]
-    fn test_index_map() -> () {
+    fn test_index_map() {
         assert_eq!(
             INDEX_MAP.0,
             [
@@ -711,7 +719,7 @@ mod tests {
         expected_indices: &[TestIndex],
         mapped_indices_iter: MII,
         expected_mapped_indices: &[usize],
-    ) -> () {
+    ) {
         let indices: Vec<TestIndex> = indices_iter.collect();
 
         assert_eq!(indices, expected_indices);
@@ -727,7 +735,7 @@ mod tests {
     }
 
     #[test]
-    fn test_iter_row_indices() -> () {
+    fn test_iter_row_indices() {
         test_iter(
             test_index!(IJ, 0).iter_row_indices(),
             test_index_slice![(IJ, 0, 4)],
@@ -761,7 +769,7 @@ mod tests {
     }
 
     #[test]
-    fn test_iter_border_indices() -> () {
+    fn test_iter_border_indices() {
         test_iter(
             TestIndex::iter_border_indices(),
             test_index_slice![
@@ -784,7 +792,7 @@ mod tests {
     }
 
     #[test]
-    fn test_iter_all_indices() -> () {
+    fn test_iter_all_indices() {
         test_iter(
             TestIndex::iter_all_indices(),
             test_index_slice![
@@ -810,7 +818,7 @@ mod tests {
     }
 
     #[test]
-    fn test_iter_trios() -> () {
+    fn test_iter_trios() {
         assert_eq!(
             TestIndex::iter_mapped_trio_indices(&*INDEX_MAP)
                 .collect::<Vec<(usize, usize, usize)>>(),

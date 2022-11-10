@@ -186,7 +186,7 @@ impl<T: BitStore> GenusIndexBitArray<T> {
     }
 
     #[inline(always)]
-    pub fn set_bit<G: Into<usize> + Sized>(&mut self, genus_index: G, enabled: bool) -> () {
+    pub fn set_bit<G: Into<usize> + Sized>(&mut self, genus_index: G, enabled: bool) {
         self.0.set(genus_index.into(), enabled);
     }
 
@@ -197,7 +197,7 @@ impl<T: BitStore> GenusIndexBitArray<T> {
         }
     }
 
-    pub fn refresh(&mut self) -> () {
+    pub fn refresh(&mut self) {
         self.0.resize(Library::get_genus_count(), false);
     }
 }
@@ -327,12 +327,13 @@ impl<'de> Deserialize<'de> for GenusIndexString {
 impl Serialize for GenusIndexString {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         if self.0.is_valid() {
-            format!("{}", Library::get().genus_infos[usize::from(self.0)].name)
+            Library::get().genus_infos[usize::from(self.0)]
+                .name
                 .serialize(serializer)
         } else {
-            Err(<S::Error as serde::ser::Error>::custom(format!(
-                "genus index being serialized is invalid"
-            )))
+            Err(<S::Error as serde::ser::Error>::custom(
+                "genus index being serialized is invalid",
+            ))
         }
     }
 }
@@ -558,7 +559,7 @@ impl Library {
     pub fn get_simple_slice(full_addr: FullAddr) -> &'static [HalfAddr] {
         break_assert!(full_addr.is_valid());
 
-        get_simple_slice(&Library::get(), full_addr)
+        get_simple_slice(Library::get(), full_addr)
     }
 
     #[inline(always)]
@@ -615,13 +616,7 @@ impl Library {
     }
 
     fn get_simple_slice_genus(&self, genus_index: GenusIndex) -> Option<Box<Genus<SimpleSlice>>> {
-        let simples_range: Range<usize> = {
-            if let Some(simples_range) = self.get_simples_range(genus_index) {
-                simples_range
-            } else {
-                return None;
-            }
-        };
+        let simples_range: Range<usize> = self.get_simples_range(genus_index)?;
         let simple_slice_len: usize =
             self.genus_infos[usize::from(genus_index)].simple_slice_len as usize;
         let mut simple_slice_genus: Genus<SimpleSlice> = Genus::<SimpleSlice>::default();
@@ -659,7 +654,7 @@ impl Library {
             return None;
         }
 
-        return Some(simple_slice_start..simple_slice_end);
+        Some(simple_slice_start..simple_slice_end)
     }
 
     fn get_genus_info(&self, genus_index: GenusIndex) -> &GenusInfo {
@@ -765,7 +760,7 @@ impl Library {
         )
     }
 
-    fn initialize(&mut self) -> () {
+    fn initialize(&mut self) {
         self.family_infos = Vec::<FamilyInfo>::new();
         self.genus_infos = Vec::<GenusInfo>::with_capacity(Self::GENERA_PER_SMALL_CLASS);
         self.simples = Vec::<HalfAddr>::with_capacity(Self::ORGANISMS_PER_GENUS);
@@ -781,7 +776,7 @@ impl Library {
         self.push_order(OrderInfo::from_file_or_default(&STRING_DATA.files.library));
     }
 
-    fn initialize_orientations(&mut self, icosidodecahedron_data: &Data) -> () {
+    fn initialize_orientations(&mut self, icosidodecahedron_data: &Data) {
         for (species_index, orientation_species) in self.orientations.iter_mut().enumerate() {
             let face_data: &FaceData = &icosidodecahedron_data.faces[species_index];
 
@@ -791,8 +786,8 @@ impl Library {
         }
     }
 
-    fn initialize_reorientation_genus(&mut self, icosidodecahedron_data: &Data) -> () {
-        const REORIENTATION_STR: &'static str = "Reorientation";
+    fn initialize_reorientation_genus(&mut self, icosidodecahedron_data: &Data) {
+        const REORIENTATION_STR: &str = "Reorientation";
 
         self.push_genus(GenusInfo::new(
             REORIENTATION_STR.into(),
@@ -806,6 +801,9 @@ impl Library {
         ));
 
         let reorientation_genus_index: usize = GenusIndex::REORIENTATION.into();
+
+        // This type is just used to mutably borrow multiple genus data simultaneously
+        #[allow(clippy::type_complexity)]
         let (
             orientation_genus,
             transformation_genus,
@@ -866,7 +864,7 @@ impl Library {
 
         for (species_index, inverse_addr_species) in inverse_addr_genus.iter_mut().enumerate() {
             for (organism_index, inverse_addr) in inverse_addr_species.iter_mut().enumerate() {
-                *inverse_addr = (&*transformation_genus)
+                *inverse_addr = (*transformation_genus)
                     .find_word(&(-&transformation_genus[species_index][organism_index]))
                     .map(|mut inverse_addr: FullAddr| -> FullAddr {
                         *inverse_addr.set_genus_index(GenusIndex::REORIENTATION.into())
@@ -876,8 +874,8 @@ impl Library {
         }
     }
 
-    fn initialize_simple_genus(&mut self, icosidodecahedron_data: &Data) -> () {
-        const SIMPLE_STR: &'static str = "Simple";
+    fn initialize_simple_genus(&mut self, icosidodecahedron_data: &Data) {
+        const SIMPLE_STR: &str = "Simple";
 
         self.push_genus(GenusInfo::new(
             SIMPLE_STR.into(),
@@ -891,6 +889,9 @@ impl Library {
         ));
 
         let simple_genus_index: usize = GenusIndex::SIMPLE.into();
+
+        // This type is just used to mutably borrow multiple genus data simultaneously
+        #[allow(clippy::type_complexity)]
         let (simple_genus, transformation_genus, mask_genus, inverse_addr_genus, rotation_genus): (
             &mut [HalfAddr],
             &mut Genus<Transformation>,
@@ -969,7 +970,7 @@ impl Library {
         mirror: bool,
         invert: bool,
         reorientation: HalfAddr,
-    ) -> () {
+    ) {
         if simple_slice.len() == seed_simple_slice.len() {
             let get_species_index = if mirror {
                 |seed_simple: HalfAddr| -> usize {
@@ -986,7 +987,7 @@ impl Library {
                 |seed_simple: HalfAddr| -> usize { seed_simple.get_organism_index() }
             };
             let mut seed_simple_slice_iter =
-                |seed_simple_slice_iter: &mut dyn DoubleEndedIterator<Item = &HalfAddr>| -> () {
+                |seed_simple_slice_iter: &mut dyn DoubleEndedIterator<Item = &HalfAddr>| {
                     for (simple_slice_index, seed_simple) in seed_simple_slice_iter.enumerate() {
                         simple_slice[simple_slice_index] = *(FullAddr::from((
                             usize::from(GenusIndex::SIMPLE),
@@ -1011,7 +1012,7 @@ impl Library {
         seed_simple_slice: &[HalfAddr],
         mirror: bool,
         invert: bool,
-    ) -> () {
+    ) {
         let simples_range: Range<usize> = {
             if let Some(simples_range) = self.get_simples_range(genus_index) {
                 simples_range
@@ -1045,7 +1046,7 @@ impl Library {
         }
     }
 
-    fn push_genus(&mut self, mut genus_info: GenusInfo) -> () {
+    fn push_genus(&mut self, mut genus_info: GenusInfo) {
         let simple_offset: usize = self.simples.len();
         let simple_slice_len: usize = genus_info.simple_slice_len as usize;
 
@@ -1068,7 +1069,7 @@ impl Library {
                 HalfAddr::new(*species_index as usize, *organism_index as usize)
             })
             .collect();
-        let seed_simple_slice: &[HalfAddr] = &*seed_simples;
+        let seed_simple_slice: &[HalfAddr] = &seed_simples;
 
         self.is_seed_simple_slice_valid(seed_simple_slice)?;
 
@@ -1103,7 +1104,7 @@ impl Library {
                 vec![HalfAddr::default(); simple_slice_len];
 
             Self::initialize_simple_slice(
-                &mut *temp_inverse_simples,
+                &mut temp_inverse_simples,
                 seed_simple_slice,
                 false,
                 true,
@@ -1118,7 +1119,7 @@ impl Library {
             );
 
             Self::simple_slices_have_identical_organism_indicies(
-                &*temp_inverse_simples,
+                &temp_inverse_simples,
                 mirror_simple_slice,
             ) && self
                 .get_simple_slice_genus(mirror_genus_index)
@@ -1211,7 +1212,7 @@ impl Library {
         Ok(family_index)
     }
 
-    fn push_order(&mut self, order_info: OrderInfo) -> () {
+    fn push_order(&mut self, order_info: OrderInfo) {
         for family_input in order_info.0 {
             if let Err(push_family_err) = self.push_family(family_input) {
                 log::warn!("PushFamilyErr: {:?}", push_family_err);
@@ -1265,19 +1266,17 @@ impl From<&Library> for OrderInfo {
 /* Library needs a more complicated setup because Library::initialize() relies on Library::get(), so
 a lazy_static won't suffice */
 impl StaticDataLibrary for Library {
-    fn pre_init() -> Option<Box<dyn FnOnce() -> ()>> {
-        Some(Box::new(|| -> () {
+    fn pre_init() -> Option<Box<dyn FnOnce()>> {
+        Some(Box::new(|| {
             Data::initialize();
         }))
     }
 
-    fn init() -> Option<Box<dyn FnOnce() -> ()>> {
-        Some(Box::new(|| -> () {
-            unsafe {
-                LIBRARY = MaybeUninit::<Library>::new(Library::default());
+    fn init() -> Option<Box<dyn FnOnce()>> {
+        Some(Box::new(|| unsafe {
+            LIBRARY = MaybeUninit::<Library>::new(Library::default());
 
-                LIBRARY.assume_init_mut().initialize();
-            }
+            LIBRARY.assume_init_mut().initialize();
         }))
     }
 
@@ -1300,24 +1299,11 @@ lazy_static! {
     static ref LIBRARY_MUTEX: Mutex<()> = Mutex::<()>::new(());
 }
 
-#[test]
-fn dump_library() -> () {
-    use std::io::Write;
-    Library::build();
-
-    write!(
-        std::fs::File::create(".ignore/rotate_tri_pair_full_masks.ron").unwrap(),
-        "{:#?}",
-        Library::get().full_masks[Library::get_genus_count() - 4_usize]
-    )
-    .unwrap();
-}
-
 #[cfg(test)]
 mod tests {
     use {super::*, crate::util::StaticDataLibrary};
 
-    fn test_validity() -> () {
+    fn test_validity() {
         let library: &Library = Library::get();
 
         for genus_index in 0_usize..library.genus_infos.len() {
@@ -1411,7 +1397,7 @@ mod tests {
         }
     }
 
-    fn test_reorientations() -> () {
+    fn test_reorientations() {
         let library: &Library = Library::get();
         let reorientation_genus_index: usize = GenusIndex::REORIENTATION.into();
         let simple_transformation_genus: &Genus<Transformation> =
@@ -1669,7 +1655,7 @@ mod tests {
         }
     }
 
-    fn test_simples() -> () {
+    fn test_simples() {
         let library: &Library = Library::get();
         let simple_genus_index: usize = GenusIndex::SIMPLE.into();
         let transformation_genus: &Genus<Transformation> =
@@ -1765,7 +1751,7 @@ mod tests {
     }
 
     #[test]
-    fn test_transformation_library() -> () {
+    fn test_transformation_library() {
         init_env_logger();
         <Library as StaticDataLibrary>::build();
         test_validity();

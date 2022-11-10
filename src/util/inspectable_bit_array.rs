@@ -36,8 +36,8 @@ impl<'a, T: BitStore, O: BitOrder> Inspectable for InspectableBitSlice<'a, T, O>
         let length: usize = min(options.length.unwrap_or(usize::MAX), self.0.len());
         let mut changed: bool = false;
 
-        ui.vertical(|ui: &mut Ui| -> () {
-            ui.horizontal(|ui: &mut Ui| -> () {
+        ui.vertical(|ui: &mut Ui| {
+            ui.horizontal(|ui: &mut Ui| {
                 if ui.small_button("| 1").clicked() {
                     self.0[0_usize..length].fill(true);
                 }

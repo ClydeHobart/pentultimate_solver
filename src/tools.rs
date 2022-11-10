@@ -53,7 +53,7 @@ macro_rules! define_tool {
                     Self::$tool,
                 )*
             ];
-            const ALL_STRS: [&'static str; Self::COUNT] = [
+            const ALL_STRS: [&str; Self::COUNT] = [
                 $(
                     stringify!($tool),
                 )*
@@ -64,7 +64,7 @@ macro_rules! define_tool {
             fn new_data(self) -> ToolDataBox {
                 match self {
                     $(
-                        Self::$tool => Box::new(<data::$tool>::default()) as ToolDataBox,
+                        Self::$tool => Box::<data::$tool>::default() as ToolDataBox,
                     )*
                 }
             }
@@ -117,10 +117,6 @@ macro_rules! define_tool {
     };
 }
 
-define_tool!(PuzzleState, Solver, Stack);
-
-const_assert!(Tool::COUNT <= ToolInner::MAX as usize);
-
 mod data {
     pub use crate::puzzle::{
         solver::tools::Solver,
@@ -169,6 +165,10 @@ mod data {
         }
     }
 }
+
+define_tool!(PuzzleState, Solver, Stack);
+
+const_assert!(Tool::COUNT <= ToolInner::MAX as usize);
 
 impl TryFrom<usize> for Tool {
     type Error = usize;
@@ -219,17 +219,17 @@ impl ToolsData {
         }
     }
 
-    pub fn render(&mut self, ui: &mut Ui, context: &mut Context) -> () {
+    pub fn render(&mut self, ui: &mut Ui, context: &mut Context) {
         CollapsingHeader::new("Tools")
             .default_open(true)
-            .show(ui, |ui: &mut Ui| -> () {
+            .show(ui, |ui: &mut Ui| {
                 let mut tool_data_index: usize = 0_usize;
 
                 for tool_index in 0_usize..Tool::COUNT {
                     let tool: Tool = Tool::try_from(tool_index).unwrap();
 
                     if self.is_tool_active(tool) {
-                        ui.collapsing(tool.as_str(), |ui: &mut Ui| -> () {
+                        ui.collapsing(tool.as_str(), |ui: &mut Ui| {
                             self.tool_data_boxes[tool_data_index]
                                 .invoke_ui(ui, &mut context.with_id(tool_data_index as u64));
                         });

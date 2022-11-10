@@ -81,7 +81,7 @@ impl Explorer {
     const MAX_DEPTH: u8 = 0_u8;
 
     #[inline]
-    pub fn init(&mut self, params: ExplorerParams) -> () {
+    pub fn init(&mut self, params: ExplorerParams) {
         *self = Self::new(params);
     }
 
@@ -120,22 +120,22 @@ impl Explorer {
     }
 
     #[inline]
-    pub fn set_should_explore(&mut self, should_explore: Option<ShouldExplore>) -> () {
+    pub fn set_should_explore(&mut self, should_explore: Option<ShouldExplore>) {
         self.should_explore = should_explore;
     }
 
     #[inline]
-    pub fn set_is_end_state(&mut self, is_end_state: IsEndState) -> () {
+    pub fn set_is_end_state(&mut self, is_end_state: IsEndState) {
         self.is_end_state = is_end_state;
     }
 
     #[inline]
-    pub fn set_candidate_genera(&mut self, candidate_genera: GenusIndexBitArray) -> () {
+    pub fn set_candidate_genera(&mut self, candidate_genera: GenusIndexBitArray) {
         self.candidate_genera = candidate_genera;
     }
 
     #[inline]
-    pub fn set_max_depth(&mut self, max_depth: u8) -> () {
+    pub fn set_max_depth(&mut self, max_depth: u8) {
         self.max_depth = max_depth;
     }
 
@@ -340,7 +340,7 @@ impl Explorer {
                 DidNotFinishError::ExahustedStateSpace
             });
 
-        return self.run_result.clone();
+        self.run_result.clone()
     }
 
     pub fn run_result(&self) -> &RunResult {

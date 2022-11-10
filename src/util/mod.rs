@@ -293,24 +293,24 @@ trait DisplayError
 where
     Self: Sized,
 {
-    fn display_error(self) -> ();
+    fn display_error(self);
 }
 
 impl<T: Sized + Debug> DisplayError for T {
     #[cfg(feature = "specialization")]
-    default fn display_error(self) -> () {
+    default fn display_error(self) {
         eprintln!("{:#?}", self);
     }
 
     #[cfg(not(feature = "specialization"))]
-    fn display_error(self) -> () {
+    fn display_error(self) {
         eprintln!("{:#?}", self);
     }
 }
 
 #[cfg(feature = "specialization")]
 impl DisplayError for LogError {
-    fn display_error(self) -> () {
+    fn display_error(self) {
         self.log();
     }
 }
@@ -333,17 +333,17 @@ where
 }
 
 pub trait StaticDataLibrary: 'static {
-    fn pre_init() -> Option<Box<dyn FnOnce() -> ()>> {
+    fn pre_init() -> Option<Box<dyn FnOnce()>> {
         None
     }
 
-    fn init() -> Option<Box<dyn FnOnce() -> ()>> {
-        Some(Box::new(|| -> () {
+    fn init() -> Option<Box<dyn FnOnce()>> {
+        Some(Box::new(|| {
             Self::get();
         }))
     }
 
-    fn post_init() -> Option<Box<dyn FnOnce() -> ()>> {
+    fn post_init() -> Option<Box<dyn FnOnce()>> {
         None
     }
 
@@ -353,8 +353,8 @@ pub trait StaticDataLibrary: 'static {
         None /* Some types utilize lazy_static!, which maintains its own Once */
     }
 
-    fn build() -> () {
-        let build = || -> () {
+    fn build() {
+        let build = || {
             macro_rules! call_build_stage {
                 ($stage:ident) => {{
                     if let Some($stage) = Self::$stage() {
@@ -520,11 +520,12 @@ pub trait FromFile: for<'de> Deserialize<'de> {
     fn from_file(file_name: &str) -> Result<Self, Box<dyn StdError>> {
         let function_call =
             || -> String { format!("from_file::<{}>(\"{}\")", type_name::<Self>(), file_name) };
-        let ser_fmt: SerFmt =
-            SerFmt::from_file_name(file_name).ok_or(Box::new(SimpleError::new(format!(
+        let ser_fmt: SerFmt = SerFmt::from_file_name(file_name).ok_or_else(|| {
+            Box::new(SimpleError::new(format!(
                 "{} doesn't have a valid file extension",
                 function_call()
-            ))))?;
+            )))
+        })?;
         let file: File = File::open(file_name)?;
         let mmap: Mmap = unsafe { Mmap::map(&file) }?;
         let bytes: &[u8] = &mmap;
@@ -587,11 +588,12 @@ pub trait ToFile: Serialize {
         }
         let function_call =
             || -> String { format!("to_file::<{}>(\"{}\")", type_name::<Self>(), file_name) };
-        let ser_fmt: SerFmt =
-            SerFmt::from_file_name(file_name).ok_or(Box::new(SimpleError::new(format!(
+        let ser_fmt: SerFmt = SerFmt::from_file_name(file_name).ok_or_else(|| {
+            Box::new(SimpleError::new(format!(
                 "{} doesn't have a valid file extension",
                 function_call()
-            ))))?;
+            )))
+        })?;
         let to_boxed_error = |string: String| -> Box<dyn StdError> {
             Box::new(SimpleError::new(format!("{}: {}", function_call(), string)))
         };
@@ -608,6 +610,7 @@ pub trait ToFile: Serialize {
 
         macro_rules! serialize {
             ($($feature:meta, $ser_fmt:ident, $result_expr:expr, $and_then:expr);*) => {
+                #[allow(clippy::redundant_closure_call)]
                 match ser_fmt {
                     $(
                         #[$feature]
@@ -648,10 +651,10 @@ pub trait ToFile: Serialize {
 
 impl<T: Serialize> ToFile for T {}
 
-pub fn exit_app(world: &mut World) -> () {
+pub fn exit_app(world: &mut World) {
     debug_expect_some!(
         world.get_resource_mut::<Events<AppExit>>(),
-        |mut app_exit_events: Mut<Events<AppExit>>| -> () {
+        |mut app_exit_events: Mut<Events<AppExit>>| {
             app_exit_events.send(AppExit);
         }
     );
@@ -754,7 +757,7 @@ impl<T: Pod> WithLengthAndCapacity for Vec<T> {
 }
 
 #[cfg(debug_assertions)]
-pub fn debug_break() -> () {
+pub fn debug_break() {
     unsafe {
         core::intrinsics::breakpoint();
     }
@@ -765,7 +768,7 @@ pub fn debug_break() -> () {
 macro_rules! cond_break {
     ($cond:expr) => {{
         if $cond {
-            crate::util::debug_break();
+            $crate::util::debug_break();
         }
     }};
 }
@@ -939,7 +942,7 @@ mod tests {
     };
 
     #[test]
-    fn to_result() -> () {
+    fn to_result() {
         macro_rules! test_some {
             ($e:expr, $t:ty) => {
                 break_assert!({
@@ -998,7 +1001,7 @@ mod tests {
         };
     }
 
-    fn to_option_test_err_std() -> () {
+    fn to_option_test_err_std() {
         test_err!(5, f32, i32);
         test_err!("foo", i32, &str);
         test_err!(15.0_f32, &str, f32);
@@ -1030,7 +1033,7 @@ mod tests {
         };
     }
 
-    fn to_option_test_err_log_error() -> () {
+    fn to_option_test_err_log_error() {
         test_log_error!(log_error!(Level::Error, "Error Message".into()), i32);
         test_log_error!(log_error!(Level::Warn, "Warn Message".into()), u32);
         test_log_error!(log_error!(Level::Info, "Info Message".into()), f32);
@@ -1038,21 +1041,21 @@ mod tests {
         test_log_error!(log_error!(Level::Trace, "Trace Message".into()), f64);
     }
 
-    fn to_option_test_err() -> () {
+    fn to_option_test_err() {
         init_env_logger();
         to_option_test_err_std();
         to_option_test_err_log_error();
     }
 
     #[test]
-    fn to_option() -> () {
+    fn to_option() {
         init_env_logger();
         to_option_test_ok();
         to_option_test_err();
     }
 
     #[test]
-    fn string_from_alt_duration() -> () {
+    fn string_from_alt_duration() {
         assert_eq!(String::from_alt(Duration::from_nanos(1_u64)), "1ns");
         assert_eq!(String::from_alt(Duration::from_nanos(12_u64)), "12ns");
         assert_eq!(String::from_alt(Duration::from_nanos(123_u64)), "123ns");
@@ -1123,7 +1126,7 @@ mod tests {
         feature = "toml"
     ))]
     #[test]
-    fn test_serialization_and_deserialization() -> () {
+    fn test_serialization_and_deserialization() {
         use {
             super::{Deserialize, FromFile, SerFmt, Serialize, StdError, ToFile},
             std::{

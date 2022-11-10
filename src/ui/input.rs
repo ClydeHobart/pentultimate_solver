@@ -59,7 +59,7 @@ pub fn generate_default_positions() -> [usize; HALF_PENTAGON_PIECE_COUNT] {
     for rotation in 3_u32..=7_u32 {
         positions[rotation as usize - 2] = icosidodecahedron_data.get_closest_face_index(
             &face_0_data
-                .get_rotation_quat(rotation % PSC::PENTAGON_VERTEX_COUNT as u32)
+                .get_rotation_quat(rotation % psc_to_num!(PSC::PENTAGON_VERTEX_COUNT, u32))
                 .mul_vec3(face_1_norm),
             None,
         );
@@ -79,7 +79,7 @@ impl IntoKeyCode for u32 {
 }
 
 #[test]
-fn key_code_count() -> () {
+fn key_code_count() {
     println!("{}", KeyCode::Cut as u32 + 1_u32);
 }
 
@@ -183,7 +183,7 @@ impl Modifier {
         }
 
         if right {
-            mask |= 1_u16 << offset + 1_usize;
+            mask |= 1_u16 << (offset + 1_usize);
         }
 
         mask
@@ -196,7 +196,7 @@ impl Modifier {
 
 #[cfg(test)]
 #[test]
-fn verify_sorted_key_codes() -> () {
+fn verify_sorted_key_codes() {
     for key_code_index in 1_usize..Modifier::KEY_CODES.len() {
         break_assert!(
             Modifier::KEY_CODES[key_code_index - 1_usize] < Modifier::KEY_CODES[key_code_index]
@@ -260,12 +260,12 @@ impl KeyPress {
     }
 
     #[inline]
-    fn set_key_code(&mut self, key_code: KeyCode) -> () {
+    fn set_key_code(&mut self, key_code: KeyCode) {
         self.0 = self.0 & !Self::KEY_CODE_MASK | key_code as u16;
     }
 
     #[inline]
-    fn set_modifiers(&mut self, modifiers: u8) -> () {
+    fn set_modifiers(&mut self, modifiers: u8) {
         self.0 = self.0 & Self::KEY_CODE_MASK | (modifiers as u16) << Modifier::COUNT;
     }
 
@@ -373,21 +373,21 @@ impl Inspectable for KeyPress {
 
         CollapsingHeader::new(format!("{:?}", self))
             .id_source(context.id())
-            .show(ui, |ui: &mut Ui| -> () {
+            .show(ui, |ui: &mut Ui| {
                 const MIN_COL_WIDTH_SCALE: f32 = 2.0_f32;
                 let col_width: f32 = MIN_COL_WIDTH_SCALE * ui.spacing().interact_size.x;
 
                 Grid::new(0_u64)
                     .num_columns(1_usize)
                     .min_col_width(2.0_f32 * col_width)
-                    .show(ui, |ui: &mut Ui| -> () {
+                    .show(ui, |ui: &mut Ui| {
                         let mut self_key_code: KeyCode = self.get_key_code();
 
-                        ui.centered_and_justified(|ui: &mut Ui| -> () {
+                        ui.centered_and_justified(|ui: &mut Ui| {
                             ComboBox::from_id_source(0_u64)
                                 .width(2.0_f32 * col_width)
                                 .selected_text(format!("{:?}", self_key_code))
-                                .show_ui(ui, |ui: &mut Ui| -> () {
+                                .show_ui(ui, |ui: &mut Ui| {
                                     for key_code in 0_u32..Self::KEY_CODE_COUNT {
                                         let key_code: KeyCode = key_code.into_key_code();
 
@@ -412,15 +412,15 @@ impl Inspectable for KeyPress {
                         Grid::new(1_u64)
                             .num_columns(2_usize)
                             .min_col_width(col_width)
-                            .show(ui, |ui: &mut Ui| -> () {
+                            .show(ui, |ui: &mut Ui| {
                                 for modifier in 0_usize..Modifier::COUNT {
                                     let modifier: Modifier = modifier.into();
                                     let mut button = |key_press: &mut KeyPress,
                                                       ui: &mut Ui,
                                                       mask: &dyn Fn(Modifier) -> u16,
                                                       key_code: &dyn Fn(Modifier) -> KeyCode|
-                                     -> () {
-                                        ui.centered_and_justified(|ui: &mut Ui| -> () {
+                                     {
+                                        ui.centered_and_justified(|ui: &mut Ui| {
                                             let mask: u16 = mask(modifier);
 
                                             ui.visuals_mut().override_text_color =
@@ -515,7 +515,7 @@ impl TryFrom<&str> for KeyPress {
         }
 
         if let Some(key_code_str) = str_slice.get(curr_byte..str_slice.len()) {
-            match ron::de::from_str::<KeyCode>(&key_code_str) {
+            match ron::de::from_str::<KeyCode>(key_code_str) {
                 Ok(key_code) => {
                     key_press.set_key_code(key_code);
 
@@ -638,7 +638,7 @@ impl KeyPresses {
             .binary_search_by_key(key_code, KeyCodeWithActions::key_code)
     }
 
-    fn update_key_press_for_action(&mut self, action_index: usize, key_press: KeyPress) -> () {
+    fn update_key_press_for_action(&mut self, action_index: usize, key_press: KeyPress) {
         let mut_key_press: &mut KeyPress = &mut self.action_to_key_press[action_index];
         let old_key_code: KeyCode = mut_key_press.get_key_code();
         let new_key_code: KeyCode = key_press.get_key_code();
@@ -651,7 +651,7 @@ impl KeyPresses {
         }
     }
 
-    fn add_action_to_key_code(&mut self, action_index: usize, key_code: KeyCode) -> () {
+    fn add_action_to_key_code(&mut self, action_index: usize, key_code: KeyCode) {
         match self.try_get_key_code_index(&key_code) {
             Ok(key_code_index) => {
                 self.key_code_to_actions[key_code_index]
@@ -668,7 +668,7 @@ impl KeyPresses {
         }
     }
 
-    fn remove_action_from_key_code(&mut self, action_index: usize, key_code: KeyCode) -> () {
+    fn remove_action_from_key_code(&mut self, action_index: usize, key_code: KeyCode) {
         if let Ok(key_code_index) = self.try_get_key_code_index(&key_code) {
             let actions: &mut ActionsBitField =
                 &mut self.key_code_to_actions[key_code_index].actions;
@@ -734,18 +734,17 @@ impl Inspectable for KeyPresses {
     type Attributes = ();
 
     fn ui(&mut self, ui: &mut Ui, _: (), context: &mut Context) -> bool {
-        let mut action_to_key_press: [KeyPress; KEY_PRESS_ACTION_COUNT] =
-            self.action_to_key_press.clone();
+        let mut action_to_key_press: [KeyPress; KEY_PRESS_ACTION_COUNT] = self.action_to_key_press;
         let rc_self: Rc<*mut Self> = Rc::<*mut Self>::new(self);
         let mut changed: bool = false;
 
-        Grid::new(self as *const Self as usize).show(ui, |ui: &mut Ui| -> () {
+        Grid::new(self as *const Self as usize).show(ui, |ui: &mut Ui| {
             for (action_index, key_press) in action_to_key_press.iter_mut().enumerate() {
                 let closure_rc_self: Rc<*mut Self> = rc_self.clone();
 
                 ui.label(format!("{:?}", KeyPressAction::from_usize(action_index)));
 
-                if key_press.ui(
+                let action_changed: bool = key_press.ui(
                     ui,
                     Some(Rc::new(move |key_press: KeyPress| -> Result<(), String> {
                         let key_code: KeyCode = key_press.get_key_code();
@@ -778,7 +777,9 @@ impl Inspectable for KeyPresses {
                         Ok(())
                     })),
                     &mut context.with_id(action_index as u64),
-                ) {
+                );
+
+                if action_changed {
                     changed = true;
 
                     <&mut KeyPresses>::from(&rc_self)
@@ -1055,7 +1056,7 @@ impl PuzzleAction {
                 {
                     if pending_actions.set_puzzle_state {
                         *extended_puzzle_state = ExtendedPuzzleState {
-                            puzzle_state: take(&mut pending_actions.puzzle_state).into(),
+                            puzzle_state: take(&mut pending_actions.puzzle_state),
                             ..ExtendedPuzzleState::default()
                         };
                         extended_puzzle_state
@@ -1066,7 +1067,7 @@ impl PuzzleAction {
 
                     if pending_actions.set_camera_orientation {
                         CameraQueryMutNT(&mut queries.p0()).orientation(
-                            |camera_orientation: Option<&mut Quat>| -> () {
+                            |camera_orientation: Option<&mut Quat>| {
                                 if let Some(camera_orientation) = camera_orientation {
                                     *camera_orientation = pending_actions.camera_orientation;
                                 }
@@ -1104,7 +1105,7 @@ impl PuzzleAction {
                                 extended_puzzle_state.puzzle_state.clone();
 
                             let s: f32 =
-                                s * FullAddr::get_simple_slice_cycles(&comprising_simples) as f32;
+                                s * FullAddr::get_simple_slice_cycles(comprising_simples) as f32;
 
                             for comprising_simple in comprising_simples {
                                 let comprising_simple: FullAddr = comprising_simple.as_simple();
@@ -1147,7 +1148,7 @@ impl PuzzleAction {
 
                         if current_action.has_camera_orientation {
                             CameraQueryMutNT(&mut queries.p0()).orientation(
-                                |camera_orientation: Option<&mut Quat>| -> () {
+                                |camera_orientation: Option<&mut Quat>| {
                                     if let (Some(camera_orientation), Some(end_quat)) =
                                         (camera_orientation, end_quat)
                                     {
@@ -1185,16 +1186,16 @@ impl PuzzleAction {
 
                         if action.camera_start.is_valid() {
                             CameraQueryMutNT(&mut queries.p0()).orientation(
-                                |camera_orientation: Option<&mut Quat>| -> () {
+                                |camera_orientation: Option<&mut Quat>| {
                                     if let Some(camera_orientation) = camera_orientation {
                                         *camera_orientation = standardization_quat
                                             .unwrap_or_default()
-                                            * if current_action.has_camera_orientation
-                                                && end_quat.is_some()
-                                            {
-                                                end_quat.unwrap()
-                                            } else {
-                                                *camera_orientation
+                                            * match (
+                                                current_action.has_camera_orientation,
+                                                end_quat,
+                                            ) {
+                                                (true, Some(end_quat)) => end_quat,
+                                                _ => *camera_orientation,
                                             };
                                     }
                                 },
@@ -1242,7 +1243,7 @@ pub enum FileActionType {
 pub struct Ready(AtomicBool);
 
 impl Wake for Ready {
-    fn wake(self: Arc<Self>) -> () {
+    fn wake(self: Arc<Self>) {
         self.0.store(true, Ordering::Relaxed);
     }
 }
@@ -1312,21 +1313,20 @@ impl InputToggles {
 
     fn organism_index(&self) -> usize {
         if self.enable_modifiers {
-            (1_i32
-                * if self.rotate_twice { 2_i32 } else { 1_i32 }
+            (if self.rotate_twice { 2_i32 } else { 1_i32 }
                 * if self.counter_clockwise {
                     -1_i32
                 } else {
                     1_i32
                 }
-                + PSC::PENTAGON_VERTEX_COUNT as i32) as usize
+                + psc_to_num!(PSC::PENTAGON_VERTEX_COUNT, i32)) as usize
                 % usize::PENTAGON_VERTEX_COUNT
         } else {
             0_usize
         }
     }
 
-    fn update(&mut self, key_presses: &KeyPresses, keyboard_input: &Input<KeyCode>) -> () {
+    fn update(&mut self, key_presses: &KeyPresses, keyboard_input: &Input<KeyCode>) {
         use KeyPressAction as KPA;
 
         if self.genus_index.is_reorientation() {
@@ -1442,27 +1442,38 @@ impl InputState {
         self.puzzle_action.is_some() || self.file_action.is_some() || self.is_solving
     }
 
-    fn reset_update_data(&mut self) -> () {
+    fn reset_update_data(&mut self) {
         self.has_camera_rotation = false;
     }
 }
 
 pub struct InputPlugin;
 
+type InputPluginRunReses<'r> = (
+    Res<'r, ExtendedPuzzleState>,
+    Res<'r, Input<KeyCode>>,
+    Res<'r, Input<MouseButton>>,
+    Res<'r, Preferences>,
+    Res<'r, View>,
+    Res<'r, Time>,
+);
+type InputPluginRunEventReaders<'w, 's> = (
+    EventReader<'w, 's, MouseMotion>,
+    EventReader<'w, 's, MouseWheel>,
+);
+type InputPluginRunResMuts<'r> = (ResMut<'r, BevyEguiContext>, ResMut<'r, InputState>);
+
 impl InputPlugin {
     fn run(
-        extended_puzzle_state: Res<ExtendedPuzzleState>,
-        keyboard_input: Res<Input<KeyCode>>,
-        mouse_button_input: Res<Input<MouseButton>>,
-        preferences: Res<Preferences>,
-        view: Res<View>,
-        time: Res<Time>,
+        reses: InputPluginRunReses,
         camera_query: CameraQuery,
-        mut mouse_motion_events: EventReader<MouseMotion>,
-        mut mouse_wheel_events: EventReader<MouseWheel>,
-        mut bevy_egui_context: ResMut<BevyEguiContext>,
-        mut input_state: ResMut<InputState>,
-    ) -> () {
+        event_readers: InputPluginRunEventReaders,
+        res_muts: InputPluginRunResMuts,
+    ) {
+        let (extended_puzzle_state, keyboard_input, mouse_button_input, preferences, view, time) =
+            reses;
+        let (mut mouse_motion_events, mut mouse_wheel_events) = event_readers;
+        let (mut bevy_egui_context, mut input_state) = res_muts;
         let input_state: &mut InputState = input_state.deref_mut();
 
         input_state.reset_update_data();
@@ -1476,7 +1487,7 @@ impl InputPlugin {
         let mut toggles: InputToggles = input_state.toggles;
 
         if !egui_context.wants_keyboard_input() {
-            toggles.update(&input_data.key_presses, &*keyboard_input);
+            toggles.update(&input_data.key_presses, &keyboard_input);
         }
 
         if !egui_context.wants_pointer_input() {
@@ -1567,7 +1578,7 @@ impl InputPlugin {
                             FileActionType::Load => {
                                 warn_expect_ok!(
                                     SaveState::from_file(file_name),
-                                    |save_state: SaveState| -> () {
+                                    |save_state: SaveState| {
                                         input_state.puzzle_action = Some(PuzzleAction {
                                             current_action: None,
                                             pending_actions: Some(Box::new(PendingActions::load(
@@ -1611,7 +1622,7 @@ impl InputPlugin {
         preferences: &Preferences,
         camera_query: &CameraQuery,
         input_state: &mut InputState,
-    ) -> () {
+    ) {
         use KeyPressAction as KPA;
 
         let input_data: &InputData = &preferences.input;
@@ -1709,7 +1720,7 @@ impl InputPlugin {
 }
 
 impl Plugin for InputPlugin {
-    fn build(&self, app: &mut App) -> () {
+    fn build(&self, app: &mut App) {
         app.insert_resource(InputState::default())
             .add_system_to_stage(
                 CoreStage::PreUpdate,

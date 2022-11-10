@@ -24,7 +24,7 @@ pub mod prelude {
 }
 
 pub trait Update: PartialEq + Sized {
-    fn update(&self, other: &Self, world: &mut World, preferences: &Preferences) -> ();
+    fn update(&self, other: &Self, world: &mut World, preferences: &Preferences);
 }
 
 #[derive(Clone, Deserialize, Inspectable, PartialEq)]
@@ -60,7 +60,7 @@ define_struct_with_default!(
 );
 
 impl Update for PuzzleData {
-    fn update(&self, other: &Self, world: &mut World, preferences: &Preferences) -> () {
+    fn update(&self, other: &Self, world: &mut World, preferences: &Preferences) {
         self.color
             .colors_with_mat
             .update(&other.color.colors_with_mat, world, preferences);
@@ -130,7 +130,7 @@ pub struct Preferences {
 }
 
 impl Update for Preferences {
-    fn update(&self, other: &Self, world: &mut World, preferences: &Preferences) -> () {
+    fn update(&self, other: &Self, world: &mut World, preferences: &Preferences) {
         self.light_and_camera
             .update(&other.light_and_camera, world, preferences);
         self.puzzle.update(&other.puzzle, world, preferences);

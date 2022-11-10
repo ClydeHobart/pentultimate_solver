@@ -70,7 +70,7 @@ impl<'de> Deserialize<'de> for Color {
 
 impl From<&str> for Color {
     fn from(v: &str) -> Self {
-        Self(BevyColor::hex(v).unwrap_or(BevyColor::default()))
+        Self(BevyColor::hex(v).unwrap_or_default())
     }
 }
 
@@ -115,7 +115,7 @@ pub struct ColAndMat {
 }
 
 impl ColAndMat {
-    fn set_hdl(&mut self, materials: &mut Assets<StandardMaterial>) -> () {
+    fn set_hdl(&mut self, materials: &mut Assets<StandardMaterial>) {
         self.mat = materials.add(StandardMaterial {
             base_color: self.col.0,
             perceptual_roughness: 0.5_f32,
@@ -235,9 +235,7 @@ impl Default for ColorDataWithMat {
                 ),
                 Self::tuple_for_polyhedron(Polyhedron::RhombicTriacontahedron).unwrap(),
             ]
-            .iter()
-            .cloned()
-            .collect(),
+            .to_vec(),
             base_color: Color::from("000000").into(),
         }
     }
@@ -249,22 +247,18 @@ impl Inspectable for ColorDataWithMat {
     fn ui(&mut self, ui: &mut Ui, _: Self::Attributes, context: &mut Context) -> bool {
         let mut changed: bool = false;
 
-        ui.vertical_centered(|ui: &mut Ui| -> () {
-            Grid::new(context.id()).show(ui, |ui: &mut Ui| -> () {
+        ui.vertical_centered(|ui: &mut Ui| {
+            Grid::new(context.id()).show(ui, |ui: &mut Ui| {
                 ui.label("polyhedron_to_colors");
 
                 let mut inspectable_bin_map: InspectableBinMapMut<(Polyhedron, Vec<ColAndMat>)> =
                     self.polyhedron_to_colors.as_inspectable_bin_map_mut();
 
-                inspectable_bin_map.ui(ui, Default::default(), &mut context.with_id(0_u64));
+                changed |=
+                    inspectable_bin_map.ui(ui, Default::default(), &mut context.with_id(0_u64));
                 ui.end_row();
                 ui.label("base_color");
-                changed |= <ColAndMat as Inspectable>::ui(
-                    &mut self.base_color,
-                    ui,
-                    Default::default(),
-                    &mut context.with_id(1_u64),
-                );
+                changed |= self.base_color.ui(ui, (), &mut context.with_id(1_u64));
                 ui.end_row();
             });
         });
@@ -274,7 +268,7 @@ impl Inspectable for ColorDataWithMat {
 }
 
 impl Update for ColorDataWithMat {
-    fn update(&self, other: &Self, world: &mut World, _: &Preferences) -> () {
+    fn update(&self, other: &Self, world: &mut World, _: &Preferences) {
         if self != other {
             let mut mat_assets: Mut<Assets<StandardMaterial>> =
                 warn_expect_some!(world.get_resource_mut::<Assets<StandardMaterial>>(), return);
@@ -306,9 +300,9 @@ impl ColorData {
     fn startup_app(
         mut preferences: ResMut<Preferences>,
         mut materials: ResMut<Assets<StandardMaterial>>,
-    ) -> () {
+    ) {
         let colors_with_mat: &mut ColorDataWithMat = &mut preferences.puzzle.color.colors_with_mat;
-        let materials: &mut Assets<StandardMaterial> = &mut *materials;
+        let materials: &mut Assets<StandardMaterial> = &mut materials;
 
         for (_, col_and_hdls) in &mut colors_with_mat.polyhedron_to_colors {
             for col_and_hdl in col_and_hdls {
@@ -323,18 +317,19 @@ impl ColorData {
 pub struct ColorsPlugin;
 
 impl Plugin for ColorsPlugin {
-    fn build(&self, app: &mut App) -> () {
+    fn build(&self, app: &mut App) {
         app.add_startup_system(ColorData::startup_app.after(UIPlugin::startup));
     }
 }
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "non_unit_tests")]
     use super::*;
 
     #[cfg(feature = "non_unit_tests")]
     #[test]
-    fn serialize_icosahedron_tuple() -> () {
+    fn serialize_icosahedron_tuple() {
         Data::initialize();
 
         ColorDataWithMat::tuple_for_polyhedron(Polyhedron::Icosahedron)
@@ -345,7 +340,7 @@ mod tests {
 
     #[cfg(feature = "non_unit_tests")]
     #[test]
-    fn serialize_rhombic_triacontahedron_tuple() -> () {
+    fn serialize_rhombic_triacontahedron_tuple() {
         Data::initialize();
 
         ColorDataWithMat::tuple_for_polyhedron(Polyhedron::RhombicTriacontahedron)

@@ -25,16 +25,13 @@ pub struct InspectableNum<T: InspectableNumTrait>(pub T);
 impl<T: InspectableNumTrait> Inspectable for InspectableNum<T> {
     type Attributes = NumberAttributes<T>;
 
-    fn ui(&mut self, ui: &mut Ui, options: NumberAttributes<T>, context: &mut Context) -> bool {
-        let options: NumberAttributes<T> = NumberAttributes::<T> {
-            min: options.min.or(Some(T::min_value())),
-            max: options.max.or(Some(T::max_value())),
-            ..options
-        };
+    fn ui(&mut self, ui: &mut Ui, mut options: NumberAttributes<T>, context: &mut Context) -> bool {
+        options.min.get_or_insert_with(T::min_value);
+        options.min.get_or_insert_with(T::max_value);
 
         let mut changed: bool = false;
 
-        ui.scope(|ui: &mut Ui| -> () {
+        ui.scope(|ui: &mut Ui| {
             ui.set_enabled(self.0 > *options.min.as_ref().unwrap());
 
             if ui.small_button("min").clicked() {
@@ -42,7 +39,7 @@ impl<T: InspectableNumTrait> Inspectable for InspectableNum<T> {
                 changed = true;
             }
         });
-        ui.scope(|ui: &mut Ui| -> () {
+        ui.scope(|ui: &mut Ui| {
             ui.set_enabled(self.0 > *options.min.as_ref().unwrap());
 
             if ui.small_button("-").clicked() {
@@ -51,7 +48,7 @@ impl<T: InspectableNumTrait> Inspectable for InspectableNum<T> {
             }
         });
         changed |= self.0.ui(ui, options.clone(), context);
-        ui.scope(|ui: &mut Ui| -> () {
+        ui.scope(|ui: &mut Ui| {
             ui.set_enabled(self.0 < *options.max.as_ref().unwrap());
 
             if ui.small_button("+").clicked() {
@@ -59,7 +56,7 @@ impl<T: InspectableNumTrait> Inspectable for InspectableNum<T> {
                 changed = true;
             }
         });
-        ui.scope(|ui: &mut Ui| -> () {
+        ui.scope(|ui: &mut Ui| {
             ui.set_enabled(self.0 < *options.max.as_ref().unwrap());
 
             if ui.small_button("max").clicked() {

@@ -110,12 +110,12 @@ impl Design {
 }
 
 impl Update for Design {
-    fn update(&self, other: &Self, world: &mut World, preferences: &Preferences) -> () {
+    fn update(&self, other: &Self, world: &mut World, preferences: &Preferences) {
         if self != other {
             warn_expect!(world.contains_resource::<BevyMeshHandles>(), ?);
 
             world.resource_scope(
-                |world: &mut World, bevy_mesh_handles: Mut<BevyMeshHandles>| -> () {
+                |world: &mut World, bevy_mesh_handles: Mut<BevyMeshHandles>| {
                     PieceLibrary::get().update_entities(
                         &warn_expect_some!(
                             PieceMats::try_from(&preferences.puzzle.color.colors_with_mat, *self),
@@ -312,7 +312,7 @@ where
     type Output = <[Vec3; 3] as std::ops::Index<Idx>>::Output;
 
     fn index(&self, index: Idx) -> &Self::Output {
-        return &self.vertices[index];
+        &self.vertices[index]
     }
 }
 
@@ -321,7 +321,7 @@ where
     [Vec3; 3]: std::ops::IndexMut<Idx>,
 {
     fn index_mut(&mut self, index: Idx) -> &mut Self::Output {
-        return &mut self.vertices[index];
+        &mut self.vertices[index]
     }
 }
 
@@ -335,7 +335,7 @@ impl std::ops::Mul<Tri> for &Mat4 {
 
         rhs.update_normal();
 
-        return rhs;
+        rhs
     }
 }
 
@@ -395,7 +395,7 @@ struct MeshVertexData {
 }
 
 trait PushVertex<V: Sized> {
-    fn push_vertex(&mut self, vertex: V) -> ();
+    fn push_vertex(&mut self, vertex: V);
 }
 
 struct MeshAttributeData {
@@ -408,7 +408,7 @@ struct MeshAttributeData {
 
 impl MeshAttributeData {
     #[cfg(debug_assertions)]
-    fn zero(&mut self, range: Range<usize>) -> () {
+    fn zero(&mut self, range: Range<usize>) {
         self.positions[range.clone()].fill(Vec3::ZERO);
         self.normals[range.clone()].fill(Vec3::ZERO);
         self.uvs[range].fill(Vec2::ZERO);
@@ -443,7 +443,7 @@ impl<'d> MeshAttributeDataWithStats<'d> {
 }
 
 impl<'d> PushVertex<MeshVertexData> for MeshAttributeDataWithStats<'d> {
-    fn push_vertex(&mut self, mesh_vertex_data: MeshVertexData) -> () {
+    fn push_vertex(&mut self, mesh_vertex_data: MeshVertexData) {
         self.data.positions[self.stats.vertices] = mesh_vertex_data.position;
         self.data.normals[self.stats.vertices] = mesh_vertex_data.normal;
         self.data.uvs[self.stats.vertices] = mesh_vertex_data.uv;
@@ -453,7 +453,7 @@ impl<'d> PushVertex<MeshVertexData> for MeshAttributeDataWithStats<'d> {
 }
 
 impl<'d> PushVertex<(Tri, u32)> for MeshAttributeDataWithStats<'d> {
-    fn push_vertex(&mut self, (tri, offset): (Tri, u32)) -> () {
+    fn push_vertex(&mut self, (tri, offset): (Tri, u32)) {
         let offset: u32 = self.stats.vertices as u32 - offset;
 
         for vertex in tri.vertices {
@@ -475,7 +475,7 @@ struct TempVec<'a, T> {
 }
 
 impl<'a, T> TempVec<'a, T> {
-    fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) -> () {
+    fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
         for t in iter {
             self.data[*self.index] = t;
             *self.index += 1_usize;
@@ -584,7 +584,7 @@ impl MeshHeader {
         mesh_attribute_data: &MeshAttributeData,
         bevy_meshes: &mut Assets<BevyMesh>,
         bevy_mesh_handle: &mut Handle<BevyMesh>,
-    ) -> () {
+    ) {
         let vertices: Range<usize> = self.vertices();
         let indices: Range<usize> = self.indices();
 
@@ -647,7 +647,7 @@ impl MeshHeaders {
         mesh_attribute_data: &MeshAttributeData,
         bevy_meshes: &mut Assets<BevyMesh>,
         bevy_mesh_handles: &mut BevyMeshHandles,
-    ) -> () {
+    ) {
         warn_expect!(self.0.len() == bevy_mesh_handles.0.len(), ?);
 
         for (mesh_header, bevy_mesh_handle) in self.0.iter().zip(bevy_mesh_handles.0.iter_mut()) {
@@ -668,7 +668,7 @@ struct MeshHeadersWithIndex<'h> {
 }
 
 impl<'h> MeshHeadersWithIndex<'h> {
-    fn push(&mut self, mesh_header: MeshHeader) -> () {
+    fn push(&mut self, mesh_header: MeshHeader) {
         self.headers.0[self.index] = mesh_header;
         self.index += 1_usize;
     }
@@ -1041,7 +1041,7 @@ struct PieceHeader(Range<u32>);
 impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
     type Error = ();
 
-    fn try_from(mut params: &mut PieceHeaderParams) -> Result<Self, ()> {
+    fn try_from(params: &mut PieceHeaderParams) -> Result<Self, ()> {
         use gen::*;
 
         type EmptyResult = Result<(), ()>;
@@ -1111,7 +1111,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
         let face_range: Range<usize> = index_offset..index_offset + instance_count;
         let vert_range: Range<usize> = 0_usize..vert_count;
         let transformation: Quat = icosidodecahedron_data.faces[index_offset].quat.inverse();
-        let face_iter: &dyn Fn(&mut [MU<Vec3>]) -> () = &|vertices: &mut [MU<Vec3>]| -> () {
+        let face_iter = |vertices: &mut [MU<Vec3>]| {
             for (vert_index, vert) in icosidodecahedron_data.faces[index_offset]
                 .range
                 .clone()
@@ -1123,11 +1123,11 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                 vertices[vert_index].write(transformation * *vert);
             }
         };
-        let pyramid_center: &dyn Fn() -> Vec3 = &|| -> Vec3 {
+        let pyramid_center = || -> Vec3 {
             transformation * Data::get(params.piece_type.pyramid_polyhedron()).verts[0_usize].vec
         };
-        let add_adjacent_face_indices_same_piece: &dyn Fn(&mut PieceHeaderParams, usize) -> () =
-            &|params: &mut PieceHeaderParams, vert_index: usize| -> () {
+        let add_adjacent_face_indices_same_piece =
+            |params: &mut PieceHeaderParams, vert_index: usize| {
                 let index_offset: u8 = index_offset as u8;
 
                 params.mesh_attribute_data_with_stats.face_indices().extend(
@@ -1148,8 +1148,8 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                     }),
                 );
             };
-        let map_adjacent_face_index_other_piece: &dyn Fn(usize, usize, usize) -> usize =
-            &|face_index: usize, vert_index: usize, next_vert_index: usize| -> usize {
+        let map_adjacent_face_index_other_piece =
+            |face_index: usize, vert_index: usize, next_vert_index: usize| -> usize {
                 let edge_index: usize = icosidodecahedron_data
                     .get_edge_index(&{
                         let face_slice: &[usize] = icosidodecahedron_faces[face_index]
@@ -1166,8 +1166,8 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                     }),
                 )
             };
-        let add_adjacent_face_indices_other_piece: &dyn Fn(&mut PieceHeaderParams, usize) -> () =
-            &|params: &mut PieceHeaderParams, vert_index: usize| -> () {
+        let add_adjacent_face_indices_other_piece =
+            |params: &mut PieceHeaderParams, vert_index: usize| {
                 let next_vert_index: usize = params.piece_type.next_side_index(vert_index);
                 let index_offset: u8 = params.piece_type.other().index_offset() as u8;
 
@@ -1179,17 +1179,16 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                     }),
                 );
             };
-        let add_piece_range: &dyn Fn(&mut PieceHeaderParams) -> () =
-            &|params: &mut PieceHeaderParams| -> () {
-                params.mesh_attribute_data_with_stats.face_indices().extend(
-                    params
-                        .piece_type
-                        .range()
-                        .map(|piece_index: usize| -> u8 { (piece_index - index_offset) as u8 }),
-                );
-            };
-        let add_rhombic_triacontahedron_face_indices: &dyn Fn(&mut PieceHeaderParams, usize) -> () =
-            &|params: &mut PieceHeaderParams, vert_index: usize| -> () {
+        let add_piece_range = |params: &mut PieceHeaderParams| {
+            params.mesh_attribute_data_with_stats.face_indices().extend(
+                params
+                    .piece_type
+                    .range()
+                    .map(|piece_index: usize| -> u8 { (piece_index - index_offset) as u8 }),
+            );
+        };
+        let add_rhombic_triacontahedron_face_indices =
+            |params: &mut PieceHeaderParams, vert_index: usize| {
                 params.mesh_attribute_data_with_stats.face_indices().extend(
                     params.piece_type.range().map(|face_index: usize| -> u8 {
                         icosidodecahedron_faces[face_index]
@@ -1198,72 +1197,59 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                     }),
                 );
             };
-        let add_regular_polygon: &dyn Fn(&mut PieceHeaderParams, &[Vec3], &Vec3, &Vec3, u32, bool) =
-            &|params: &mut PieceHeaderParams,
-              vert_loop: &[Vec3],
-              center: &Vec3,
-              normal: &Vec3,
-              offset: u32,
-              flip_tris: bool|
-             -> () {
-                let normal: Vec3 = *normal;
-                let uv: Vec2 = Vec2::ZERO;
-                let offset: u32 =
-                    params.mesh_attribute_data_with_stats.stats.vertices as u32 - offset;
+        let add_regular_polygon = |params: &mut PieceHeaderParams,
+                                   vert_loop: &[Vec3],
+                                   center: &Vec3,
+                                   normal: &Vec3,
+                                   offset: u32,
+                                   flip_tris: bool| {
+            let normal: Vec3 = *normal;
+            let uv: Vec2 = Vec2::ZERO;
+            let offset: u32 = params.mesh_attribute_data_with_stats.stats.vertices as u32 - offset;
 
-                for vert in vert_loop {
-                    params
-                        .mesh_attribute_data_with_stats
-                        .push_vertex(MeshVertexData {
-                            position: *vert,
-                            normal,
-                            uv,
-                        });
-                }
-
+            for vert in vert_loop {
                 params
                     .mesh_attribute_data_with_stats
                     .push_vertex(MeshVertexData {
-                        position: *center,
+                        position: *vert,
                         normal,
                         uv,
                     });
+            }
 
-                let vert_count: u32 = vert_loop.len() as u32;
-                let next_vert_index: fn(u32, u32) -> u32 = if flip_tris {
-                    prev_vert_index::<u32>
-                } else {
-                    next_vert_index::<u32>
-                };
+            params
+                .mesh_attribute_data_with_stats
+                .push_vertex(MeshVertexData {
+                    position: *center,
+                    normal,
+                    uv,
+                });
 
-                for curr_vert_index in 0_u32..vert_count {
-                    let next_vert_index: u32 = next_vert_index(curr_vert_index, vert_count);
-
-                    params.mesh_attribute_data_with_stats.indices().extend([
-                        offset + vert_count,
-                        offset + curr_vert_index,
-                        offset + next_vert_index,
-                    ]);
-                }
+            let vert_count: u32 = vert_loop.len() as u32;
+            let next_vert_index: fn(u32, u32) -> u32 = if flip_tris {
+                prev_vert_index::<u32>
+            } else {
+                next_vert_index::<u32>
             };
-        let add_pyramid: &dyn Fn(
-            &mut PieceHeaderParams,
-            &[Vec3],
-            &mut dyn Iterator<Item = usize>,
-            &Vec3,
-            u32,
-            bool,
-            bool,
-            bool,
-        ) = &|params: &mut PieceHeaderParams,
-              vert_loop: &[Vec3],
-              curr_vert_index_iter: &mut dyn Iterator<Item = usize>,
-              center: &Vec3,
-              offset: u32,
-              offset_along_plane: bool,
-              offset_along_normal: bool,
-              flip_tris: bool|
-         -> () {
+
+            for curr_vert_index in 0_u32..vert_count {
+                let next_vert_index: u32 = next_vert_index(curr_vert_index, vert_count);
+
+                params.mesh_attribute_data_with_stats.indices().extend([
+                    offset + vert_count,
+                    offset + curr_vert_index,
+                    offset + next_vert_index,
+                ]);
+            }
+        };
+        let add_pyramid = |params: &mut PieceHeaderParams,
+                           vert_loop: &[Vec3],
+                           curr_vert_index_iter: &mut dyn Iterator<Item = usize>,
+                           center: &Vec3,
+                           offset: u32,
+                           offset_along_plane: bool,
+                           offset_along_normal: bool,
+                           flip_tris: bool| {
             let vert_count: usize = vert_loop.len();
             let next_vert_index: fn(usize, usize) -> usize = if flip_tris {
                 prev_vert_index::<usize>
@@ -1294,26 +1280,15 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
             }
         };
 
-        let add_kite_group: &dyn Fn(
-            &mut PieceHeaderParams,
-            &[Vec3],
-            &[Vec3],
-            &mut dyn Iterator<Item = usize>,
-            &Vec3,
-            u32,
-            bool,
-            bool,
-            bool,
-        ) -> () = &|params: &mut PieceHeaderParams,
-                    far_vertices: &[Vec3],
-                    near_vertices: &[Vec3],
-                    vert_index_iter: &mut dyn Iterator<Item = usize>,
-                    center: &Vec3,
-                    offset: u32,
-                    offset_along_plane: bool,
-                    offset_along_normal: bool,
-                    left_is_next: bool|
-         -> () {
+        let add_kite_group = |params: &mut PieceHeaderParams,
+                              far_vertices: &[Vec3],
+                              near_vertices: &[Vec3],
+                              vert_index_iter: &mut dyn Iterator<Item = usize>,
+                              center: &Vec3,
+                              offset: u32,
+                              offset_along_plane: bool,
+                              offset_along_normal: bool,
+                              left_is_next: bool| {
             let uv: Vec2 = Vec2::ZERO;
             let left_index: fn(usize, usize) -> usize = if left_is_next {
                 next_vert_index::<usize>
@@ -1392,62 +1367,52 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
             }
         };
 
-        let add_disc_section: &dyn Fn(&mut PieceHeaderParams, &[Vec3], &Vec3, &Vec3, u32) -> () =
-            &|params: &mut PieceHeaderParams,
-              vert_arc: &[Vec3],
-              center: &Vec3,
-              normal: &Vec3,
-              offset: u32|
-             -> () {
-                if vert_arc.len() < 2_usize {
-                    return;
-                }
+        let add_disc_section = |params: &mut PieceHeaderParams,
+                                vert_arc: &[Vec3],
+                                center: &Vec3,
+                                normal: &Vec3,
+                                offset: u32| {
+            if vert_arc.len() < 2_usize {
+                return;
+            }
 
-                let normal: Vec3 = *normal;
-                let uv: Vec2 = Vec2::ZERO;
-                let offset: u32 =
-                    params.mesh_attribute_data_with_stats.stats.vertices as u32 - offset;
+            let normal: Vec3 = *normal;
+            let uv: Vec2 = Vec2::ZERO;
+            let offset: u32 = params.mesh_attribute_data_with_stats.stats.vertices as u32 - offset;
 
-                for vert in vert_arc {
-                    params
-                        .mesh_attribute_data_with_stats
-                        .push_vertex(MeshVertexData {
-                            position: *vert,
-                            normal,
-                            uv,
-                        });
-                }
-
+            for vert in vert_arc {
                 params
                     .mesh_attribute_data_with_stats
                     .push_vertex(MeshVertexData {
-                        position: *center,
+                        position: *vert,
                         normal,
                         uv,
                     });
+            }
 
-                let vert_count: u32 = vert_arc.len() as u32;
+            params
+                .mesh_attribute_data_with_stats
+                .push_vertex(MeshVertexData {
+                    position: *center,
+                    normal,
+                    uv,
+                });
 
-                for curr_vert_index in 0_u32..vert_count - 1_u32 {
-                    params.mesh_attribute_data_with_stats.indices().extend([
-                        offset + vert_count,
-                        offset + curr_vert_index,
-                        offset + curr_vert_index + 1_u32,
-                    ]);
-                }
-            };
-        let add_offset_disc_section: &dyn Fn(
-            &mut PieceHeaderParams,
-            &mut [Vec3],
-            &Vec3,
-            &Vec3,
-            u32,
-        ) -> () = &|params: &mut PieceHeaderParams,
-                    vert_arc: &mut [Vec3],
-                    center: &Vec3,
-                    normal: &Vec3,
-                    offset: u32|
-         -> () {
+            let vert_count: u32 = vert_arc.len() as u32;
+
+            for curr_vert_index in 0_u32..vert_count - 1_u32 {
+                params.mesh_attribute_data_with_stats.indices().extend([
+                    offset + vert_count,
+                    offset + curr_vert_index,
+                    offset + curr_vert_index + 1_u32,
+                ]);
+            }
+        };
+        let add_offset_disc_section = |params: &mut PieceHeaderParams,
+                                       vert_arc: &mut [Vec3],
+                                       center: &Vec3,
+                                       normal: &Vec3,
+                                       offset: u32| {
             warn_expect!(vert_arc.len() >= 2_usize, ?);
 
             let arc_len: usize = vert_arc.len();
@@ -1599,19 +1564,14 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
         };
 
         let mut mesh_index: usize = 0_usize;
-        let mut offset: MeshStats = params.mesh_attribute_data_with_stats.stats.clone();
+        let mut offset: MeshStats = params.mesh_attribute_data_with_stats.stats;
 
-        let check_mesh_stats: &dyn Fn(
-            &PieceHeaderParams,
-            MeshStatsRefSlice,
-            &mut MeshStats,
-            &mut usize,
-        ) -> EmptyResult = &|params: &PieceHeaderParams,
-                             mesh_stats_slice: MeshStatsRefSlice,
-                             offset: &mut MeshStats,
-                             mesh_index: &mut usize|
+        let check_mesh_stats = |params: &PieceHeaderParams,
+                                mesh_stats_slice: MeshStatsRefSlice,
+                                offset: &mut MeshStats,
+                                mesh_index: &mut usize|
          -> EmptyResult {
-            let new_offset: MeshStats = params.mesh_attribute_data_with_stats.stats.clone();
+            let new_offset: MeshStats = params.mesh_attribute_data_with_stats.stats;
             let expected_offset: MeshStats = *offset + *mesh_stats_slice[*mesh_index];
 
             if !warn_expect!(new_offset == expected_offset) {
@@ -1633,15 +1593,10 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                 Ok(())
             }
         };
-        let push_mesh_header: &dyn Fn(
-            &mut PieceHeaderParams,
-            MeshStatsRefSlice,
-            &MeshStats,
-            usize,
-        ) -> u32 = &|params: &mut PieceHeaderParams,
-                     mesh_stats_slice: MeshStatsRefSlice,
-                     offset: &MeshStats,
-                     mesh_index: usize|
+        let push_mesh_header = |params: &mut PieceHeaderParams,
+                                mesh_stats_slice: MeshStatsRefSlice,
+                                offset: &MeshStats,
+                                mesh_index: usize|
          -> u32 {
             params
                 .mesh_headers_with_index
@@ -1655,83 +1610,82 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                 use original_super_dodecahedron::*;
 
                 let uv: Vec2 = Vec2::ZERO;
-                let add_trapezoidal_band: &dyn Fn(
-                    &mut PieceHeaderParams,
-                    &[Vec3],
-                    &[Vec3],
-                    u32,
-                ) -> () = &|params: &mut PieceHeaderParams,
-                            curr_vert_loop: &[Vec3],
-                            next_vert_loop: &[Vec3],
-                            offset: u32|
-                 -> () {
-                    for curr_vert_index in vert_range.clone() {
-                        warn_expect!(curr_vert_loop.len() == next_vert_loop.len(), ?);
+                let add_trapezoidal_band =
+                    |params: &mut PieceHeaderParams,
+                     curr_vert_loop: &[Vec3],
+                     next_vert_loop: &[Vec3],
+                     offset: u32| {
+                        for curr_vert_index in vert_range.clone() {
+                            warn_expect!(curr_vert_loop.len() == next_vert_loop.len(), ?);
 
-                        let vert_count: usize = curr_vert_loop.len();
-                        let next_vert_index: usize = (curr_vert_index + 1_usize) % vert_count;
-                        let normal: Vec3 = Tri::compute_normal(
-                            &next_vert_loop[curr_vert_index],
-                            &curr_vert_loop[curr_vert_index],
-                            &curr_vert_loop[next_vert_index],
-                        );
-                        let offset: u32 =
-                            params.mesh_attribute_data_with_stats.stats.vertices as u32 - offset;
+                            let vert_count: usize = curr_vert_loop.len();
+                            let next_vert_index: usize = (curr_vert_index + 1_usize) % vert_count;
+                            let normal: Vec3 = Tri::compute_normal(
+                                &next_vert_loop[curr_vert_index],
+                                &curr_vert_loop[curr_vert_index],
+                                &curr_vert_loop[next_vert_index],
+                            );
+                            let offset: u32 = params.mesh_attribute_data_with_stats.stats.vertices
+                                as u32
+                                - offset;
 
-                        params
-                            .mesh_attribute_data_with_stats
-                            .push_vertex(MeshVertexData {
-                                position: next_vert_loop[curr_vert_index],
-                                normal,
-                                uv,
-                            });
-                        params
-                            .mesh_attribute_data_with_stats
-                            .push_vertex(MeshVertexData {
-                                position: curr_vert_loop[curr_vert_index],
-                                normal,
-                                uv,
-                            });
-                        params
-                            .mesh_attribute_data_with_stats
-                            .push_vertex(MeshVertexData {
-                                position: curr_vert_loop[next_vert_index],
-                                normal,
-                                uv,
-                            });
-                        params
-                            .mesh_attribute_data_with_stats
-                            .push_vertex(MeshVertexData {
-                                position: next_vert_loop[next_vert_index],
-                                normal,
-                                uv,
-                            });
+                            params
+                                .mesh_attribute_data_with_stats
+                                .push_vertex(MeshVertexData {
+                                    position: next_vert_loop[curr_vert_index],
+                                    normal,
+                                    uv,
+                                });
+                            params
+                                .mesh_attribute_data_with_stats
+                                .push_vertex(MeshVertexData {
+                                    position: curr_vert_loop[curr_vert_index],
+                                    normal,
+                                    uv,
+                                });
+                            params
+                                .mesh_attribute_data_with_stats
+                                .push_vertex(MeshVertexData {
+                                    position: curr_vert_loop[next_vert_index],
+                                    normal,
+                                    uv,
+                                });
+                            params
+                                .mesh_attribute_data_with_stats
+                                .push_vertex(MeshVertexData {
+                                    position: next_vert_loop[next_vert_index],
+                                    normal,
+                                    uv,
+                                });
 
-                        let vert_index_a: u32 = offset + 0_u32;
-                        let vert_index_b: u32 = offset + 1_u32;
-                        let vert_index_c: u32 = offset + 2_u32;
-                        let vert_index_d: u32 = offset + 3_u32;
+                            let vert_index_a: u32 = offset;
+                            let vert_index_b: u32 = offset + 1_u32;
+                            let vert_index_c: u32 = offset + 2_u32;
+                            let vert_index_d: u32 = offset + 3_u32;
 
-                        params.mesh_attribute_data_with_stats.indices().extend([
-                            vert_index_a,
-                            vert_index_b,
-                            vert_index_c,
-                            vert_index_c,
-                            vert_index_d,
-                            vert_index_a,
-                        ]);
-                    }
-                };
+                            params.mesh_attribute_data_with_stats.indices().extend([
+                                vert_index_a,
+                                vert_index_b,
+                                vert_index_c,
+                                vert_index_c,
+                                vert_index_d,
+                                vert_index_a,
+                            ]);
+                        }
+                    };
 
                 match params.piece_type {
                     Type::Pentagon => {
                         use pentagon::*;
 
+                        type Vertices<T> = [[T; PENTAGON_VERTEX_COUNT]; PENTAGON_COUNT];
+                        type PentagramTris<T> = [[T; PENTAGON_VERTEX_COUNT]; 2_usize];
+
                         /* Safe: all we are claiming to have initialized are `MU` objects, which do
                         not require initialization */
                         let (mut vertices, mut pentagram_tris): (
-                            [[MU<Vec3>; PENTAGON_VERTEX_COUNT]; PENTAGON_COUNT],
-                            [[MU<Tri>; PENTAGON_VERTEX_COUNT]; 2_usize],
+                            Vertices<MU<Vec3>>,
+                            PentagramTris<MU<Tri>>,
                         ) = unsafe { MU::uninit().assume_init() };
                         let (
                             [outer_outer_vertices, outer_inner_vertices, inner_inner_vertices, inner_outer_vertices],
@@ -1785,6 +1739,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                         /* Safe: we just initialized each element of `outer_outer_vertices`,
                         `inner_inner_vertices`, `inner_outer_vertices`,
                         `outer_outer_pentagram_tris`, and `outer_inner_pentagram_tris` */
+                        #[allow(clippy::type_complexity)]
                         let (
                             outer_inner_vertices,
                             inner_inner_vertices,
@@ -1807,102 +1762,93 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                             )
                         };
 
-                        let add_pentagonal_annulus: &dyn Fn(
-                            &mut PieceHeaderParams,
-                            &[Vec3],
-                            &[Vec3],
-                            u32,
-                        ) -> () = &|params: &mut PieceHeaderParams,
-                                    curr_vert_pentagon: &[Vec3],
-                                    next_vert_pentagon: &[Vec3],
-                                    offset: u32|
-                         -> () {
-                            // Until <[MU<T>; N]>::array_assume_init_ref() is a thing, verify slice
-                            // length
-                            warn_expect!(curr_vert_pentagon.len() == PENTAGON_VERTEX_COUNT
+                        let add_pentagonal_annulus =
+                            |params: &mut PieceHeaderParams,
+                             curr_vert_pentagon: &[Vec3],
+                             next_vert_pentagon: &[Vec3],
+                             offset: u32| {
+                                // Until <[MU<T>; N]>::array_assume_init_ref() is a thing, verify slice
+                                // length
+                                warn_expect!(curr_vert_pentagon.len() == PENTAGON_VERTEX_COUNT
                                 && next_vert_pentagon.len() == PENTAGON_VERTEX_COUNT, ?);
 
-                            let normal: Vec3 = Tri::compute_normal(
-                                &next_vert_pentagon[0_usize],
-                                &curr_vert_pentagon[0_usize],
-                                &curr_vert_pentagon[1_usize],
-                            );
-                            let offset: u32 = params.mesh_attribute_data_with_stats.stats.vertices
-                                as u32
-                                - offset;
-                            let curr_loop_offset: usize = CURR_LOOP_INDEX * vert_count;
-                            let next_loop_offset: usize = NEXT_LOOP_INDEX * vert_count;
-                            let mut push_vertex = |position: &Vec3| -> () {
-                                params
-                                    .mesh_attribute_data_with_stats
-                                    .push_vertex(MeshVertexData {
-                                        position: *position,
-                                        normal,
-                                        uv,
-                                    });
+                                let normal: Vec3 = Tri::compute_normal(
+                                    &next_vert_pentagon[0_usize],
+                                    &curr_vert_pentagon[0_usize],
+                                    &curr_vert_pentagon[1_usize],
+                                );
+                                let offset: u32 =
+                                    params.mesh_attribute_data_with_stats.stats.vertices as u32
+                                        - offset;
+                                let curr_loop_offset: usize = CURR_LOOP_INDEX * vert_count;
+                                let next_loop_offset: usize = NEXT_LOOP_INDEX * vert_count;
+                                let mut push_vertex = |position: &Vec3| {
+                                    params.mesh_attribute_data_with_stats.push_vertex(
+                                        MeshVertexData {
+                                            position: *position,
+                                            normal,
+                                            uv,
+                                        },
+                                    );
+                                };
+
+                                curr_vert_pentagon.iter().for_each(&mut push_vertex);
+                                next_vert_pentagon.iter().for_each(&mut push_vertex);
+
+                                for curr_vert_index in vert_range.clone() {
+                                    let next_vert_index: usize =
+                                        PIECE_TYPE.next_side_index(curr_vert_index);
+                                    let vert_index_a: u32 =
+                                        (next_loop_offset + curr_vert_index) as u32 + offset;
+                                    let vert_index_b: u32 =
+                                        (curr_loop_offset + curr_vert_index) as u32 + offset;
+                                    let vert_index_c: u32 =
+                                        (curr_loop_offset + next_vert_index) as u32 + offset;
+                                    let vert_index_d: u32 =
+                                        (next_loop_offset + next_vert_index) as u32 + offset;
+
+                                    params.mesh_attribute_data_with_stats.indices().extend([
+                                        vert_index_a,
+                                        vert_index_b,
+                                        vert_index_c,
+                                        vert_index_c,
+                                        vert_index_d,
+                                        vert_index_a,
+                                    ]);
+                                }
                             };
-
-                            curr_vert_pentagon.iter().for_each(&mut push_vertex);
-                            next_vert_pentagon.iter().for_each(&mut push_vertex);
-
-                            for curr_vert_index in vert_range.clone() {
-                                let next_vert_index: usize =
-                                    PIECE_TYPE.next_side_index(curr_vert_index);
-                                let vert_index_a: u32 =
-                                    (next_loop_offset + curr_vert_index) as u32 + offset;
-                                let vert_index_b: u32 =
-                                    (curr_loop_offset + curr_vert_index) as u32 + offset;
-                                let vert_index_c: u32 =
-                                    (curr_loop_offset + next_vert_index) as u32 + offset;
-                                let vert_index_d: u32 =
-                                    (next_loop_offset + next_vert_index) as u32 + offset;
-
-                                params.mesh_attribute_data_with_stats.indices().extend([
-                                    vert_index_a,
-                                    vert_index_b,
-                                    vert_index_c,
-                                    vert_index_c,
-                                    vert_index_d,
-                                    vert_index_a,
-                                ]);
-                            }
-                        };
 
                         // Add the base mesh
                         {
-                            let vertices_offset: u32 = push_mesh_header(
-                                &mut params,
-                                MESH_STATS_SLICE,
-                                &offset,
-                                mesh_index,
-                            );
+                            let vertices_offset: u32 =
+                                push_mesh_header(params, MESH_STATS_SLICE, &offset, mesh_index);
 
                             add_pentagonal_annulus(
-                                &mut params,
+                                params,
                                 outer_outer_vertices,
                                 outer_inner_vertices,
                                 vertices_offset,
                             );
                             add_trapezoidal_band(
-                                &mut params,
+                                params,
                                 outer_inner_vertices,
                                 inner_inner_vertices,
                                 vertices_offset,
                             );
                             add_pentagonal_annulus(
-                                &mut params,
+                                params,
                                 inner_inner_vertices,
                                 inner_outer_vertices,
                                 vertices_offset,
                             );
                             add_trapezoidal_band(
-                                &mut params,
+                                params,
                                 inner_outer_vertices,
                                 outer_outer_vertices,
                                 vertices_offset,
                             );
                             check_mesh_stats(
-                                &mut params,
+                                params,
                                 MESH_STATS_SLICE,
                                 &mut offset,
                                 &mut mesh_index,
@@ -1911,12 +1857,8 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 
                         // Add the primary pent mesh
                         {
-                            let vertices_offset: u32 = push_mesh_header(
-                                &mut params,
-                                MESH_STATS_SLICE,
-                                &offset,
-                                mesh_index,
-                            );
+                            let vertices_offset: u32 =
+                                push_mesh_header(params, MESH_STATS_SLICE, &offset, mesh_index);
 
                             /* Safe: all we are claiming to have initialized are `MU` objects, which
                             do not require initialization */
@@ -1947,14 +1889,14 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                             };
 
                             add_pentagonal_annulus(
-                                &mut params,
+                                params,
                                 curr_loop_vertices,
                                 next_loop_vertices,
                                 vertices_offset,
                             );
-                            add_piece_range(&mut params);
+                            add_piece_range(params);
                             check_mesh_stats(
-                                &mut params,
+                                params,
                                 MESH_STATS_SLICE,
                                 &mut offset,
                                 &mut mesh_index,
@@ -1965,12 +1907,8 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                         for vert_index in vert_range.clone() {
                             /* These meshes are just one circle each, so no need to worry about the
                             offset */
-                            let vertices_offset: u32 = push_mesh_header(
-                                &mut params,
-                                MESH_STATS_SLICE,
-                                &offset,
-                                mesh_index,
-                            );
+                            let vertices_offset: u32 =
+                                push_mesh_header(params, MESH_STATS_SLICE, &offset, mesh_index);
 
                             let start_edge_index: usize =
                                 PIECE_TYPE.next_side_index(vert_index + 1_usize);
@@ -2010,7 +1948,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                             }
 
                             add_regular_polygon(
-                                &mut params,
+                                params,
                                 // Safe: we just initialized each element of `circle_vertices`
                                 unsafe { MU::slice_assume_init_ref(&circle_vertices) },
                                 &center,
@@ -2018,9 +1956,9 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                                 vertices_offset,
                                 false,
                             );
-                            add_adjacent_face_indices_same_piece(&mut params, vert_index);
+                            add_adjacent_face_indices_same_piece(params, vert_index);
                             check_mesh_stats(
-                                &mut params,
+                                params,
                                 MESH_STATS_SLICE,
                                 &mut offset,
                                 &mut mesh_index,
@@ -2046,12 +1984,8 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 
                         // Add the base mesh
                         {
-                            let vertices_offset: u32 = push_mesh_header(
-                                &mut params,
-                                MESH_STATS_SLICE,
-                                &offset,
-                                mesh_index,
-                            );
+                            let vertices_offset: u32 =
+                                push_mesh_header(params, MESH_STATS_SLICE, &offset, mesh_index);
                             let inner_center: Vec3 = {
                                 let mut inner_center_sum: Vec3 = Vec3::ZERO;
 
@@ -2070,7 +2004,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                                 unsafe { MU::slice_assume_init_ref(inner_vert_loop) };
 
                             add_pyramid(
-                                &mut params,
+                                params,
                                 outer_vert_loop,
                                 &mut vert_range.clone(),
                                 &outer_center,
@@ -2080,13 +2014,13 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                                 false,
                             );
                             add_trapezoidal_band(
-                                &mut params,
+                                params,
                                 inner_vert_loop,
                                 outer_vert_loop,
                                 vertices_offset,
                             );
                             add_regular_polygon(
-                                &mut params,
+                                params,
                                 inner_vert_loop,
                                 &inner_center,
                                 &(-inner_center).normalize(),
@@ -2094,7 +2028,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                                 true,
                             );
                             check_mesh_stats(
-                                &mut params,
+                                params,
                                 MESH_STATS_SLICE,
                                 &mut offset,
                                 &mut mesh_index,
@@ -2103,15 +2037,11 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 
                         // Add the adjacent pent meshes
                         for vert_index in vert_range.clone() {
-                            let vertices_offset: u32 = push_mesh_header(
-                                &mut params,
-                                MESH_STATS_SLICE,
-                                &offset,
-                                mesh_index,
-                            );
+                            let vertices_offset: u32 =
+                                push_mesh_header(params, MESH_STATS_SLICE, &offset, mesh_index);
 
                             add_pyramid(
-                                &mut params,
+                                params,
                                 outer_vert_loop,
                                 &mut [vert_index].into_iter(),
                                 &outer_center,
@@ -2120,9 +2050,9 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                                 true,
                                 false,
                             );
-                            add_adjacent_face_indices_other_piece(&mut params, vert_index);
+                            add_adjacent_face_indices_other_piece(params, vert_index);
                             check_mesh_stats(
-                                &mut params,
+                                params,
                                 MESH_STATS_SLICE,
                                 &mut offset,
                                 &mut mesh_index,
@@ -2188,15 +2118,11 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 
                         // Add the base mesh
                         {
-                            let vertices_offset: u32 = push_mesh_header(
-                                &mut params,
-                                MESH_STATS_SLICE,
-                                &offset,
-                                mesh_index,
-                            );
+                            let vertices_offset: u32 =
+                                push_mesh_header(params, MESH_STATS_SLICE, &offset, mesh_index);
 
                             add_regular_polygon(
-                                &mut params,
+                                params,
                                 outer_pentagon,
                                 &center,
                                 &center.normalize(),
@@ -2204,7 +2130,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                                 false,
                             );
                             add_pyramid(
-                                &mut params,
+                                params,
                                 outer_pentagon,
                                 &mut vert_range.clone(),
                                 &Vec3::ZERO,
@@ -2214,7 +2140,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                                 true,
                             );
                             check_mesh_stats(
-                                &mut params,
+                                params,
                                 MESH_STATS_SLICE,
                                 &mut offset,
                                 &mut mesh_index,
@@ -2223,12 +2149,8 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 
                         // Add the primary pent mesh
                         {
-                            let vertices_offset: u32 = push_mesh_header(
-                                &mut params,
-                                MESH_STATS_SLICE,
-                                &offset,
-                                mesh_index,
-                            );
+                            let vertices_offset: u32 =
+                                push_mesh_header(params, MESH_STATS_SLICE, &offset, mesh_index);
 
                             for vert_index in vert_range.clone() {
                                 let mut tri: Tri = Tri::from([
@@ -2244,9 +2166,9 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                                     .push_vertex((tri, vertices_offset));
                             }
 
-                            add_piece_range(&mut params);
+                            add_piece_range(params);
                             check_mesh_stats(
-                                &mut params,
+                                params,
                                 MESH_STATS_SLICE,
                                 &mut offset,
                                 &mut mesh_index,
@@ -2254,13 +2176,9 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                         }
 
                         // Add the adjacent pent meshes
-                        for vert_index in vert_range.clone() {
-                            let vertices_offset: u32 = push_mesh_header(
-                                &mut params,
-                                MESH_STATS_SLICE,
-                                &offset,
-                                mesh_index,
-                            );
+                        for vert_index in vert_range {
+                            let vertices_offset: u32 =
+                                push_mesh_header(params, MESH_STATS_SLICE, &offset, mesh_index);
                             let prev_vert_index: usize = PIECE_TYPE.prev_side_index(vert_index);
 
                             for tri_index in 0_usize..3 {
@@ -2289,9 +2207,9 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                                     .push_vertex((tri, vertices_offset));
                             }
 
-                            add_adjacent_face_indices_same_piece(&mut params, vert_index);
+                            add_adjacent_face_indices_same_piece(params, vert_index);
                             check_mesh_stats(
-                                &mut params,
+                                params,
                                 MESH_STATS_SLICE,
                                 &mut offset,
                                 &mut mesh_index,
@@ -2314,16 +2232,12 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 
                         // Add the base mesh
                         {
-                            let vertices_offset: u32 = push_mesh_header(
-                                &mut params,
-                                MESH_STATS_SLICE,
-                                &offset,
-                                mesh_index,
-                            );
+                            let vertices_offset: u32 =
+                                push_mesh_header(params, MESH_STATS_SLICE, &offset, mesh_index);
 
                             add_pyramid(
-                                &mut params,
-                                &vertices,
+                                params,
+                                vertices,
                                 &mut vert_range.clone(),
                                 &center,
                                 vertices_offset,
@@ -2332,8 +2246,8 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                                 false,
                             );
                             add_pyramid(
-                                &mut params,
-                                &vertices,
+                                params,
+                                vertices,
                                 &mut vert_range.clone(),
                                 &Vec3::ZERO,
                                 vertices_offset,
@@ -2342,7 +2256,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                                 true,
                             );
                             check_mesh_stats(
-                                &mut params,
+                                params,
                                 MESH_STATS_SLICE,
                                 &mut offset,
                                 &mut mesh_index,
@@ -2350,17 +2264,13 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                         }
 
                         // Add the adjacent pent meshes
-                        for vert_index in vert_range.clone() {
-                            let vertices_offset: u32 = push_mesh_header(
-                                &mut params,
-                                MESH_STATS_SLICE,
-                                &offset,
-                                mesh_index,
-                            );
+                        for vert_index in vert_range {
+                            let vertices_offset: u32 =
+                                push_mesh_header(params, MESH_STATS_SLICE, &offset, mesh_index);
 
                             add_pyramid(
-                                &mut params,
-                                &vertices,
+                                params,
+                                vertices,
                                 &mut [vert_index].into_iter(),
                                 &center,
                                 vertices_offset,
@@ -2368,9 +2278,9 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                                 true,
                                 false,
                             );
-                            add_adjacent_face_indices_other_piece(&mut params, vert_index);
+                            add_adjacent_face_indices_other_piece(params, vert_index);
                             check_mesh_stats(
-                                &mut params,
+                                params,
                                 MESH_STATS_SLICE,
                                 &mut offset,
                                 &mut mesh_index,
@@ -2399,16 +2309,12 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 
                         // Add the base mesh
                         {
-                            let vertices_offset: u32 = push_mesh_header(
-                                &mut params,
-                                MESH_STATS_SLICE,
-                                &offset,
-                                mesh_index,
-                            );
+                            let vertices_offset: u32 =
+                                push_mesh_header(params, MESH_STATS_SLICE, &offset, mesh_index);
 
                             add_pyramid(
-                                &mut params,
-                                &vertices,
+                                params,
+                                vertices,
                                 &mut vert_range.clone(),
                                 &center,
                                 vertices_offset,
@@ -2417,8 +2323,8 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                                 false,
                             );
                             add_pyramid(
-                                &mut params,
-                                &vertices,
+                                params,
+                                vertices,
                                 &mut vert_range.clone(),
                                 &Vec3::ZERO,
                                 vertices_offset,
@@ -2427,7 +2333,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                                 true,
                             );
                             check_mesh_stats(
-                                &mut params,
+                                params,
                                 MESH_STATS_SLICE,
                                 &mut offset,
                                 &mut mesh_index,
@@ -2435,17 +2341,13 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                         }
 
                         // Add the adjacent tri meshes
-                        for vert_index in vert_range.clone() {
-                            let vertices_offset: u32 = push_mesh_header(
-                                &mut params,
-                                MESH_STATS_SLICE,
-                                &offset,
-                                mesh_index,
-                            );
+                        for vert_index in vert_range {
+                            let vertices_offset: u32 =
+                                push_mesh_header(params, MESH_STATS_SLICE, &offset, mesh_index);
 
                             add_pyramid(
-                                &mut params,
-                                &vertices,
+                                params,
+                                vertices,
                                 &mut [vert_index].into_iter(),
                                 &center,
                                 vertices_offset,
@@ -2453,9 +2355,9 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                                 true,
                                 false,
                             );
-                            add_adjacent_face_indices_other_piece(&mut params, vert_index);
+                            add_adjacent_face_indices_other_piece(params, vert_index);
                             check_mesh_stats(
-                                &mut params,
+                                params,
                                 MESH_STATS_SLICE,
                                 &mut offset,
                                 &mut mesh_index,
@@ -2495,18 +2397,14 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 
                         // Add the base mesh
                         {
-                            let vertices_offset: u32 = push_mesh_header(
-                                &mut params,
-                                MESH_STATS_SLICE,
-                                &offset,
-                                mesh_index,
-                            );
+                            let vertices_offset: u32 =
+                                push_mesh_header(params, MESH_STATS_SLICE, &offset, mesh_index);
 
                             params
                                 .mesh_attribute_data_with_stats
-                                .push_vertex((Tri::from(outer_triangle.clone()), vertices_offset));
+                                .push_vertex((Tri::from(outer_triangle), vertices_offset));
                             add_pyramid(
-                                &mut params,
+                                params,
                                 outer_triangle,
                                 &mut vert_range.clone(),
                                 &Vec3::ZERO,
@@ -2516,7 +2414,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                                 true,
                             );
                             check_mesh_stats(
-                                &mut params,
+                                params,
                                 MESH_STATS_SLICE,
                                 &mut offset,
                                 &mut mesh_index,
@@ -2525,23 +2423,19 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 
                         // Add the primary tri mesh
                         {
-                            let vertices_offset: u32 = push_mesh_header(
-                                &mut params,
-                                MESH_STATS_SLICE,
-                                &offset,
-                                mesh_index,
-                            );
+                            let vertices_offset: u32 =
+                                push_mesh_header(params, MESH_STATS_SLICE, &offset, mesh_index);
 
-                            let mut tri: Tri = Tri::from(midpoint_triangle.clone());
+                            let mut tri: Tri = Tri::from(midpoint_triangle);
 
                             tri.offset_all_along_plane(-PLANAR_OFFSET);
                             tri.offset_along_normal(NORMAL_OFFSET);
                             params
                                 .mesh_attribute_data_with_stats
                                 .push_vertex((tri, vertices_offset));
-                            add_piece_range(&mut params);
+                            add_piece_range(params);
                             check_mesh_stats(
-                                &mut params,
+                                params,
                                 MESH_STATS_SLICE,
                                 &mut offset,
                                 &mut mesh_index,
@@ -2549,13 +2443,9 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                         }
 
                         // Add the adjacent tri meshes
-                        for vert_index in vert_range.clone() {
-                            let vertices_offset: u32 = push_mesh_header(
-                                &mut params,
-                                MESH_STATS_SLICE,
-                                &offset,
-                                mesh_index,
-                            );
+                        for vert_index in vert_range {
+                            let vertices_offset: u32 =
+                                push_mesh_header(params, MESH_STATS_SLICE, &offset, mesh_index);
 
                             let mut tri: Tri = Tri::from([
                                 outer_triangle[vert_index],
@@ -2568,9 +2458,9 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                             params
                                 .mesh_attribute_data_with_stats
                                 .push_vertex((tri, vertices_offset));
-                            add_adjacent_face_indices_same_piece(&mut params, vert_index);
+                            add_adjacent_face_indices_same_piece(params, vert_index);
                             check_mesh_stats(
-                                &mut params,
+                                params,
                                 MESH_STATS_SLICE,
                                 &mut offset,
                                 &mut mesh_index,
@@ -2638,10 +2528,10 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                 // Add the base mesh
                 {
                     let vertices_offset: u32 =
-                        push_mesh_header(&mut params, mesh_stats_slice, &offset, mesh_index);
+                        push_mesh_header(params, mesh_stats_slice, &offset, mesh_index);
 
                     add_kite_group(
-                        &mut params,
+                        params,
                         polygon,
                         plane_intersections,
                         &mut vert_range.clone(),
@@ -2652,7 +2542,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                         false,
                     );
                     add_kite_group(
-                        &mut params,
+                        params,
                         plane_intersections,
                         polygon,
                         &mut vert_range.clone(),
@@ -2662,16 +2552,16 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                         false,
                         true,
                     );
-                    check_mesh_stats(&mut params, mesh_stats_slice, &mut offset, &mut mesh_index)?;
+                    check_mesh_stats(params, mesh_stats_slice, &mut offset, &mut mesh_index)?;
                 }
 
                 // Add the rhombus meshes
-                for vert_index in vert_range.clone() {
+                for vert_index in vert_range {
                     let vertices_offset: u32 =
-                        push_mesh_header(&mut params, mesh_stats_slice, &offset, mesh_index);
+                        push_mesh_header(params, mesh_stats_slice, &offset, mesh_index);
 
                     add_kite_group(
-                        &mut params,
+                        params,
                         polygon,
                         plane_intersections,
                         &mut [vert_index].into_iter(),
@@ -2682,8 +2572,8 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                         false,
                     );
 
-                    add_rhombic_triacontahedron_face_indices(&mut params, vert_index);
-                    check_mesh_stats(&mut params, mesh_stats_slice, &mut offset, &mut mesh_index)?;
+                    add_rhombic_triacontahedron_face_indices(params, vert_index);
+                    check_mesh_stats(params, mesh_stats_slice, &mut offset, &mut mesh_index)?;
                 }
             }
             Design::RoundedRhombicTriacontahedron => {
@@ -2850,72 +2740,64 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 
                     center_to_first_vert.angle_between(center_to_last_vert)
                 };
-                let init_border: &dyn Fn(&mut TriArray<Vec3>, IndexType2D) -> () =
-                    &|tri_array: &mut TriArray<Vec3>, border: IndexType2D| -> () {
-                        let first_index: TriArrayIndex = TriArrayIndex::corner(border);
-                        let first_vert: Vec3 = tri_array[(index_map, &first_index)];
-                        let last_vert: Vec3 = tri_array[(index_map, &first_index.last_in_row())];
-                        let axis: Vec3 = first_vert.cross(last_vert).normalize();
-                        let angle: f32 = first_vert.angle_between(last_vert);
+                let init_border = |tri_array: &mut TriArray<Vec3>, border: IndexType2D| {
+                    let first_index: TriArrayIndex = TriArrayIndex::corner(border);
+                    let first_vert: Vec3 = tri_array[(index_map, &first_index)];
+                    let last_vert: Vec3 = tri_array[(index_map, &first_index.last_in_row())];
+                    let axis: Vec3 = first_vert.cross(last_vert).normalize();
+                    let angle: f32 = first_vert.angle_between(last_vert);
 
-                        tri_array.init_border(
-                            index_map,
-                            border,
-                            (0_usize..=SUBDIVISION_COUNT).map(|index_2: usize| -> Vec3 {
-                                Quat::from_axis_angle(
-                                    axis,
-                                    index_2 as f32 * angle / SUBDIVISION_COUNT_F32,
-                                ) * first_vert
-                            }),
-                        );
-                    };
-                let bisect_and_connect: &dyn Fn(&mut TriArray<Vec3>) -> EmptyResult =
-                    &|tri_array: &mut TriArray<Vec3>| -> EmptyResult {
-                        for big_step_exponent in (1_u32..SUBDIVISION_COUNT.trailing_zeros()).rev() {
-                            let big_step_size: usize = 1_usize << big_step_exponent;
-                            let small_step_size: usize = big_step_size >> 1_u32;
+                    tri_array.init_border(
+                        index_map,
+                        border,
+                        (0_usize..=SUBDIVISION_COUNT).map(|index_2: usize| -> Vec3 {
+                            Quat::from_axis_angle(
+                                axis,
+                                index_2 as f32 * angle / SUBDIVISION_COUNT_F32,
+                            ) * first_vert
+                        }),
+                    );
+                };
+                let bisect_and_connect = |tri_array: &mut TriArray<Vec3>| -> EmptyResult {
+                    for big_step_exponent in (1_u32..SUBDIVISION_COUNT.trailing_zeros()).rev() {
+                        let big_step_size: usize = 1_usize << big_step_exponent;
+                        let small_step_size: usize = big_step_size >> 1_u32;
 
-                            for index_1 in (big_step_size..SUBDIVISION_COUNT).step_by(big_step_size)
+                        for index_1 in (big_step_size..SUBDIVISION_COUNT).step_by(big_step_size) {
+                            for index_2 in (SUBDIVISION_COUNT - index_1..SUBDIVISION_COUNT)
+                                .step_by(big_step_size)
                             {
-                                for index_2 in (SUBDIVISION_COUNT - index_1..SUBDIVISION_COUNT)
-                                    .step_by(big_step_size)
-                                {
-                                    for index_type in IndexType2D::iter() {
+                                for index_type in IndexType2D::iter() {
+                                    tri_array[(
+                                        index_map,
+                                        &TriArrayIndex::new(
+                                            index_type,
+                                            index_1,
+                                            index_2 + small_step_size,
+                                        ),
+                                    )] = resize_to_sphere(
                                         tri_array[(
+                                            index_map,
+                                            &TriArrayIndex::new(index_type, index_1, index_2),
+                                        )] + tri_array[(
                                             index_map,
                                             &TriArrayIndex::new(
                                                 index_type,
                                                 index_1,
-                                                index_2 + small_step_size,
+                                                index_2 + big_step_size,
                                             ),
-                                        )] = resize_to_sphere(
-                                            tri_array[(
-                                                index_map,
-                                                &TriArrayIndex::new(index_type, index_1, index_2),
-                                            )] + tri_array[(
-                                                index_map,
-                                                &TriArrayIndex::new(
-                                                    index_type,
-                                                    index_1,
-                                                    index_2 + big_step_size,
-                                                ),
-                                            )],
-                                        )?;
-                                    }
+                                        )],
+                                    )?;
                                 }
                             }
                         }
+                    }
 
-                        ok!();
-                    };
-                let add_tri_array: &dyn Fn(
-                    &mut PieceHeaderParams,
-                    &[Vec3; TRI_ARRAY_VERT_COUNT],
-                    u32,
-                ) -> () = &|params: &mut PieceHeaderParams,
-                            tri_array: &[Vec3; TRI_ARRAY_VERT_COUNT],
-                            offset: u32|
-                 -> () {
+                    ok!();
+                };
+                let add_tri_array = |params: &mut PieceHeaderParams,
+                                     tri_array: &[Vec3; TRI_ARRAY_VERT_COUNT],
+                                     offset: u32| {
                     let uv: Vec2 = Vec2::ZERO;
                     let offset: u32 =
                         params.mesh_attribute_data_with_stats.stats.vertices as u32 - offset;
@@ -2981,12 +2863,8 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                         {
                             render_mesh_begin!(x, RENDER_BASE_MESH);
 
-                            let vertices_offset: u32 = push_mesh_header(
-                                &mut params,
-                                MESH_STATS_SLICE,
-                                &offset,
-                                mesh_index,
-                            );
+                            let vertices_offset: u32 =
+                                push_mesh_header(params, MESH_STATS_SLICE, &offset, mesh_index);
                             let center: Vec3 = resize_to_sphere(
                                 transformation * icosidodecahedron_faces[0_usize].norm,
                             )?;
@@ -3105,7 +2983,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                                     let center: &Vec3 = &disc_centers[center_index];
 
                                     add_disc_section(
-                                        &mut params,
+                                        params,
                                         arc_vertices,
                                         center,
                                         &center.normalize(),
@@ -3123,7 +3001,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                                     render_mesh_begin!(x, RENDER_OUTER_TRI_ARRAYS);
 
                                     for tri_array in outer_tri_arrays {
-                                        add_tri_array(&mut params, tri_array, vertices_offset);
+                                        add_tri_array(params, tri_array, vertices_offset);
                                     }
 
                                     render_mesh_end!(x);
@@ -3133,7 +3011,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                                     render_mesh_begin!(x, RENDER_INNER_TRI_ARRAYS);
 
                                     for tri_array in inner_tri_arrays {
-                                        add_tri_array(&mut params, tri_array, vertices_offset);
+                                        add_tri_array(params, tri_array, vertices_offset);
                                     }
 
                                     render_mesh_end!(x);
@@ -3145,10 +3023,10 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                             {
                                 render_mesh_begin!(x, RENDER_KITES);
                                 add_kite_group(
-                                    &mut params,
+                                    params,
                                     disc_kisses,
                                     disc_centers,
-                                    &mut vert_range.clone(),
+                                    &mut { vert_range },
                                     &Vec3::ZERO,
                                     vertices_offset,
                                     false,
@@ -3159,7 +3037,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                             }
 
                             check_mesh_stats(
-                                &mut params,
+                                params,
                                 MESH_STATS_SLICE,
                                 &mut offset,
                                 &mut mesh_index,
@@ -3173,25 +3051,21 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                             // Add the disc section meshes
                             for (center_index, arc_vertices) in arc_vertices.iter_mut().enumerate()
                             {
-                                let vertices_offset: u32 = push_mesh_header(
-                                    &mut params,
-                                    MESH_STATS_SLICE,
-                                    &offset,
-                                    mesh_index,
-                                );
+                                let vertices_offset: u32 =
+                                    push_mesh_header(params, MESH_STATS_SLICE, &offset, mesh_index);
 
                                 let center: Vec3 = disc_centers[center_index];
 
                                 add_offset_disc_section(
-                                    &mut params,
+                                    params,
                                     arc_vertices,
                                     &center,
                                     &center.normalize(),
                                     vertices_offset,
                                 );
-                                add_rhombic_triacontahedron_face_indices(&mut params, center_index);
+                                add_rhombic_triacontahedron_face_indices(params, center_index);
                                 check_mesh_stats(
-                                    &mut params,
+                                    params,
                                     MESH_STATS_SLICE,
                                     &mut offset,
                                     &mut mesh_index,
@@ -3236,12 +3110,8 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                         {
                             render_mesh_begin!(x, RENDER_BASE_MESH);
 
-                            let vertices_offset: u32 = push_mesh_header(
-                                &mut params,
-                                MESH_STATS_SLICE,
-                                &offset,
-                                mesh_index,
-                            );
+                            let vertices_offset: u32 =
+                                push_mesh_header(params, MESH_STATS_SLICE, &offset, mesh_index);
 
                             // Safe: see `const_assert_eq!` invocation above the enclosing match
                             let mut tri_array: [Vec3; TRI_ARRAY_VERT_COUNT] =
@@ -3273,7 +3143,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                                     let center: &Vec3 = &disc_centers[center_index];
 
                                     add_disc_section(
-                                        &mut params,
+                                        params,
                                         arc_vertices,
                                         center,
                                         &center.normalize(),
@@ -3286,17 +3156,17 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
 
                             {
                                 render_mesh_begin!(x, RENDER_TRI_ARRAY);
-                                add_tri_array(&mut params, &tri_array, vertices_offset);
+                                add_tri_array(params, &tri_array, vertices_offset);
                                 render_mesh_end!(x);
                             }
 
                             {
                                 render_mesh_begin!(x, RENDER_KITES);
                                 add_kite_group(
-                                    &mut params,
+                                    params,
                                     disc_kisses,
                                     disc_centers,
-                                    &mut vert_range.clone(),
+                                    &mut { vert_range },
                                     &Vec3::ZERO,
                                     vertices_offset,
                                     false,
@@ -3307,7 +3177,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                             }
 
                             check_mesh_stats(
-                                &mut params,
+                                params,
                                 MESH_STATS_SLICE,
                                 &mut offset,
                                 &mut mesh_index,
@@ -3321,25 +3191,21 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                             // Add the disc section meshes
                             for (center_index, arc_vertices) in arc_vertices.iter_mut().enumerate()
                             {
-                                let vertices_offset: u32 = push_mesh_header(
-                                    &mut params,
-                                    MESH_STATS_SLICE,
-                                    &offset,
-                                    mesh_index,
-                                );
+                                let vertices_offset: u32 =
+                                    push_mesh_header(params, MESH_STATS_SLICE, &offset, mesh_index);
 
                                 let center: Vec3 = disc_centers[center_index];
 
                                 add_offset_disc_section(
-                                    &mut params,
+                                    params,
                                     arc_vertices,
                                     &center,
                                     &center.normalize(),
                                     vertices_offset,
                                 );
-                                add_rhombic_triacontahedron_face_indices(&mut params, center_index);
+                                add_rhombic_triacontahedron_face_indices(params, center_index);
                                 check_mesh_stats(
-                                    &mut params,
+                                    params,
                                     MESH_STATS_SLICE,
                                     &mut offset,
                                     &mut mesh_index,
@@ -3421,7 +3287,7 @@ impl PieceLibrary {
         &self,
         bevy_meshes: &mut Assets<BevyMesh>,
         bevy_mesh_handles: &mut BevyMeshHandles,
-    ) -> () {
+    ) {
         let PieceLibrary {
             mesh_attribute_data,
             mesh_headers,
@@ -3443,7 +3309,7 @@ impl PieceLibrary {
         bevy_mesh_handles: &BevyMeshHandles,
         world: &mut World,
         design: Design,
-    ) -> () {
+    ) {
         warn_expect!(self.mesh_headers.0.len() == bevy_mesh_handles.0.len(), ?);
 
         /* Cache the entities we'll be using first, since iterating with the query borrows world.
@@ -3476,7 +3342,7 @@ impl PieceLibrary {
                 let mut entity_mut: EntityMut = world.entity_mut(entities[index]);
 
                 entity_mut.despawn_descendants();
-                entity_mut.with_children(|world_child_builder: &mut WorldChildBuilder| -> () {
+                entity_mut.with_children(|world_child_builder: &mut WorldChildBuilder| {
                     for (face_indices, bevy_mesh_handle) in mesh_headers
                         .iter()
                         .map(MeshHeader::face_indices)
@@ -3507,7 +3373,7 @@ impl PieceLibrary {
         bevy_mesh_handles: &BevyMeshHandles,
         world: &mut World,
         design: Design,
-    ) -> () {
+    ) {
         let icosidodecahedron_faces: &Vec<FaceData> =
             &Data::get(Polyhedron::Icosidodecahedron).faces;
 
@@ -3526,7 +3392,7 @@ impl PieceLibrary {
 }
 
 impl StaticDataLibrary for PieceLibrary {
-    fn pre_init() -> Option<Box<dyn FnOnce() -> ()>> {
+    fn pre_init() -> Option<Box<dyn FnOnce()>> {
         Some(Box::new(Data::initialize))
     }
     fn get() -> &'static Self {
@@ -3555,24 +3421,24 @@ impl Default for BevyMeshHandles {
 pub struct PiecePlugin;
 
 impl PiecePlugin {
-    fn startup_piece_library() -> () {
+    fn startup_piece_library() {
         PieceLibrary::build();
     }
 
     fn startup(
         mut bevy_meshes: ResMut<Assets<BevyMesh>>,
         mut bevy_mesh_handles: ResMut<BevyMeshHandles>,
-    ) -> () {
+    ) {
         PieceLibrary::get().add_bevy_meshes(&mut bevy_meshes, &mut bevy_mesh_handles);
     }
 
-    fn startup_exclusive(world: &mut World) -> () {
+    fn startup_exclusive(world: &mut World) {
         warn_expect!(world.contains_resource::<Preferences>(), ?);
         warn_expect!(world.contains_resource::<BevyMeshHandles>(), ?);
 
-        world.resource_scope(|world: &mut World, preferences: Mut<Preferences>| -> () {
+        world.resource_scope(|world: &mut World, preferences: Mut<Preferences>| {
             world.resource_scope(
-                |world: &mut World, bevy_mesh_handles: Mut<BevyMeshHandles>| -> () {
+                |world: &mut World, bevy_mesh_handles: Mut<BevyMeshHandles>| {
                     let design: Design = preferences.puzzle.design;
 
                     PieceLibrary::get().add_entities(
@@ -3591,7 +3457,7 @@ impl PiecePlugin {
 }
 
 impl Plugin for PiecePlugin {
-    fn build(&self, app: &mut App) -> () {
+    fn build(&self, app: &mut App) {
         app.insert_resource(BevyMeshHandles::default())
             .add_startup_system(Self::startup_piece_library.after(PolyhedraDataPlugin::startup))
             .add_startup_system(Self::startup.after(Self::startup_piece_library))
@@ -3604,7 +3470,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_piece_library() -> () {
+    fn test_piece_library() {
         init_env_logger();
 
         Data::initialize();

@@ -45,13 +45,13 @@ impl Inspectable for PuzzleState {
                 if let Some(extended_puzzle_state) = world.get_resource::<ExtendedPuzzleState>() {
                     let mut changed: bool = false;
 
-                    ui.collapsing("Position & Rotation", |ui: &mut Ui| -> () {
+                    ui.collapsing("Position & Rotation", |ui: &mut Ui| {
                         ui.monospace(format!("{:#?}", extended_puzzle_state.puzzle_state));
                     });
-                    ui.collapsing("Stats", |ui: &mut Ui| -> () {
+                    ui.collapsing("Stats", |ui: &mut Ui| {
                         changed |= self.stats_options.ui(ui, (), context);
 
-                        Grid::new("StatsTable").show(ui, |ui: &mut Ui| -> () {
+                        Grid::new("StatsTable").show(ui, |ui: &mut Ui| {
                             let InflatedPuzzleState { pos, rot } =
                                 if self.stats_options.reorientation.is_valid() {
                                     &extended_puzzle_state.puzzle_state
@@ -140,7 +140,7 @@ impl Inspectable for PuzzleState {
                             );
                             ui.colored_label(
                                 Color32::from_alt(red_to_green(desired_rot_sum as u8 as f32)),
-                                format!("{}", if desired_rot_sum { "✔" } else { "❌" }),
+                                (if desired_rot_sum { "✔" } else { "❌" }).to_string(),
                             );
                             ui.end_row();
                         });
@@ -176,7 +176,7 @@ impl Inspectable for Stack {
     fn ui(&mut self, ui: &mut Ui, _: (), context: &mut Context) -> bool {
         let mut changed: bool = false;
 
-        ui.horizontal(|ui: &mut Ui| -> () {
+        ui.horizontal(|ui: &mut Ui| {
             ui.label("New Family Name");
 
             changed |= TextEdit::singleline(&mut self.new_family_name)
@@ -184,10 +184,10 @@ impl Inspectable for Stack {
                 .response
                 .changed();
         });
-        ui.collapsing("Focus Indices", |ui: &mut Ui| -> () {
+        ui.collapsing("Focus Indices", |ui: &mut Ui| {
             Grid::new(context.id())
                 .min_col_width(0.0_f32)
-                .show(ui, |ui: &mut Ui| -> () {
+                .show(ui, |ui: &mut Ui| {
                     ui.label("Min");
                     ui.add(Separator::default().vertical());
                     changed = <&mut InspectableNum<usize>>::from(&mut self.min_focus_index).ui(
@@ -222,11 +222,11 @@ impl Inspectable for Stack {
                     ui.end_row();
                 });
         });
-        ui.collapsing("Debug Addr", |ui: &mut Ui| -> () {
+        ui.collapsing("Debug Addr", |ui: &mut Ui| {
             self.debug_addr
                 .ui(ui, HalfAddrAttrs::default(), &mut context.with_id(2_u64));
         });
-        ui.horizontal(|ui: &mut Ui| -> () {
+        ui.horizontal(|ui: &mut Ui| {
             ui.label("Print True Action");
             self.print_true_action
                 .ui(ui, (), &mut context.with_id(3_u64));
@@ -303,7 +303,7 @@ impl Inspectable for Stack {
                     .get_resource::<ExtendedPuzzleState>()
                     .unwrap()
                     .get_as_seed_simples(&focus_range),
-                |seed_simples: Vec<HalfAddr>| -> () {
+                |seed_simples: Vec<HalfAddr>| {
                     warn_expect_ok!(TransformationLibrary::push_family_and_update_file(
                         FamilyInput {
                             name: self.new_family_name.clone(),
@@ -384,11 +384,7 @@ impl Inspectable for Stack {
                         PendingActions::load(
                             &SaveState {
                                 extended_puzzle_state,
-                                input_toggles: world
-                                    .get_resource::<InputState>()
-                                    .unwrap()
-                                    .toggles
-                                    .clone(),
+                                input_toggles: world.get_resource::<InputState>().unwrap().toggles,
                                 camera,
                             },
                             &world.get_resource::<Preferences>().unwrap().speed.animation,

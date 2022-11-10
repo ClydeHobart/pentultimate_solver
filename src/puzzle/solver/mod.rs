@@ -77,7 +77,7 @@ impl SolverData {
             let dot_product: i8 = (-i8::MAX as f32 * face_data.norm.dot(origin_norm)) as i8;
             dot_products[piece_index] = dot_product;
 
-            fn push_dot_product(dot_products: &mut Vec<i8>, dot_product: i8) -> () {
+            fn push_dot_product(dot_products: &mut Vec<i8>, dot_product: i8) {
                 if !dot_products.contains(&dot_product) {
                     dot_products.push(dot_product);
                 }
@@ -140,7 +140,7 @@ lazy_static! {
 }
 
 impl StaticDataLibrary for SolverData {
-    fn pre_init() -> Option<Box<dyn FnOnce() -> ()>> {
+    fn pre_init() -> Option<Box<dyn FnOnce()>> {
         Some(Box::new(Library::build))
     }
 
@@ -292,13 +292,13 @@ impl FullMaskAndCompletion {
         .count_ones()
     }
 
-    fn immut_ui(&self, ui: &mut Ui) -> () {
-        ui.collapsing("Full Mask And Completion", |ui: &mut Ui| -> () {
+    fn immut_ui(&self, ui: &mut Ui) {
+        ui.collapsing("Full Mask And Completion", |ui: &mut Ui| {
             ui.label(format!(
                 "Solve Stage: {:?}, Tier: {:?}",
                 self.completion.solve_stage, self.completion.tier
             ));
-            ui.scope(|ui: &mut Ui| -> () {
+            ui.scope(|ui: &mut Ui| {
                 let (focus_poses, focus_pieces): (bool, bool) = match self.completion.solve_stage {
                     SolveStage::PositionPents | SolveStage::PositionTris => (true, false),
                     SolveStage::RotatePents | SolveStage::RotateTris => (false, true),
@@ -322,7 +322,7 @@ impl FullMaskAndCompletion {
                     )
                 };
 
-                Grid::new(0).show(ui, |ui: &mut Ui| -> () {
+                Grid::new(0).show(ui, |ui: &mut Ui| {
                     for (label, half_mask_string, focus) in [
                         (
                             "Affected Poses",
@@ -336,7 +336,7 @@ impl FullMaskAndCompletion {
                         ),
                     ] {
                         ui.label(label);
-                        ui.horizontal(|ui: &mut Ui| -> () {
+                        ui.horizontal(|ui: &mut Ui| {
                             ui.spacing_mut().item_spacing = Vec2::ZERO;
 
                             for (bit, bit_char) in half_mask_string.chars().enumerate() {
@@ -491,6 +491,7 @@ define_solve_stage_state! {
 }
 
 define_solve_stage_state! {
+    #[allow(clippy::enum_variant_names)]
     #[derive(Clone, Copy, Debug)]
     #[repr(u8)]
     enum RotatePentsStage {
@@ -501,6 +502,7 @@ define_solve_stage_state! {
 }
 
 define_solve_stage_state! {
+    #[allow(clippy::enum_variant_names)]
     #[derive(Clone, Copy, Debug)]
     #[repr(u8)]
     enum PositionTrisStage {
@@ -511,6 +513,7 @@ define_solve_stage_state! {
 }
 
 define_solve_stage_state! {
+    #[allow(clippy::enum_variant_names)]
     #[derive(Clone, Copy, Debug)]
     #[repr(u8)]
     enum RotateTrisStage {
@@ -699,8 +702,8 @@ struct TypeStats {
 }
 
 impl TypeStats {
-    fn immut_ui(&self, ui: &mut Ui) -> () {
-        Grid::new(0_u32).show(ui, |ui: &mut Ui| -> () {
+    fn immut_ui(&self, ui: &mut Ui) {
+        Grid::new(0_u32).show(ui, |ui: &mut Ui| {
             ui.label("Elapsed:");
             ui.label(String::from_alt(self.elapsed));
             ui.end_row();
@@ -724,14 +727,14 @@ struct Stats {
 }
 
 impl Stats {
-    fn type_stats_array_ui(&self, ui: &mut Ui) -> () {
-        ui.collapsing("Type Stats Array", |ui: &mut Ui| -> () {
-            ui.indent(0_u32, |ui: &mut Ui| -> () {
+    fn type_stats_array_ui(&self, ui: &mut Ui) {
+        ui.collapsing("Type Stats Array", |ui: &mut Ui| {
+            ui.indent(0_u32, |ui: &mut Ui| {
                 for (stat_type, type_stats) in self.type_stats_array.iter().enumerate() {
                     ui.collapsing(
                         format!("{:?}", StatType::from(stat_type as u8)),
-                        |ui: &mut Ui| -> () {
-                            ui.indent(stat_type, |ui: &mut Ui| -> () {
+                        |ui: &mut Ui| {
+                            ui.indent(stat_type, |ui: &mut Ui| {
                                 type_stats.immut_ui(ui);
                             });
                         },
@@ -752,7 +755,7 @@ pub struct Solver {
 }
 
 impl Solver {
-    pub fn init(&mut self, puzzle_state: &PuzzleState) -> () {
+    pub fn init(&mut self, puzzle_state: &PuzzleState) {
         *self = Self::new(puzzle_state)
     }
 
@@ -795,7 +798,7 @@ impl Solver {
         self.solver_state.is_solving()
     }
 
-    fn run_cycle(&mut self, mut max_cycle_duration: Duration) -> () {
+    fn run_cycle(&mut self, mut max_cycle_duration: Duration) {
         if !self.is_solving() {
             return;
         }
@@ -807,6 +810,10 @@ impl Solver {
             solver_state,
             stats,
         } = self;
+        let Stats {
+            type_stats_array,
+            full_mask_and_completion,
+        } = stats;
 
         let mut stateful_solve_stage: StatefulSolveStage =
             solver_state.try_get_stateful_solve_stage().unwrap();
@@ -818,7 +825,7 @@ impl Solver {
                 explorer.init(
                     (
                         &*puzzle_state,
-                        stats.full_mask_and_completion,
+                        *full_mask_and_completion,
                         stateful_solve_stage,
                     )
                         .into(),
@@ -832,7 +839,7 @@ impl Solver {
             let run_result: RunResult = explorer.run_cycle(Some(max_cycle_duration), false, false);
             let explorer_state_increase: u64 = explorer.get_stats().states - explorer_state_start;
 
-            for type_stats in stats.type_stats_array.iter_mut() {
+            for type_stats in type_stats_array.iter_mut() {
                 type_stats.counts.explorer_cycles += 1_u64;
                 type_stats.counts.explorer_states += explorer_state_increase;
             }
@@ -858,30 +865,24 @@ impl Solver {
                         let mut new_full_mask_and_completion: FullMaskAndCompletion =
                             puzzle_state.arrays().into();
 
-                        swap(
-                            &mut stats.full_mask_and_completion,
-                            &mut new_full_mask_and_completion,
-                        );
+                        swap(full_mask_and_completion, &mut new_full_mask_and_completion);
 
                         new_full_mask_and_completion
                     };
 
-                    macro_rules! reset_type_stats {
-                        ($stat_type:expr) => {
-                            stats.type_stats_array[$stat_type] = TypeStats::default();
-                            stat_type_starts[$stat_type] = Instant::now();
-                        };
-                    }
+                    let mut reset_type_stats = |stat_type: usize| {
+                        type_stats_array[stat_type] = TypeStats::default();
+                        stat_type_starts[stat_type] = Instant::now();
+                    };
 
-                    if stats.full_mask_and_completion.completion.solve_stage
+                    if full_mask_and_completion.completion.solve_stage
                         > old_full_mask_and_completion.completion.solve_stage
                     {
                         // We have advanced to a new stage, which may be solved
-                        *solver_state =
-                            stats.full_mask_and_completion.completion.solve_stage.into();
+                        *solver_state = full_mask_and_completion.completion.solve_stage.into();
 
                         for stat_type in StatType::SolveStage as usize..StatType::Count as usize {
-                            reset_type_stats!(stat_type);
+                            reset_type_stats(stat_type);
                         }
 
                         if solver_state.is_solving() {
@@ -894,10 +895,10 @@ impl Solver {
                             break;
                         }
                     } else {
-                        if stats.full_mask_and_completion.completion.tier
+                        if full_mask_and_completion.completion.tier
                             > old_full_mask_and_completion.completion.tier
                         {
-                            reset_type_stats!(StatType::Tier as usize);
+                            reset_type_stats(StatType::Tier as usize);
                         }
 
                         // Update the explorer, but no need to change anything else
@@ -918,7 +919,12 @@ impl Solver {
                         *solver_state = SolverState::DidNotFinish;
 
                         debug_expr!(stateful_solve_stage);
-                        log::info!("Did not finish solve:\n{:#?}", stats);
+                        log::info!(
+                            "Did not finish solve:\ntype_stats_array: {:#?}\n\
+                            full_mask_and_completion: {:?}",
+                            type_stats_array,
+                            full_mask_and_completion
+                        );
 
                         break;
                     }
@@ -928,7 +934,7 @@ impl Solver {
 
         let end: Instant = Instant::now();
 
-        for (stat_type, type_stats) in stats.type_stats_array.iter_mut().enumerate() {
+        for (stat_type, type_stats) in type_stats_array.iter_mut().enumerate() {
             type_stats.counts.solver_cycles += 1_u64;
             type_stats.elapsed += end - stat_type_starts[stat_type];
         }
@@ -964,11 +970,11 @@ impl Solver {
 pub struct SolverPlugin;
 
 impl SolverPlugin {
-    fn startup() -> () {
+    fn startup() {
         SolverData::build();
     }
 
-    fn update(preferences: Res<Preferences>, mut solver: ResMut<Solver>) -> () {
+    fn update(preferences: Res<Preferences>, mut solver: ResMut<Solver>) {
         solver.run_cycle(Duration::from_micros(
             (preferences.speed.solver.cycle_duration_millis * 1000.0_f32) as u64,
         ));
@@ -978,14 +984,14 @@ impl SolverPlugin {
         preferences: Res<Preferences>,
         mut solver: ResMut<Solver>,
         mut input_state: ResMut<InputState>,
-    ) -> () {
+    ) {
         if !solver.is_done() {
             return;
         }
 
         input_state.puzzle_action = Some(PuzzleAction {
             current_action: None,
-            pending_actions: Some(Box::new(solver.build_pending_actions(&*preferences))),
+            pending_actions: Some(Box::new(solver.build_pending_actions(&preferences))),
             action_type: PuzzleActionType::Solve,
         });
         input_state.is_solving = false;
@@ -993,7 +999,7 @@ impl SolverPlugin {
 }
 
 impl Plugin for SolverPlugin {
-    fn build(&self, app: &mut App) -> () {
+    fn build(&self, app: &mut App) {
         app.insert_resource(Solver::default())
             .add_startup_system(Self::startup.after(TransformationPlugin::startup))
             .add_system(Self::update)
@@ -1011,7 +1017,7 @@ mod tests {
         },
     };
 
-    fn test_solve_stage_solution(solve_stage: SolveStage) -> () {
+    fn test_solve_stage_solution(solve_stage: SolveStage) {
         const SOLVE_ITERATIONS: u32 = 1000_u32;
         const RANDOM_TRANSFORMATION_COUNT: u8 = 50_u8;
         const ONE_SECOND: Duration = Duration::from_secs(1_u64);
@@ -1086,22 +1092,22 @@ mod tests {
     }
 
     #[test]
-    fn test_position_pents_solution() -> () {
+    fn test_position_pents_solution() {
         test_solve_stage_solution(SolveStage::PositionPents);
     }
 
     #[test]
-    fn test_rotate_pents_solution() -> () {
+    fn test_rotate_pents_solution() {
         test_solve_stage_solution(SolveStage::RotatePents);
     }
 
     #[test]
-    fn test_position_tris_solution() -> () {
+    fn test_position_tris_solution() {
         test_solve_stage_solution(SolveStage::PositionTris);
     }
 
     #[test]
-    fn test_rotate_tris_solution() -> () {
+    fn test_rotate_tris_solution() {
         test_solve_stage_solution(SolveStage::RotateTris);
     }
 }

@@ -64,7 +64,7 @@ define_struct_with_default!(
 );
 
 impl Update for LightAndCameraData {
-    fn update(&self, other: &Self, world: &mut World, _: &Preferences) -> () {
+    fn update(&self, other: &Self, world: &mut World, _: &Preferences) {
         if self != other {
             if let Some((mut directional_light, mut transform)) = world
                 .query::<(&mut bevy::pbr::DirectionalLight, &mut Transform)>()
@@ -164,7 +164,7 @@ impl<'field, 'c> CameraQueryMutStateNT<'field, 'c> {
 pub struct CameraPlugin;
 
 impl CameraPlugin {
-    fn startup(mut commands: Commands, preferences: Res<Preferences>) -> () {
+    fn startup(mut commands: Commands, preferences: Res<Preferences>) {
         commands
             .spawn_bundle((
                 CameraComponent,
@@ -174,7 +174,7 @@ impl CameraPlugin {
                 ),
                 GlobalTransform::default(),
             ))
-            .with_children(|child_builder: &mut ChildBuilder| -> () {
+            .with_children(|child_builder: &mut ChildBuilder| {
                 let light_and_camera_data: &LightAndCameraData = &preferences.light_and_camera;
 
                 child_builder.spawn_bundle(DirectionalLightBundle {
@@ -199,9 +199,9 @@ impl CameraPlugin {
             });
     }
 
-    fn run(input_state: Res<InputState>, mut camera_query: CameraQueryMut) -> () {
+    fn run(input_state: Res<InputState>, mut camera_query: CameraQueryMut) {
         if input_state.has_camera_rotation {
-            CameraQueryMutNT(&mut camera_query).orientation(|rotation: Option<&mut Quat>| -> () {
+            CameraQueryMutNT(&mut camera_query).orientation(|rotation: Option<&mut Quat>| {
                 if let Some(rotation) = rotation {
                     *rotation *= input_state.camera_rotation;
                 }
@@ -212,7 +212,7 @@ impl CameraPlugin {
     pub fn compute_camera_addr(quat: &Quat) -> HalfAddr {
         Data::get(Polyhedron::Icosidodecahedron)
             .get_pos_and_rot(
-                &quat,
+                quat,
                 Some(&|face_index: usize, _: &FaceData| -> bool {
                     PENTAGON_PIECE_RANGE.contains(&face_index)
                 }),
@@ -222,7 +222,7 @@ impl CameraPlugin {
 }
 
 impl Plugin for CameraPlugin {
-    fn build(&self, app: &mut App) -> () {
+    fn build(&self, app: &mut App) {
         app.add_startup_system(Self::startup.after(PolyhedraDataPlugin::startup))
             .add_system(Self::run.after(PuzzlePlugin::run));
     }

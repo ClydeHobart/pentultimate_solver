@@ -71,8 +71,8 @@ pub struct FaceData {
 
 impl FaceData {
     pub fn new(
-        verts: &Vec<VertexData>,
-        vert_indices: &Vec<usize>,
+        verts: &[VertexData],
+        vert_indices: &[usize],
         range: Range<usize>,
         edges: EdgeBitArray,
     ) -> Self {
@@ -94,15 +94,15 @@ impl FaceData {
         self.range.clone()
     }
 
-    pub fn get_slice<'a>(&self, vert_indices: &'a Vec<usize>) -> &'a [usize] {
+    pub fn get_slice<'a>(&self, vert_indices: &'a [usize]) -> &'a [usize] {
         &vert_indices[self.get_range()]
     }
 
-    pub fn get_slice_mut<'a>(&self, vert_indices: &'a mut Vec<usize>) -> &'a mut [usize] {
+    pub fn get_slice_mut<'a>(&self, vert_indices: &'a mut [usize]) -> &'a mut [usize] {
         &mut vert_indices[self.get_range()]
     }
 
-    pub fn contains_vert(&self, vert_indices: &Vec<usize>, vert_index: usize) -> bool {
+    pub fn contains_vert(&self, vert_indices: &[usize], vert_index: usize) -> bool {
         self.get_slice(vert_indices)
             .iter()
             .any(|index: &usize| *index == vert_index)
@@ -144,7 +144,7 @@ pub type IndexedPredicate<'a, T> = &'a dyn Fn(usize, &T) -> bool;
 pub type OptionalIndexedPredicate<'a, T> = Option<IndexedPredicate<'a, T>>;
 
 impl Data {
-    pub fn initialize() -> () {
+    pub fn initialize() {
         DataLibrary::build();
     }
 
@@ -165,7 +165,7 @@ impl Data {
     }
 
     pub fn get_closest_vert_index_for_verts(
-        verts: &Vec<VertexData>,
+        verts: &[VertexData],
         vec: &Vec3,
         filter: OptionalIndexedPredicate<VertexData>,
     ) -> usize {
@@ -188,7 +188,7 @@ impl Data {
                  (_vert_index_b, norm_dot_vec_b): &(usize, f32)|
                  -> Ordering {
                     norm_dot_vec_a
-                        .partial_cmp(&norm_dot_vec_b)
+                        .partial_cmp(norm_dot_vec_b)
                         .unwrap_or(Ordering::Equal)
                 },
             )
@@ -209,7 +209,7 @@ impl Data {
     }
 
     pub fn get_closest_face_index_for_faces(
-        faces: &Vec<FaceData>,
+        faces: &[FaceData],
         vec: &Vec3,
         filter: OptionalIndexedPredicate<FaceData>,
     ) -> usize {
@@ -230,7 +230,7 @@ impl Data {
                  (_face_index_b, norm_dot_vec_b): &(usize, f32)|
                  -> Ordering {
                     norm_dot_vec_a
-                        .partial_cmp(&norm_dot_vec_b)
+                        .partial_cmp(norm_dot_vec_b)
                         .unwrap_or(Ordering::Equal)
                 },
             )
@@ -259,13 +259,13 @@ impl Data {
         let mut positions: Vec<[f32; 3]> = Vec::<[f32; 3]>::new();
         let mut normals: Vec<[f32; 3]> = Vec::<[f32; 3]>::new();
         let mut uvs: Vec<[f32; 2]> = Vec::<[f32; 2]>::new();
-        let mut append_vert = |vert_index: usize| -> () {
+        let mut append_vert = |vert_index: usize| {
             let vert_data: &VertexData = &self.verts[vert_index];
-            positions.push(vert_data.vec.as_ref().clone());
-            normals.push(vert_data.norm.as_ref().clone());
+            positions.push(*vert_data.vec.as_ref());
+            normals.push(*vert_data.norm.as_ref());
             uvs.push([0.0, 0.0]);
         };
-        let mut append_all_verts = || -> () {
+        let mut append_all_verts = || {
             for vert_index in 0..self.verts.len() {
                 append_vert(vert_index);
             }
@@ -276,7 +276,7 @@ impl Data {
                 append_all_verts();
             }
             PrimitiveTopology::LineList => {
-                self.edges.iter().for_each(|edge_data: &EdgeData| -> () {
+                self.edges.iter().for_each(|edge_data: &EdgeData| {
                     append_vert(edge_data.0);
                     append_vert(edge_data.1);
                 });
@@ -289,8 +289,8 @@ impl Data {
                     let initial_index: u32 = positions.len() as u32;
 
                     for vert_index in vert_indices[face_data.get_range()].iter() {
-                        positions.push(self.verts[*vert_index].vec.as_ref().clone());
-                        normals.push(face_data.norm.as_ref().clone());
+                        positions.push(*self.verts[*vert_index].vec.as_ref());
+                        normals.push(*face_data.norm.as_ref());
                         uvs.push([0.0, 0.0]);
                     }
 
@@ -387,13 +387,13 @@ struct DataBuilder<'a> {
 }
 
 impl<'a> DataBuilder<'a> {
-    fn generate(&mut self) -> () {
+    fn generate(&mut self) {
         self.generate_verts();
         self.generate_edges();
         warn_expect_ok!(self.generate_faces());
     }
 
-    fn generate_verts(&mut self) -> () {
+    fn generate_verts(&mut self) {
         let properties: &Properties = self.polyhedron.properties();
         let verts: &mut Vec<VertexData> = &mut self.data.verts;
 
@@ -402,7 +402,7 @@ impl<'a> DataBuilder<'a> {
         Self::generate_verts_for_properties(properties, verts);
     }
 
-    fn generate_verts_for_properties(properties: &Properties, verts: &mut Vec<VertexData>) -> () {
+    fn generate_verts_for_properties(properties: &Properties, verts: &mut Vec<VertexData>) {
         match properties.polyhedron {
             Polyhedron::Icosahedron => {
                 let base_vector: Vec3 = properties.base_vectors[0];
@@ -496,7 +496,7 @@ impl<'a> DataBuilder<'a> {
         }
     }
 
-    fn generate_edges(&mut self) -> () {
+    fn generate_edges(&mut self) {
         let properties: &Properties = self.polyhedron.properties();
         let verts: &Vec<VertexData> = &self.data.verts;
         let edges: &mut Vec<EdgeData> = &mut self.data.edges;
@@ -507,12 +507,18 @@ impl<'a> DataBuilder<'a> {
         let distance_squared_threshold: f32 =
             properties.edge_length * properties.edge_length + 0.000001;
 
-        for vert_index_1 in 0..properties.vert_count - 1 {
-            let vert_1: &Vec3 = &verts[vert_index_1].vec;
+        for (vert_index_1, vert_data_1) in verts.iter().enumerate() {
+            let vert_1: &Vec3 = &vert_data_1.vec;
+            let vert_index_1_plus_1: usize = vert_index_1 + 1_usize;
 
-            for vert_index_2 in vert_index_1 + 1..properties.vert_count {
-                if vert_1.distance_squared(verts[vert_index_2].vec) <= distance_squared_threshold {
-                    edges.push(EdgeData(vert_index_1, vert_index_2));
+            for (vert_index_2_offset, vert_data_2) in
+                verts[vert_index_1_plus_1..].iter().enumerate()
+            {
+                if vert_1.distance_squared(vert_data_2.vec) <= distance_squared_threshold {
+                    edges.push(EdgeData(
+                        vert_index_1,
+                        vert_index_1_plus_1 + vert_index_2_offset,
+                    ));
                 }
             }
         }
@@ -617,7 +623,7 @@ impl<'a> DataBuilder<'a> {
 
         while forward_edges != all_edges_used && backward_edges != all_edges_used {
             const INVALID_VERT_INDEX: usize = usize::MAX;
-            let initial_edge: EdgeData = edges[forward_edges.leading_ones() as usize];
+            let initial_edge: EdgeData = edges[forward_edges.leading_ones()];
             let start: usize = vert_indices.len();
             let mut end: usize = start;
             let mut prev_vert_index: usize = 0;
@@ -799,7 +805,7 @@ impl<'a> DataBuilder<'a> {
 
             cycle_values!();
             record_edge!();
-            faces.push(FaceData::new(&verts, &vert_indices, start..end, face_edges));
+            faces.push(FaceData::new(verts, vert_indices, start..end, face_edges));
             log::trace!(target: log_target.as_str(), "Adding face {:?}", faces.last().unwrap());
             log_edge_status!();
         }
@@ -1120,13 +1126,13 @@ lazy_static! {
 pub struct DataPlugin;
 
 impl DataPlugin {
-    pub fn startup() -> () {
+    pub fn startup() {
         DataLibrary::build();
     }
 }
 
 impl Plugin for DataPlugin {
-    fn build(&self, app: &mut App) -> () {
+    fn build(&self, app: &mut App) {
         app.add_startup_system(Self::startup);
     }
 }
@@ -1136,7 +1142,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_data() -> () {
+    fn test_data() {
         init_env_logger();
         break_assert!(Data::validate_polyhedra().is_ok());
     }

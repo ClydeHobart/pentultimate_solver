@@ -87,13 +87,13 @@ fn is_end_state(inflated_puzzle_state: &InflatedPuzzleState) -> bool {
 			return false;
 		}
 
-		pent_rots += rot[pentagon_index] as u32;
+		pent_rots += rot[pentagon_index];
 	}
 
 	pent_rots % u32::PENTAGON_VERTEX_COUNT != 0_u32
 }
 
-fn main() -> () {
+fn main() {
 	init_env_logger();
 	<Library as StaticDataLibrary>::build();
 
