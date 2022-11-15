@@ -6,6 +6,12 @@ macro_rules! assets { ($($file:expr)?) => { file_concat!(root!("assets") $(, $fi
 macro_rules! config { ($($file:expr),*) => { file_concat!(assets!("config") $(, $file)?) } }
 macro_rules! saves { ($($file:expr)?) => { file_concat!(root!("saves") $(, $file)?) } }
 
+#[cfg(test)]
+macro_rules! _target { ($($file:expr)?) => { file_concat!(root!("target") $(, $file)?) } }
+
+#[cfg(test)]
+macro_rules! _data { ($($file:expr)?) => { file_concat!(target!("data") $(, $file)?) } }
+
 define_struct_with_default!(
     #[derive(Deserialize)]
     pub struct Files<String> {
@@ -30,7 +36,7 @@ pub mod test {
     define_struct_with_default!(
         #[derive(Deserialize)]
         pub struct Test<String> {
-            pub reorientation_tests = config!("reorientationTests.ron")
+            pub reorientation_tests = config!("reorientationTests.ron"),
         }
     );
 

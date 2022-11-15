@@ -30,6 +30,20 @@ pub mod macros {
         };
     }
 
+    /// Macro obtained by user [Veedrac](https://stackoverflow.com/users/1763356/veedrac) from
+    /// https://stackoverflow.com/questions/38088067/equivalent-of-func-or-function-in-rust
+    #[macro_export]
+    macro_rules! function_path {
+        () => {{
+            fn f() {}
+            fn type_name_of<T>(_: T) -> &'static str {
+                std::any::type_name::<T>()
+            }
+            let name = type_name_of(f);
+            &name[..name.len() - 3]
+        }};
+    }
+
     #[macro_export(local_inner_macros)]
     macro_rules! __log_error_set_message {
         ($log_error:ident, $level:expr, $message:expr) => {
@@ -748,6 +762,81 @@ pub mod macros {
             log_expect_ok!(::log::error, $expr $(, $ok_closure $(, $err_closure)?)?)
         };
     }
+
+    #[cfg(miri)]
+    #[macro_export]
+    macro_rules! miri_log {
+        (target: $target:expr, $lvl:expr, $($arg:tt)+) => {
+            ::log::log!(target: $target, $lvl, $($arg)+)
+        };
+        ($lvl:expr, $($arg:tt)+) => {
+            ::log::log!($lvl, $($arg)+)
+        };
+    }
+
+    #[cfg(not(miri))]
+    #[macro_export]
+    macro_rules! miri_log {
+        (target: $target:expr, $lvl:expr, $($arg:tt)+) => {};
+        ($lvl:expr, $($arg:tt)+) => {};
+    }
+
+    #[macro_export(local_inner_macros)]
+    macro_rules! miri_trace {
+        (target: $target:expr, $($arg:tt)+) => {
+            miri_log!(target: $target, ::log::Level::Trace, $($arg)+)
+        };
+        ($($arg:tt)+) => {
+            miri_log!(::log::Level::Trace, $($arg)+)
+        };
+    }
+
+    #[macro_export(local_inner_macros)]
+    macro_rules! miri_debug {
+        (target: $target:expr, $($arg:tt)+) => {
+            miri_log!(target: $target, ::log::Level::Debug, $($arg)+)
+        };
+        ($($arg:tt)+) => {
+            miri_log!(::log::Level::Debug, $($arg)+)
+        };
+    }
+
+    #[macro_export(local_inner_macros)]
+    macro_rules! miri_info {
+        (target: $target:expr, $($arg:tt)+) => {
+            miri_log!(target: $target, ::log::Level::Info, $($arg)+)
+        };
+        ($($arg:tt)+) => {
+            miri_log!(::log::Level::Info, $($arg)+)
+        };
+    }
+
+    #[macro_export(local_inner_macros)]
+    macro_rules! miri_warn {
+        (target: $target:expr, $($arg:tt)+) => {
+            miri_log!(target: $target, ::log::Level::Warn, $($arg)+)
+        };
+        ($($arg:tt)+) => {
+            miri_log!(::log::Level::Warn, $($arg)+)
+        };
+    }
+
+    #[macro_export(local_inner_macros)]
+    macro_rules! miri_error {
+        (target: $target:expr, $($arg:tt)+) => {
+            miri_log!(target: $target, ::log::Level::Error, $($arg)+)
+        };
+        ($($arg:tt)+) => {
+            miri_log!(::log::Level::Error, $($arg)+)
+        };
+    }
+
+    #[macro_export(local_inner_macros)]
+    macro_rules! miri_echo {
+        () => {
+            miri_trace!(target: "miri", "{}", function_path!())
+        }
+    }
 }
 
 pub mod prelude {
@@ -756,8 +845,9 @@ pub mod prelude {
         crate::{
             debug_expect, debug_expect_ok, debug_expect_some, debug_expr, error_expect,
             error_expect_ok, error_expect_some, error_expr, info_expect, info_expect_ok,
-            info_expect_some, info_expr, trace_expect, trace_expect_ok, trace_expect_some,
-            trace_expr, warn_expect, warn_expect_ok, warn_expect_some, warn_expr,
+            info_expect_some, info_expr, miri_debug, miri_echo, miri_error, miri_info, miri_log,
+            miri_trace, miri_warn, trace_expect, trace_expect_ok, trace_expect_some, trace_expr,
+            warn_expect, warn_expect_ok, warn_expect_some, warn_expr,
         },
     };
 }
@@ -944,9 +1034,13 @@ impl std::error::Error for LogError {
 }
 
 pub fn init_env_logger() {
+    miri_echo!();
     INIT_ENV_LOGGER.call_once(|| {
         set_rust_log_env_var();
-        env_logger::init();
+        env_logger::Builder::from_default_env()
+            .format_module_path(false)
+            .format_target(true)
+            .init();
     });
 }
 

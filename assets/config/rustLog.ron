@@ -1,6 +1,9 @@
 (
 	f: Off,
 	m: {
+		"miri": (
+			f: Trace,
+		),
 		"pentultimate_solver": (
 			f: Debug,
 			m: {
@@ -16,7 +19,7 @@
 				"util": (
 					f: Off,
 				),
-			}
+			},
 		),
 	},
 )

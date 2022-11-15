@@ -1,5 +1,3 @@
-use std::io::Read;
-
 use {
     crate::prelude::*,
     bevy::{
@@ -12,7 +10,6 @@ use {
     },
     bit_field::{BitArray, BitField},
     egui::Color32,
-    memmap::Mmap,
     num_traits::PrimInt,
     serde::{Deserialize, Serialize},
     simple_error::SimpleError,
@@ -20,7 +17,6 @@ use {
         any::type_name,
         cmp::min,
         convert::{AsRef, TryFrom},
-        env::var,
         error::Error as StdError,
         ffi::OsStr,
         fmt::{Debug, Write},
@@ -34,6 +30,12 @@ use {
         time::{Duration, Instant},
     },
 };
+
+#[cfg(miri)]
+use std::io::Read;
+
+#[cfg(not(miri))]
+use memmap::Mmap;
 
 #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
 pub mod simd;
@@ -352,6 +354,8 @@ pub trait StaticDataLibrary: 'static {
     }
 
     fn build() {
+        miri_echo!();
+
         let build = || {
             macro_rules! call_build_stage {
                 ($stage:ident) => {{
@@ -527,16 +531,18 @@ pub trait FromFile: for<'de> Deserialize<'de> {
         let mut file: File = File::open(file_name)?;
 
         enum FileBytes {
+            #[cfg(not(miri))]
             Mmap(Mmap),
-            #[cfg(debug_assertions)]
+            #[cfg(miri)]
             ByteVec(Vec<u8>),
         }
 
         impl AsRef<[u8]> for FileBytes {
             fn as_ref(&self) -> &[u8] {
                 match self {
+                    #[cfg(not(miri))]
                     Self::Mmap(mmap) => &mmap,
-                    #[cfg(debug_assertions)]
+                    #[cfg(miri)]
                     Self::ByteVec(byte_vec) => &byte_vec,
                 }
             }
@@ -546,23 +552,20 @@ pub trait FromFile: for<'de> Deserialize<'de> {
             type Error = Box<dyn StdError>;
 
             fn try_from(file: &'a mut File) -> Result<Self, Self::Error> {
-                #[cfg(debug_assertions)]
+                #[cfg(not(miri))]
                 {
-                    // If we're running this in Miri, Mmap isn't a viable option since it uses FFI
-                    if var("MIRIFLAGS")
-                        .ok()
-                        .and_then(|miriflags: String| miriflags.find("-Zmiri-disable-isolation"))
-                        .is_some()
-                    {
-                        let mut byte_vec: Vec<u8> = Vec::<u8>::new();
-
-                        file.read_to_end(&mut byte_vec)?;
-
-                        return Ok(Self::ByteVec(byte_vec));
-                    }
+                    Ok(Self::Mmap(unsafe { Mmap::map(file) }?))
                 }
 
-                Ok(Self::Mmap(unsafe { Mmap::map(file) }?))
+                #[cfg(miri)]
+                {
+                    // If we're running this in Miri, Mmap isn't a viable option since it uses FFI
+                    let mut byte_vec: Vec<u8> = Vec::<u8>::new();
+
+                    file.read_to_end(&mut byte_vec)?;
+
+                    Ok(Self::ByteVec(byte_vec))
+                }
             }
         }
 
