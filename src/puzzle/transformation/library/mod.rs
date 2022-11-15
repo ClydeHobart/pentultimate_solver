@@ -17,6 +17,8 @@ use {
     bevy_inspector_egui::{Context, Inspectable},
     bitvec::prelude::*,
     egui::Ui,
+    itertools::izip,
+    memoffset::raw_field,
     serde::{Deserialize, Deserializer, Serialize, Serializer},
     simple_error::SimpleError,
     std::{
@@ -24,10 +26,15 @@ use {
         error::Error,
         fmt::{Debug, Formatter},
         iter::{DoubleEndedIterator, IntoIterator},
-        mem::{take, MaybeUninit},
+        marker::PhantomData,
+        mem::{take, transmute, MaybeUninit},
         ops::{Deref, DerefMut, Range},
+        ptr::{write, write_bytes},
         rc::Rc,
-        sync::{Mutex, MutexGuard, Once},
+        sync::{
+            atomic::{AtomicBool, Ordering},
+            Once, RwLock, RwLockReadGuard, RwLockWriteGuard,
+        },
     },
 };
 
@@ -498,7 +505,7 @@ pub struct Library {
 }
 
 #[derive(Debug)]
-pub enum PushFamilyErr {
+pub enum InitializeFamilyErr {
     InvalidSeedSimpleSlice,
     FamilyIndexTooLarge,
     GenusIndexTooLarge,
@@ -519,57 +526,47 @@ impl Library {
     pub const SPECIES_PER_LARGE_GENUS: usize = usize::PIECE_COUNT;
 
     #[inline(always)]
-    pub fn get_transformation(full_addr: FullAddr) -> &'static Transformation {
-        break_assert!(full_addr.is_valid());
-
-        Library::get().transformations.get_word(full_addr)
+    pub fn get_simple_slice(full_addr: FullAddr) -> LibraryOrganismRef<[HalfAddr]> {
+        (full_addr, LibraryOrganismType::SimpleSlice).into()
     }
 
     #[inline(always)]
-    pub fn get_full_mask(full_addr: FullAddr) -> &'static FullMask {
-        break_assert!(full_addr.is_valid());
-
-        Library::get().full_masks.get_word(full_addr)
+    pub fn get_transformation(full_addr: FullAddr) -> LibraryOrganismRef<Transformation> {
+        (full_addr, LibraryOrganismType::Transformation).into()
     }
 
     #[inline(always)]
-    pub fn get_inverse_addr(full_addr: FullAddr) -> &'static FullAddr {
-        break_assert!(full_addr.is_valid());
-
-        Library::get().inverse_addrs.get_word(full_addr)
+    pub fn get_full_mask(full_addr: FullAddr) -> LibraryOrganismRef<FullMask> {
+        (full_addr, LibraryOrganismType::FullMask).into()
     }
 
     #[inline(always)]
-    pub fn get_rotation(full_addr: FullAddr) -> &'static Quat {
-        break_assert!(
-            full_addr.is_valid() && full_addr.get_genus_index() < Self::GENERA_PER_SMALL_CLASS
-        );
-
-        Library::get().rotations.get_word(full_addr)
+    pub fn get_inverse_addr(full_addr: FullAddr) -> LibraryOrganismRef<FullAddr> {
+        (full_addr, LibraryOrganismType::InverseAddr).into()
     }
 
     #[inline(always)]
-    pub fn get_orientation(half_addr: HalfAddr) -> &'static Quat {
-        break_assert!(half_addr.is_valid());
-
-        Library::get().orientations.get_word(half_addr)
+    pub fn get_rotation(full_addr: FullAddr) -> LibraryOrganismRef<Quat> {
+        (full_addr, LibraryOrganismType::Rotation).into()
     }
 
     #[inline(always)]
-    pub fn get_simple_slice(full_addr: FullAddr) -> &'static [HalfAddr] {
-        break_assert!(full_addr.is_valid());
-
-        get_simple_slice(Library::get(), full_addr)
+    pub fn get_orientation(half_addr: HalfAddr) -> LibraryOrganismRef<Quat> {
+        (
+            half_addr.as_reorientation(),
+            LibraryOrganismType::Orientation,
+        )
+            .into()
     }
 
     #[inline(always)]
     pub fn get_genus_count() -> usize {
-        Library::get().genus_infos.len()
+        Self::get().genus_infos.len()
     }
 
     #[inline(always)]
     pub fn get_family_count() -> usize {
-        Library::get().family_infos.len()
+        Self::get().family_infos.len()
     }
 
     pub fn get_family_index(genus_index: GenusIndex) -> usize {
@@ -599,26 +596,31 @@ impl Library {
     }
 
     pub fn push_family_and_update_file(family_input: FamilyInput) -> Result<(), Box<dyn Error>> {
-        let _mutex_guard: MutexGuard<()> = LIBRARY_MUTEX.lock().ok().unwrap();
-
-        warn_expect!(LIBRARY_ONCE.is_completed());
         Self::build();
 
-        let library: &mut Self = unsafe { LIBRARY.assume_init_mut() };
-
-        library.push_family(family_input).map_err(
-            |push_family_err: PushFamilyErr| -> Box<dyn Error> {
+        Self::initialize_family(family_input).map_err(
+            |push_family_err: InitializeFamilyErr| -> Box<dyn Error> {
                 Box::new(SimpleError::new(format!("{:?}", push_family_err)))
             },
         )?;
 
-        OrderInfo::from(Self::get()).to_file(&STRING_DATA.files.library)
+        OrderInfo::from(&*Self::get()).to_file(&STRING_DATA.files.library)
+    }
+
+    fn get_mut() -> LibraryRefMut {
+        assert!(LIBRARY_ASSUME_INIT.load(Ordering::Acquire));
+
+        LibraryRefMut(
+            // Safe: see assert above
+            unsafe { transmute::<&RwLock<MaybeUninit<Self>>, &RwLock<Self>>(&LIBRARY) }
+                .write()
+                .unwrap(),
+        )
     }
 
     fn get_simple_slice_genus(&self, genus_index: GenusIndex) -> Option<Box<Genus<SimpleSlice>>> {
-        let simples_range: Range<usize> = self.get_simples_range(genus_index)?;
-        let simple_slice_len: usize =
-            self.genus_infos[usize::from(genus_index)].simple_slice_len as usize;
+        let simples_range: Range<usize> = Self::get_simples_range(genus_index)?;
+        let simple_slice_len: usize = self.get_genus_info(genus_index).simple_slice_len as usize;
         let mut simple_slice_genus: Genus<SimpleSlice> = Genus::<SimpleSlice>::default();
 
         for (species_index, simples_species) in self.simples[simples_range]
@@ -638,19 +640,18 @@ impl Library {
         Some(Box::<Genus<SimpleSlice>>::new(simple_slice_genus))
     }
 
-    fn get_simples_range(&self, genus_index: GenusIndex) -> Option<Range<usize>> {
-        let genus_index: usize = genus_index.into();
-
-        if genus_index >= self.genus_infos.len() {
+    fn get_simples_range(genus_index: GenusIndex) -> Option<Range<usize>> {
+        if usize::from(genus_index) >= Self::get_genus_count() {
             return None;
         }
 
-        let genus_info: &GenusInfo = &self.genus_infos[genus_index];
+        let library: &Self = &*Self::get();
+        let genus_info: &GenusInfo = library.get_genus_info(genus_index);
         let simple_slice_start: usize = genus_info.simple_offset as usize;
         let simple_slice_end: usize =
             simple_slice_start + Self::ORGANISMS_PER_GENUS * genus_info.simple_slice_len as usize;
 
-        if simple_slice_end > self.simples.len() {
+        if simple_slice_end > Self::get_simple_count() {
             return None;
         }
 
@@ -669,85 +670,6 @@ impl Library {
         self.get_family_info(self.get_genus_info(genus_index).family_index)
     }
 
-    fn is_seed_simple_slice_valid(
-        &self,
-        seed_simple_slice: &[HalfAddr],
-    ) -> Result<(), PushFamilyErr> {
-        for simple in seed_simple_slice {
-            if !simple.is_valid() {
-                return Err(PushFamilyErr::InvalidSeedSimpleSlice);
-            }
-        }
-
-        if self.family_infos.len() > FamilyIndex::MAX as usize {
-            return Err(PushFamilyErr::FamilyIndexTooLarge);
-        }
-
-        if self.genus_infos.len() > GenusIndexType::MAX as usize - 1_usize {
-            return Err(PushFamilyErr::GenusIndexTooLarge);
-        }
-
-        if self.simples.len() > SimpleOffset::MAX as usize {
-            return Err(PushFamilyErr::SimpleOffsetTooLarge);
-        }
-
-        if seed_simple_slice.len() <= 1_usize {
-            return Err(PushFamilyErr::SeedSimpleSliceTooShort);
-        }
-
-        if seed_simple_slice.len() > SimpleSliceLen::MAX as usize {
-            return Err(PushFamilyErr::SeedSimpleSliceTooLong);
-        }
-
-        let mut puzzle_state: PuzzleState = PuzzleState::default();
-
-        for simple in seed_simple_slice {
-            puzzle_state += simple.as_simple();
-        }
-
-        if puzzle_state.is_solved() {
-            return Err(PushFamilyErr::DoesNotTransformPuzzleState);
-        }
-
-        // Check for a homomorphic genus
-        for family_info in &self.family_infos {
-            let base_genus_index: usize = family_info.base_genus.into();
-            let base_genus_info: &GenusInfo = &self.genus_infos[base_genus_index];
-
-            /* If the base genus for the family has a different simple slice length, it won't be a
-            match */
-            if seed_simple_slice.len() != base_genus_info.simple_slice_len as usize {
-                continue;
-            }
-
-            let mut full_addr: FullAddr = HalfAddr::ORIGIN.as_reorientation();
-
-            for genus_index in family_info.get_genus_range() {
-                if !Self::simple_slices_have_identical_organism_indicies(
-                    seed_simple_slice,
-                    get_simple_slice(self, *full_addr.set_genus_index(genus_index)),
-                ) {
-                    continue;
-                }
-
-                if let Some(mut homomorphism) = self
-                    .get_simple_slice_genus(GenusIndex(genus_index as GenusIndexType))
-                    .and_then(
-                        |simple_slice_genus: Box<Genus<SimpleSlice>>| -> Option<FullAddr> {
-                            (*simple_slice_genus).find_word(&Some(seed_simple_slice))
-                        },
-                    )
-                {
-                    return Err(PushFamilyErr::HomomorphismExists(
-                        *homomorphism.set_genus_index(genus_index),
-                    ));
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     fn simple_slices_have_identical_organism_indicies(
         simple_slice_a: &[HalfAddr],
         simple_slice_b: &[HalfAddr],
@@ -760,24 +682,83 @@ impl Library {
         )
     }
 
-    fn initialize(&mut self) {
-        self.family_infos = Vec::<FamilyInfo>::new();
-        self.genus_infos = Vec::<GenusInfo>::with_capacity(Self::GENERA_PER_SMALL_CLASS);
-        self.simples = Vec::<HalfAddr>::with_capacity(Self::ORGANISMS_PER_GENUS);
-        self.transformations = Class::<Transformation>::with_capacity(Self::ORGANISMS_PER_GENUS);
-        self.full_masks = Class::<FullMask>::with_capacity(Self::ORGANISMS_PER_GENUS);
-        self.inverse_addrs = Class::<FullAddr>::with_capacity(Self::ORGANISMS_PER_GENUS);
+    fn initialize() {
+        assert!(!LIBRARY_ASSUME_INIT.load(Ordering::Acquire));
+
+        {
+            let mut library_write_guard: RwLockWriteGuard<MaybeUninit<Library>> =
+                LIBRARY.write().unwrap();
+            let library_mut_ptr: *mut Library = library_write_guard.as_mut_ptr();
+
+            macro_rules! init_field {
+                ($($field:tt: $field_ty:ty = $capacity:ident,)*) => {
+                    $(
+                        /* Safe: We are writing into fields at their offset location from
+                        `library_mut_ptr` */
+                        write(
+                            /* Safe: `library_mut_ptr` is a mutable pointer that is rendered const
+                            from the `raw_field!()` invocation, so we can safely make it mutable
+                            again */
+                            raw_field!(library_mut_ptr, Library, $field) as *mut $field_ty,
+                            Vec::with_capacity(Self::$capacity)
+                        );
+                    )*
+                }
+            }
+
+            macro_rules! zero_field {
+                ($($field:tt: $field_ty:ty,)*) => {
+                    $(
+                        /* Safe: We are writing into fields at their offset location from
+                        `library_mut_ptr` */
+                        write_bytes(
+                            /* Safe: `library_mut_ptr` is a mutable pointer that is rendered const
+                            from the `raw_field!()` invocation, so we can safely make it mutable
+                            again */
+                            raw_field!(library_mut_ptr, Library, $field) as *mut $field_ty,
+                            0_u8,
+                            1_usize
+                        );
+                    )*
+                }
+            }
+
+            // Safe: We are writing into fields at their offset location from library_mut_ptr
+            unsafe {
+                init_field!(
+                    family_infos: Vec<FamilyInfo> = GENERA_PER_SMALL_CLASS,
+                    genus_infos: Vec<GenusInfo> = GENERA_PER_SMALL_CLASS,
+                    simples: Vec<HalfAddr> = ORGANISMS_PER_GENUS,
+                    transformations: Class<Transformation> = ORGANISMS_PER_GENUS,
+                    full_masks: Class<FullMask> = ORGANISMS_PER_GENUS,
+                    inverse_addrs: Class<FullAddr> = ORGANISMS_PER_GENUS,
+                );
+            }
+
+            unsafe {
+                zero_field!(rotations: SmallClass<Quat>, orientations: LargeGenus<Quat>,);
+            }
+
+            /* Correct: All the `Vec` members now have been explicitly initialized, and the
+            remaining members are arrays of `Quat`s, which are fine to leave zeroed (Quat::ZERO) */
+            const_assert_eq!(0_u32, unsafe { transmute::<f32, u32>(0.0_f32) });
+            LIBRARY_ASSUME_INIT.store(true, Ordering::Release);
+        }
 
         let icosidodecahedron_data: &Data = Data::get(Polyhedron::Icosidodecahedron);
 
-        self.initialize_orientations(icosidodecahedron_data);
-        self.initialize_reorientation_genus(icosidodecahedron_data);
-        self.initialize_simple_genus(icosidodecahedron_data);
-        self.push_order(OrderInfo::from_file_or_default(&STRING_DATA.files.library));
+        Self::initialize_orientations(icosidodecahedron_data);
+        Self::initialize_reorientation_genus(icosidodecahedron_data);
+        Self::initialize_simple_genus(icosidodecahedron_data);
+        Self::initialize_order(OrderInfo::from_file_or_default(&STRING_DATA.files.library));
     }
 
-    fn initialize_orientations(&mut self, icosidodecahedron_data: &Data) {
-        for (species_index, orientation_species) in self.orientations.iter_mut().enumerate() {
+    fn initialize_orientations(icosidodecahedron_data: &Data) {
+        let mut library_ref_mut: LibraryRefMut = Self::get_mut();
+
+        for (species_index, orientation_species) in
+            library_ref_mut.orientations.iter_mut().enumerate()
+        {
             let face_data: &FaceData = &icosidodecahedron_data.faces[species_index];
 
             for (organism_index, orientation) in orientation_species.iter_mut().enumerate() {
@@ -786,235 +767,516 @@ impl Library {
         }
     }
 
-    fn initialize_reorientation_genus(&mut self, icosidodecahedron_data: &Data) {
+    fn initialize_reorientation_genus(icosidodecahedron_data: &Data) {
         const REORIENTATION_STR: &str = "Reorientation";
-
-        self.push_genus(GenusInfo::new(
-            REORIENTATION_STR.into(),
-            &[],
-            self.family_infos.len() as u8,
-        ));
-        self.family_infos.push(FamilyInfo::new(
-            REORIENTATION_STR.into(),
-            GenusIndex::REORIENTATION,
-            false,
-        ));
 
         let reorientation_genus_index: usize = GenusIndex::REORIENTATION.into();
 
-        // This type is just used to mutably borrow multiple genus data simultaneously
-        #[allow(clippy::type_complexity)]
-        let (
-            orientation_genus,
-            transformation_genus,
-            mask_genus,
-            inverse_addr_genus,
-            rotation_genus,
-        ): (
-            &[Species<Quat>],
-            &mut Genus<Transformation>,
-            &mut Genus<FullMask>,
-            &mut Genus<FullAddr>,
-            &mut Genus<Quat>,
-        ) = (
-            &self.orientations[0_usize..Self::SPECIES_PER_GENUS],
-            &mut self.transformations[reorientation_genus_index],
-            &mut self.full_masks[reorientation_genus_index],
-            &mut self.inverse_addrs[reorientation_genus_index],
-            &mut self.rotations[reorientation_genus_index],
-        );
-        let origin_conj_quat: Quat = icosidodecahedron_data.faces[PENTAGON_INDEX_OFFSET]
-            .quat
-            .conjugate();
-
-        for species_index in 0_usize..Self::SPECIES_PER_GENUS {
-            let orientation_species: &Species<Quat> = &orientation_genus[species_index];
-            let transformation_species: &mut Species<Transformation> =
-                &mut transformation_genus[species_index];
-            let mask_species: &mut Species<FullMask> = &mut mask_genus[species_index];
-            let rotation_species: &mut Species<Quat> = &mut rotation_genus[species_index];
-
-            for organism_index in 0_usize..Self::ORGANISMS_PER_SPECIES {
-                let orientation: &Quat = &orientation_species[organism_index];
-                let transformation: &mut Transformation =
-                    &mut transformation_species[organism_index];
-                let mask: &mut FullMask = &mut mask_species[organism_index];
-                let rotation: &mut Quat = &mut rotation_species[organism_index];
-
-                let reorientation_quat: Quat = *orientation * origin_conj_quat;
-                let (pos_array, rot_array): (&mut PuzzleStateComponent, &mut PuzzleStateComponent) =
-                    transformation.arrays_mut();
-
-                for piece_index in PIECE_RANGE {
-                    let (pos, rot): (usize, usize) = icosidodecahedron_data.get_pos_and_rot(
-                        &(reorientation_quat * icosidodecahedron_data.faces[piece_index].quat),
-                        /* We could put a filter in here, but it'd be slower, and the quat math is
-                        precise enough that it's unnecessary here */
-                        None,
-                    );
-
-                    pos_array[piece_index] = pos as PieceStateComponent;
-                    rot_array[piece_index] = rot as PieceStateComponent;
-                }
-
-                *mask = FullMask::from(transformation.arrays());
-                *rotation = reorientation_quat;
-            }
-        }
-
-        for (species_index, inverse_addr_species) in inverse_addr_genus.iter_mut().enumerate() {
-            for (organism_index, inverse_addr) in inverse_addr_species.iter_mut().enumerate() {
-                *inverse_addr = (*transformation_genus)
-                    .find_word(&(-&transformation_genus[species_index][organism_index]))
-                    .map(|mut inverse_addr: FullAddr| -> FullAddr {
-                        *inverse_addr.set_genus_index(GenusIndex::REORIENTATION.into())
-                    })
-                    .unwrap_or_default();
-            }
-        }
-    }
-
-    fn initialize_simple_genus(&mut self, icosidodecahedron_data: &Data) {
-        const SIMPLE_STR: &str = "Simple";
-
-        self.push_genus(GenusInfo::new(
-            SIMPLE_STR.into(),
-            &[HalfAddr::default()],
-            self.family_infos.len() as u8,
-        ));
-        self.family_infos.push(FamilyInfo::new(
-            SIMPLE_STR.into(),
-            GenusIndex::SIMPLE,
-            false,
-        ));
-
-        let simple_genus_index: usize = GenusIndex::SIMPLE.into();
-
-        // This type is just used to mutably borrow multiple genus data simultaneously
-        #[allow(clippy::type_complexity)]
-        let (simple_genus, transformation_genus, mask_genus, inverse_addr_genus, rotation_genus): (
-            &mut [HalfAddr],
-            &mut Genus<Transformation>,
-            &mut Genus<FullMask>,
-            &mut Genus<FullAddr>,
-            &mut Genus<Quat>,
-        ) = (
-            &mut self.simples[0_usize..Self::ORGANISMS_PER_GENUS],
-            &mut self.transformations[simple_genus_index],
-            &mut self.full_masks[simple_genus_index],
-            &mut self.inverse_addrs[simple_genus_index],
-            &mut self.rotations[simple_genus_index],
-        );
-
-        for (species_index, simple_species) in simple_genus
-            .chunks_mut(Self::ORGANISMS_PER_SPECIES)
-            .enumerate()
         {
-            let transformation_species: &mut Species<Transformation> =
-                &mut transformation_genus[species_index];
-            let mask_species: &mut Species<FullMask> = &mut mask_genus[species_index];
-            let inverse_addr_species: &mut Species<FullAddr> =
-                &mut inverse_addr_genus[species_index];
-            let rotation_species: &mut Species<Quat> = &mut rotation_genus[species_index];
-            let face_data: &FaceData = &icosidodecahedron_data.faces[species_index];
-            let face_mask: FullMask = FullMask::from_pentagon_index(species_index);
+            let origin_conj_quat: Quat = icosidodecahedron_data.faces[PENTAGON_INDEX_OFFSET]
+                .quat
+                .conjugate();
 
-            for organism_index in 0_usize..Self::ORGANISMS_PER_SPECIES {
-                let transformation: &mut Transformation =
-                    &mut transformation_species[organism_index];
-                let mask: &mut FullMask = &mut mask_species[organism_index];
-                let inverse_addr: &mut FullAddr = &mut inverse_addr_species[organism_index];
-                let simple: &mut HalfAddr = &mut simple_species[organism_index];
-                let rotation: &mut Quat = &mut rotation_species[organism_index];
+            Self::push_genus(GenusInfo::new(
+                REORIENTATION_STR.into(),
+                &[],
+                Self::get_family_count() as u8,
+            ));
 
-                *mask = if organism_index != 0_usize {
-                    face_mask
-                } else {
-                    FullMask::default()
-                };
-                *inverse_addr = FullAddr::from((
-                    usize::from(GenusIndex::SIMPLE),
-                    species_index,
-                    FullAddr::invert_organism_index(organism_index),
-                ));
-                *simple = HalfAddr::new(species_index, organism_index);
-                *rotation = face_data.get_rotation_quat(organism_index as u32);
+            let library: &mut Library = &mut Self::get_mut();
 
-                let mask: FullMask = *mask;
-                let rotation: Quat = *rotation;
-                let (pos_array, rot_array): (&mut PuzzleStateComponent, &mut PuzzleStateComponent) =
-                    transformation.arrays_mut();
+            library.family_infos.push(FamilyInfo::new(
+                REORIENTATION_STR.into(),
+                GenusIndex::REORIENTATION,
+                false,
+            ));
 
-                for piece_index in PIECE_RANGE {
-                    let (pos, rot): (usize, usize) = if mask.affects_piece(piece_index) {
-                        icosidodecahedron_data.get_pos_and_rot(
-                            &(rotation * icosidodecahedron_data.faces[piece_index].quat),
+            for (orientation_species, transformation_species, mask_species, rotation_species) in {
+                // This type is just used to mutably borrow multiple genus data simultaneously
+                #[allow(clippy::type_complexity)]
+                let (
+                    orientation_genus,
+                    transformation_genus,
+                    mask_genus,
+                    rotation_genus,
+                ): (
+                    &[Species<Quat>],
+                    &mut Genus<Transformation>,
+                    &mut Genus<FullMask>,
+                    &mut Genus<Quat>,
+                ) = (
+                    &library.orientations[0_usize..Self::SPECIES_PER_GENUS],
+                    &mut library.transformations[reorientation_genus_index],
+                    &mut library.full_masks[reorientation_genus_index],
+                    &mut library.rotations[reorientation_genus_index],
+                );
+
+                izip!(
+                    orientation_genus.iter(),
+                    transformation_genus.iter_mut(),
+                    mask_genus.iter_mut(),
+                    rotation_genus.iter_mut()
+                )
+            } {
+                for (orientation, transformation, mask, rotation) in izip!(
+                    orientation_species.iter(),
+                    transformation_species.iter_mut(),
+                    mask_species.iter_mut(),
+                    rotation_species.iter_mut()
+                ) {
+                    let reorientation_quat: Quat = *orientation * origin_conj_quat;
+                    let (pos_array, rot_array): (
+                        &mut PuzzleStateComponent,
+                        &mut PuzzleStateComponent,
+                    ) = transformation.arrays_mut();
+
+                    for piece_index in PIECE_RANGE {
+                        let (pos, rot): (usize, usize) = icosidodecahedron_data.get_pos_and_rot(
+                            &(reorientation_quat * icosidodecahedron_data.faces[piece_index].quat),
                             /* We could put a filter in here, but it'd be slower, and the quat math
                             is precise enough that it's unnecessary here */
                             None,
-                        )
-                    } else {
-                        (piece_index, 0_usize)
-                    };
+                        );
 
-                    pos_array[piece_index] = pos as PieceStateComponent;
-                    rot_array[piece_index] = rot as PieceStateComponent;
+                        pos_array[piece_index] = pos as PieceStateComponent;
+                        rot_array[piece_index] = rot as PieceStateComponent;
+                    }
+
+                    *mask = FullMask::from(transformation.arrays());
+                    *rotation = reorientation_quat;
+                }
+            }
+        }
+
+        /* `FullAddr::set_genus_index()` will implicitly call Self::get(), so we need to initialize
+        the `inverse_addr_genus` on the stack, then copy it over */
+        let mut inverse_addr_genus: Genus<FullAddr> = Genus::<FullAddr>::default();
+
+        {
+            let transformation_genus: &Genus<Transformation> =
+                &Self::get().transformations[reorientation_genus_index];
+
+            for (transformation_species, inverse_addr_species) in transformation_genus
+                .iter()
+                .zip(inverse_addr_genus.iter_mut())
+            {
+                for (transformation, inverse_addr) in transformation_species
+                    .iter()
+                    .zip(inverse_addr_species.iter_mut())
+                {
+                    *inverse_addr = transformation_genus
+                        .find_word(&(-transformation))
+                        .map(|mut inverse_addr: FullAddr| -> FullAddr {
+                            *inverse_addr.set_genus_index(reorientation_genus_index)
+                        })
+                        .unwrap_or_default();
+                }
+            }
+        }
+
+        {
+            Self::get_mut().inverse_addrs[reorientation_genus_index] = inverse_addr_genus;
+        }
+    }
+
+    fn initialize_simple_genus(icosidodecahedron_data: &Data) {
+        const SIMPLE_STR: &str = "Simple";
+
+        let simple_genus_index: usize = GenusIndex::SIMPLE.into();
+
+        {
+            let mut local_inverse_addr: FullAddr =
+                FullAddr::from((GenusIndex::SIMPLE, HalfAddr::ORIGIN));
+
+            Self::push_genus(GenusInfo::new(
+                SIMPLE_STR.into(),
+                &[HalfAddr::default()],
+                Self::get_family_count() as u8,
+            ));
+
+            let library: &mut Library = &mut Self::get_mut();
+
+            library.family_infos.push(FamilyInfo::new(
+                SIMPLE_STR.into(),
+                GenusIndex::SIMPLE,
+                false,
+            ));
+
+            for (
+                species_index,
+                (
+                    simple_species,
+                    transformation_species,
+                    mask_species,
+                    inverse_addr_species,
+                    rotation_species,
+                ),
+            ) in {
+                // This type is just used to mutably borrow multiple genus data simultaneously
+                #[allow(clippy::type_complexity)]
+                let (
+                    simple_genus,
+                    transformation_genus,
+                    mask_genus,
+                    inverse_addr_genus,
+                    rotation_genus,
+                ): (
+                    &mut [HalfAddr],
+                    &mut Genus<Transformation>,
+                    &mut Genus<FullMask>,
+                    &mut Genus<FullAddr>,
+                    &mut Genus<Quat>,
+                ) = (
+                    &mut library.simples[0_usize..Self::ORGANISMS_PER_GENUS],
+                    &mut library.transformations[simple_genus_index],
+                    &mut library.full_masks[simple_genus_index],
+                    &mut library.inverse_addrs[simple_genus_index],
+                    &mut library.rotations[simple_genus_index],
+                );
+
+                izip!(
+                    simple_genus.chunks_mut(Self::ORGANISMS_PER_SPECIES),
+                    transformation_genus.iter_mut(),
+                    mask_genus.iter_mut(),
+                    inverse_addr_genus.iter_mut(),
+                    rotation_genus.iter_mut()
+                )
+                .enumerate()
+            } {
+                let face_data: &FaceData = &icosidodecahedron_data.faces[species_index];
+                let face_mask: FullMask = FullMask::from_pentagon_index(species_index);
+
+                local_inverse_addr.set_species_index(species_index);
+
+                for (organism_index, (simple, transformation, mask, inverse_addr, rotation)) in
+                    izip!(
+                        simple_species.iter_mut(),
+                        transformation_species.iter_mut(),
+                        mask_species.iter_mut(),
+                        inverse_addr_species.iter_mut(),
+                        rotation_species.iter_mut()
+                    )
+                    .enumerate()
+                {
+                    *simple = *local_inverse_addr
+                        .set_organism_index(organism_index)
+                        .get_half_addr();
+
+                    let local_rotation: Quat = face_data.get_rotation_quat(organism_index as u32);
+                    let local_mask: FullMask = if organism_index != 0_usize {
+                        face_mask
+                    } else {
+                        FullMask::default()
+                    };
+                    let (pos_array, rot_array): (
+                        &mut PuzzleStateComponent,
+                        &mut PuzzleStateComponent,
+                    ) = transformation.arrays_mut();
+
+                    for piece_index in PIECE_RANGE {
+                        let (pos, rot): (usize, usize) = if local_mask.affects_piece(piece_index) {
+                            icosidodecahedron_data.get_pos_and_rot(
+                                &(local_rotation * icosidodecahedron_data.faces[piece_index].quat),
+                                /* We could put a filter in here, but it'd be slower, and the quat
+                                math is precise enough that it's unnecessary here */
+                                None,
+                            )
+                        } else {
+                            (piece_index, 0_usize)
+                        };
+
+                        pos_array[piece_index] = pos as PieceStateComponent;
+                        rot_array[piece_index] = rot as PieceStateComponent;
+                    }
+
+                    *mask = local_mask;
+                    *inverse_addr = *local_inverse_addr
+                        .set_organism_index(FullAddr::invert_organism_index(organism_index));
+                    *rotation = local_rotation;
                 }
             }
         }
     }
 
+    fn initialize_order(order_info: OrderInfo) {
+        for family_input in order_info.0 {
+            if let Err(initialize_family_err) = Self::initialize_family(family_input) {
+                log::warn!("InitializeFamilyErr: {:?}", initialize_family_err);
+            }
+        }
+    }
+
+    fn initialize_family(
+        mut family_input: FamilyInput,
+    ) -> Result<FamilyIndex, InitializeFamilyErr> {
+        let seed_simples: Vec<HalfAddr> = take(&mut family_input.seed_simples)
+            .into_iter()
+            .map(|(species_index, organism_index): (u8, u8)| -> HalfAddr {
+                HalfAddr::new(species_index as usize, organism_index as usize)
+            })
+            .collect();
+        let seed_simple_slice: &[HalfAddr] = &seed_simples;
+
+        Self::is_seed_simple_slice_valid(seed_simple_slice)?;
+
+        let simple_slice_len: usize = seed_simple_slice.len();
+        let family_index: FamilyIndex = Self::get_family_count() as FamilyIndex;
+        let mut family_info: FamilyInfo = FamilyInfo {
+            name: take(&mut family_input.name),
+            base_genus: GenusIndex::from_usize(Self::get_genus_count()),
+            inverse_is_mirror: false, // To be determined
+        };
+
+        Self::push_genus(GenusInfo::new(
+            family_info.name.clone(),
+            seed_simple_slice,
+            family_index,
+        ));
+        Self::initialize_simple_slice_genus(
+            family_info.base_genus,
+            seed_simple_slice,
+            false,
+            false,
+        );
+        Self::push_genus(GenusInfo::new(
+            format!("{}'", family_info.name),
+            seed_simple_slice,
+            family_index,
+        ));
+        Self::initialize_simple_slice_genus(
+            GenusIndex(family_info.base_genus.0 + 1 as GenusIndexType),
+            seed_simple_slice,
+            true,
+            false,
+        );
+
+        family_info.inverse_is_mirror = {
+            let mut temp_inverse_simples: Vec<HalfAddr> =
+                Vec::<HalfAddr>::with_capacity(simple_slice_len);
+
+            Self::initialize_simple_slice(
+                seed_simple_slice,
+                false,
+                true,
+                HalfAddr::ORIGIN,
+                &mut temp_inverse_simples,
+            );
+
+            let mirror_genus_index: GenusIndex =
+                GenusIndex(family_info.base_genus.0 + 1 as GenusIndexType);
+            let mirror_simple_slice_ref: LibraryOrganismRef<[HalfAddr]> =
+                Self::get_simple_slice(FullAddr::from((mirror_genus_index, HalfAddr::ORIGIN)));
+            let mirror_simple_slice: &[HalfAddr] = mirror_simple_slice_ref.try_get().unwrap();
+
+            Self::simple_slices_have_identical_organism_indicies(
+                &temp_inverse_simples,
+                mirror_simple_slice,
+            ) && Self::get()
+                .get_simple_slice_genus(mirror_genus_index)
+                .and_then(
+                    |simple_slice_genus: Box<Genus<SimpleSlice>>| -> Option<FullAddr> {
+                        (*simple_slice_genus).find_word(&Some(&*temp_inverse_simples))
+                    },
+                )
+                .is_some()
+        };
+
+        if !family_info.inverse_is_mirror {
+            Self::push_genus(GenusInfo::new(
+                format!("{}\"", family_info.name),
+                seed_simple_slice,
+                family_index,
+            ));
+            Self::initialize_simple_slice_genus(
+                GenusIndex(family_info.base_genus.0 + 2 as GenusIndexType),
+                seed_simple_slice,
+                false,
+                true,
+            );
+            Self::push_genus(GenusInfo::new(
+                format!("{}\"'", family_info.name),
+                seed_simple_slice,
+                family_index,
+            ));
+            Self::initialize_simple_slice_genus(
+                GenusIndex(family_info.base_genus.0 + 3 as GenusIndexType),
+                seed_simple_slice,
+                true,
+                true,
+            );
+        }
+
+        for genus_index_usize in family_info.get_genus_range() {
+            let genus_index: GenusIndex = GenusIndex::from_usize(genus_index_usize);
+            let inverse_genus_index: usize = family_info.invert_genus_index(genus_index).into();
+            let mut simple_slice_start: usize = Self::get_simples_range(genus_index).unwrap().start;
+
+            for species_index in 0_usize..Self::SPECIES_PER_GENUS {
+                for organism_index in 0_usize..Self::ORGANISMS_PER_SPECIES {
+                    let mut puzzle_state: PuzzleState = PuzzleState::SOLVED_STATE;
+                    let simple_slice_end = simple_slice_start + simple_slice_len;
+
+                    for simple in Self::get().simples[simple_slice_start..simple_slice_end].iter() {
+                        puzzle_state += simple.as_simple();
+                    }
+
+                    let inverse_addr: FullAddr =
+                        FullAddr::from((inverse_genus_index, species_index, organism_index));
+                    let mut library_ref_mut: LibraryRefMut = Self::get_mut();
+
+                    library_ref_mut.transformations[genus_index_usize][species_index]
+                        [organism_index] = Transformation(puzzle_state.clone());
+                    library_ref_mut.full_masks[genus_index_usize][species_index][organism_index] =
+                        FullMask::from(puzzle_state.arrays());
+                    library_ref_mut.inverse_addrs[genus_index_usize][species_index]
+                        [organism_index] = inverse_addr;
+
+                    simple_slice_start = simple_slice_end;
+                }
+            }
+        }
+
+        Self::get_mut().family_infos.push(family_info);
+
+        Ok(family_index)
+    }
+
+    fn is_seed_simple_slice_valid(
+        seed_simple_slice: &[HalfAddr],
+    ) -> Result<(), InitializeFamilyErr> {
+        for simple in seed_simple_slice {
+            if !simple.is_valid() {
+                return Err(InitializeFamilyErr::InvalidSeedSimpleSlice);
+            }
+        }
+
+        if Self::get_family_count() > FamilyIndex::MAX as usize {
+            return Err(InitializeFamilyErr::FamilyIndexTooLarge);
+        }
+
+        if Self::get_genus_count() > GenusIndexType::MAX as usize - 1_usize {
+            return Err(InitializeFamilyErr::GenusIndexTooLarge);
+        }
+
+        if Self::get_simple_count() > SimpleOffset::MAX as usize {
+            return Err(InitializeFamilyErr::SimpleOffsetTooLarge);
+        }
+
+        if seed_simple_slice.len() <= 1_usize {
+            return Err(InitializeFamilyErr::SeedSimpleSliceTooShort);
+        }
+
+        if seed_simple_slice.len() > SimpleSliceLen::MAX as usize {
+            return Err(InitializeFamilyErr::SeedSimpleSliceTooLong);
+        }
+
+        let mut puzzle_state: PuzzleState = PuzzleState::default();
+
+        for simple in seed_simple_slice {
+            puzzle_state += simple.as_simple();
+        }
+
+        if puzzle_state.is_solved() {
+            return Err(InitializeFamilyErr::DoesNotTransformPuzzleState);
+        }
+
+        let library: &Self = &*Self::get();
+
+        // Check for a homomorphic genus
+        for family_info in library.family_infos.iter() {
+            let base_genus_info: &GenusInfo = library.get_genus_info(family_info.base_genus);
+
+            /* If the base genus for the family has a different simple slice length, it won't be a
+            match */
+            if seed_simple_slice.len() != base_genus_info.simple_slice_len as usize {
+                continue;
+            }
+
+            let mut full_addr: FullAddr = HalfAddr::ORIGIN.as_reorientation();
+
+            for genus_index in family_info.get_genus_range() {
+                if !Self::simple_slices_have_identical_organism_indicies(
+                    seed_simple_slice,
+                    Self::get_simple_slice(*full_addr.set_genus_index(genus_index))
+                        .try_get()
+                        .unwrap(),
+                ) {
+                    continue;
+                }
+
+                if let Some(mut homomorphism) = Self::get()
+                    .get_simple_slice_genus(GenusIndex(genus_index as GenusIndexType))
+                    .and_then(
+                        |simple_slice_genus: Box<Genus<SimpleSlice>>| -> Option<FullAddr> {
+                            (*simple_slice_genus).find_word(&Some(seed_simple_slice))
+                        },
+                    )
+                {
+                    return Err(InitializeFamilyErr::HomomorphismExists(
+                        *homomorphism.set_genus_index(genus_index),
+                    ));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn get_simple_count() -> usize {
+        Self::get().simples.len()
+    }
+
     fn initialize_simple_slice(
-        simple_slice: &mut [HalfAddr],
         seed_simple_slice: &[HalfAddr],
         mirror: bool,
         invert: bool,
         reorientation: HalfAddr,
+        simples: &mut Vec<HalfAddr>,
     ) {
-        if simple_slice.len() == seed_simple_slice.len() {
-            let get_species_index = if mirror {
-                |seed_simple: HalfAddr| -> usize {
-                    FullAddr::mirror_species_index(seed_simple.get_species_index())
-                }
-            } else {
-                |seed_simple: HalfAddr| -> usize { seed_simple.get_species_index() }
-            };
-            let get_organism_index = if mirror ^ invert {
-                |seed_simple: HalfAddr| -> usize {
-                    FullAddr::invert_organism_index(seed_simple.get_organism_index())
-                }
-            } else {
-                |seed_simple: HalfAddr| -> usize { seed_simple.get_organism_index() }
-            };
-            let mut seed_simple_slice_iter =
-                |seed_simple_slice_iter: &mut dyn DoubleEndedIterator<Item = &HalfAddr>| {
-                    for (simple_slice_index, seed_simple) in seed_simple_slice_iter.enumerate() {
-                        simple_slice[simple_slice_index] = *(FullAddr::from((
+        let get_species_index = if mirror {
+            |seed_simple: HalfAddr| -> usize {
+                FullAddr::mirror_species_index(seed_simple.get_species_index())
+            }
+        } else {
+            |seed_simple: HalfAddr| -> usize { seed_simple.get_species_index() }
+        };
+        let get_organism_index = if mirror ^ invert {
+            |seed_simple: HalfAddr| -> usize {
+                FullAddr::invert_organism_index(seed_simple.get_organism_index())
+            }
+        } else {
+            |seed_simple: HalfAddr| -> usize { seed_simple.get_organism_index() }
+        };
+        let mut seed_simple_slice_iter =
+            |seed_simple_slice_iter: &mut dyn DoubleEndedIterator<Item = &HalfAddr>| {
+                for seed_simple in seed_simple_slice_iter {
+                    simples.push(
+                        *(FullAddr::from((
                             usize::from(GenusIndex::SIMPLE),
                             get_species_index(*seed_simple),
                             get_organism_index(*seed_simple),
                         )) + reorientation)
-                            .get_half_addr()
-                    }
-                };
+                            .get_half_addr(),
+                    );
+                }
+            };
 
-            if invert {
-                seed_simple_slice_iter(&mut seed_simple_slice.iter().rev());
-            } else {
-                seed_simple_slice_iter(&mut seed_simple_slice.iter());
-            }
+        if invert {
+            seed_simple_slice_iter(&mut seed_simple_slice.iter().rev());
+        } else {
+            seed_simple_slice_iter(&mut seed_simple_slice.iter());
         }
     }
 
     fn initialize_simple_slice_genus(
-        &mut self,
         genus_index: GenusIndex,
         seed_simple_slice: &[HalfAddr],
         mirror: bool,
         invert: bool,
     ) {
         let simples_range: Range<usize> = {
-            if let Some(simples_range) = self.get_simples_range(genus_index) {
+            if let Some(simples_range) = Self::get_simples_range(genus_index) {
                 simples_range
             } else {
                 return;
@@ -1027,209 +1289,44 @@ impl Library {
             return;
         }
 
-        for (species_index, simple_slice_species) in &mut self.simples[simples_range]
-            .chunks_mut(Self::ORGANISMS_PER_SPECIES * seed_simple_slice.len())
-            .enumerate()
-        {
-            for (organism_index, simple_slice) in simple_slice_species
-                .chunks_mut(seed_simple_slice.len())
-                .enumerate()
-            {
+        let mut simples: Vec<HalfAddr> = Vec::<HalfAddr>::with_capacity(simples_range.len());
+
+        for species_index in 0_usize..Self::SPECIES_PER_GENUS {
+            for organism_index in 0_usize..Self::ORGANISMS_PER_SPECIES {
                 Self::initialize_simple_slice(
-                    simple_slice,
                     seed_simple_slice,
                     mirror,
                     invert,
                     HalfAddr::new(species_index, organism_index),
-                )
+                    &mut simples,
+                );
             }
         }
+
+        Self::get_mut().simples[simples_range].copy_from_slice(&simples);
     }
 
-    fn push_genus(&mut self, mut genus_info: GenusInfo) {
-        let simple_offset: usize = self.simples.len();
+    fn push_genus(mut genus_info: GenusInfo) {
+        let simple_offset: usize = Self::get_simple_count();
         let simple_slice_len: usize = genus_info.simple_slice_len as usize;
+        let mut library_ref_mut: LibraryRefMut = Self::get_mut();
 
         genus_info.simple_offset = simple_offset as SimpleOffset;
-        self.genus_infos.push(genus_info);
-        self.simples.resize(
+        library_ref_mut.genus_infos.push(genus_info);
+        library_ref_mut.simples.resize(
             simple_offset + Self::ORGANISMS_PER_GENUS * simple_slice_len,
             HalfAddr::default(),
         );
-        self.transformations
+        library_ref_mut
+            .transformations
             .push(Genus::<Transformation>::default());
-        self.full_masks.push(Genus::<FullMask>::default());
-        self.inverse_addrs.push(Genus::<FullAddr>::default());
+        library_ref_mut
+            .full_masks
+            .push(Genus::<FullMask>::default());
+        library_ref_mut
+            .inverse_addrs
+            .push(Genus::<FullAddr>::default());
     }
-
-    fn push_family(&mut self, mut family_input: FamilyInput) -> Result<FamilyIndex, PushFamilyErr> {
-        let seed_simples: Vec<HalfAddr> = take(&mut family_input.seed_simples)
-            .iter()
-            .map(|(species_index, organism_index): &(u8, u8)| -> HalfAddr {
-                HalfAddr::new(*species_index as usize, *organism_index as usize)
-            })
-            .collect();
-        let seed_simple_slice: &[HalfAddr] = &seed_simples;
-
-        self.is_seed_simple_slice_valid(seed_simple_slice)?;
-
-        let simple_slice_len: usize = seed_simple_slice.len();
-        let family_index: FamilyIndex = self.family_infos.len() as FamilyIndex;
-        let mut family_info: FamilyInfo = FamilyInfo {
-            name: take(&mut family_input.name),
-            base_genus: GenusIndex::from_usize(self.genus_infos.len()),
-            inverse_is_mirror: false, // To be determined
-        };
-
-        self.push_genus(GenusInfo::new(
-            family_info.name.clone(),
-            seed_simple_slice,
-            family_index,
-        ));
-        self.initialize_simple_slice_genus(family_info.base_genus, seed_simple_slice, false, false);
-        self.push_genus(GenusInfo::new(
-            format!("{}'", family_info.name),
-            seed_simple_slice,
-            family_index,
-        ));
-        self.initialize_simple_slice_genus(
-            GenusIndex(family_info.base_genus.0 + 1 as GenusIndexType),
-            seed_simple_slice,
-            true,
-            false,
-        );
-
-        family_info.inverse_is_mirror = {
-            let mut temp_inverse_simples: Vec<HalfAddr> =
-                vec![HalfAddr::default(); simple_slice_len];
-
-            Self::initialize_simple_slice(
-                &mut temp_inverse_simples,
-                seed_simple_slice,
-                false,
-                true,
-                HalfAddr::ORIGIN,
-            );
-
-            let mirror_genus_index: GenusIndex =
-                GenusIndex(family_info.base_genus.0 + 1 as GenusIndexType);
-            let mirror_simple_slice: &[HalfAddr] = get_simple_slice(
-                &*self,
-                FullAddr::from((mirror_genus_index, HalfAddr::ORIGIN)),
-            );
-
-            Self::simple_slices_have_identical_organism_indicies(
-                &temp_inverse_simples,
-                mirror_simple_slice,
-            ) && self
-                .get_simple_slice_genus(mirror_genus_index)
-                .and_then(
-                    |simple_slice_genus: Box<Genus<SimpleSlice>>| -> Option<FullAddr> {
-                        (*simple_slice_genus).find_word(&Some(&*temp_inverse_simples))
-                    },
-                )
-                .is_some()
-        };
-
-        if !family_info.inverse_is_mirror {
-            self.push_genus(GenusInfo::new(
-                format!("{}\"", family_info.name),
-                seed_simple_slice,
-                family_index,
-            ));
-            self.initialize_simple_slice_genus(
-                GenusIndex(family_info.base_genus.0 + 2 as GenusIndexType),
-                seed_simple_slice,
-                false,
-                true,
-            );
-            self.push_genus(GenusInfo::new(
-                format!("{}\"'", family_info.name),
-                seed_simple_slice,
-                family_index,
-            ));
-            self.initialize_simple_slice_genus(
-                GenusIndex(family_info.base_genus.0 + 3 as GenusIndexType),
-                seed_simple_slice,
-                true,
-                true,
-            );
-        }
-
-        for genus_index_usize in family_info.get_genus_range() {
-            let simple_slice_len: usize =
-                self.genus_infos[genus_index_usize].simple_slice_len as usize;
-            let genus_index: GenusIndex = GenusIndex::from_usize(genus_index_usize);
-            let inverse_genus_index: usize = family_info.invert_genus_index(genus_index).into();
-            let (simples_genus, transformation_genus, mask_genus, inverse_addr_genus): (
-                &[HalfAddr],
-                &mut Genus<Transformation>,
-                &mut Genus<FullMask>,
-                &mut Genus<FullAddr>,
-            ) = (
-                &self.simples[self
-                    .get_simples_range(GenusIndex::from_usize(genus_index_usize))
-                    .unwrap()],
-                &mut self.transformations[genus_index_usize],
-                &mut self.full_masks[genus_index_usize],
-                &mut self.inverse_addrs[genus_index_usize],
-            );
-
-            for (species_index, simples_species) in simples_genus
-                .chunks(Self::ORGANISMS_PER_SPECIES * simple_slice_len)
-                .enumerate()
-            {
-                let transformation_species: &mut Species<Transformation> =
-                    &mut transformation_genus[species_index];
-                let mask_species: &mut Species<FullMask> = &mut mask_genus[species_index];
-                let inverse_addr_species: &mut Species<FullAddr> =
-                    &mut inverse_addr_genus[species_index];
-
-                for (organism_index, simple_slice) in
-                    simples_species.chunks(simple_slice_len).enumerate()
-                {
-                    let transformation: &mut Transformation =
-                        &mut transformation_species[organism_index];
-                    let mask: &mut FullMask = &mut mask_species[organism_index];
-                    let inverse_addr: &mut FullAddr = &mut inverse_addr_species[organism_index];
-
-                    let mut puzzle_state: PuzzleState = PuzzleState::SOLVED_STATE;
-
-                    for simple in simple_slice {
-                        puzzle_state += simple.as_simple();
-                    }
-
-                    *transformation = Transformation(puzzle_state);
-                    *mask = FullMask::from(transformation.arrays());
-                    *inverse_addr =
-                        FullAddr::from((inverse_genus_index, species_index, organism_index));
-                }
-            }
-        }
-
-        self.family_infos.push(family_info);
-
-        Ok(family_index)
-    }
-
-    fn push_order(&mut self, order_info: OrderInfo) {
-        for family_input in order_info.0 {
-            if let Err(push_family_err) = self.push_family(family_input) {
-                log::warn!("PushFamilyErr: {:?}", push_family_err);
-            }
-        }
-    }
-}
-
-fn get_simple_slice(library: &Library, full_addr: FullAddr) -> &[HalfAddr] {
-    let genus_info: &GenusInfo = &library.genus_infos[full_addr.get_genus_index()];
-    let simple_slice_len: usize = genus_info.simple_slice_len as usize;
-    let simple_slice_start: usize = genus_info.simple_offset as usize
-        + simple_slice_len
-            * (Library::ORGANISMS_PER_SPECIES * full_addr.get_species_index()
-                + full_addr.get_organism_index());
-
-    &library.simples[simple_slice_start..simple_slice_start + simple_slice_len]
 }
 
 impl From<&Library> for OrderInfo {
@@ -1241,13 +1338,12 @@ impl From<&Library> for OrderInfo {
                 .map(|family_info: &FamilyInfo| -> FamilyInput {
                     FamilyInput {
                         name: family_info.name.clone(),
-                        seed_simples: get_simple_slice(
-                            library,
-                            FullAddr {
-                                genus_index: family_info.base_genus,
-                                half_addr: HalfAddr::ORIGIN,
-                            },
-                        )
+                        seed_simples: Library::get_simple_slice(FullAddr {
+                            genus_index: family_info.base_genus,
+                            half_addr: HalfAddr::ORIGIN,
+                        })
+                        .try_get()
+                        .unwrap()
                         .iter()
                         .map(|half_addr: &HalfAddr| -> (u8, u8) {
                             (
@@ -1263,9 +1359,179 @@ impl From<&Library> for OrderInfo {
     }
 }
 
+pub struct LibraryRef(RwLockReadGuard<'static, Library>);
+
+impl Deref for LibraryRef {
+    type Target = Library;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.0
+    }
+}
+
+pub enum LibraryOrganismType {
+    SimpleSlice,
+    Transformation,
+    FullMask,
+    InverseAddr,
+    Rotation,
+    Orientation,
+}
+
+#[derive(Debug)]
+pub enum LibraryOrganismTryGetErr {
+    InvalidLibraryOrganismType,
+    InvalidAddr,
+}
+
+pub trait LibraryOrganism {
+    fn try_get(lo_ref: &LibraryOrganismRef<Self>) -> Result<&Self, LibraryOrganismTryGetErr>;
+}
+
+impl LibraryOrganism for [HalfAddr] {
+    fn try_get(lo_ref: &LibraryOrganismRef<Self>) -> Result<&Self, LibraryOrganismTryGetErr> {
+        match lo_ref.lo_type {
+            LibraryOrganismType::SimpleSlice => {
+                let full_addr: FullAddr = lo_ref.addr;
+
+                if full_addr.is_valid() {
+                    let genus_info: &GenusInfo =
+                        &lo_ref.library_ref.genus_infos[full_addr.get_genus_index()];
+                    let simple_slice_len: usize = genus_info.simple_slice_len as usize;
+                    let simple_slice_start: usize = genus_info.simple_offset as usize
+                        + simple_slice_len
+                            * (Library::ORGANISMS_PER_SPECIES * full_addr.get_species_index()
+                                + full_addr.get_organism_index());
+
+                    Ok(&lo_ref.library_ref.simples
+                        [simple_slice_start..simple_slice_start + simple_slice_len])
+                } else {
+                    Err(LibraryOrganismTryGetErr::InvalidAddr)
+                }
+            }
+            _ => Err(LibraryOrganismTryGetErr::InvalidLibraryOrganismType),
+        }
+    }
+}
+
+impl LibraryOrganism for Transformation {
+    fn try_get(lo_ref: &LibraryOrganismRef<Self>) -> Result<&Self, LibraryOrganismTryGetErr> {
+        match lo_ref.lo_type {
+            LibraryOrganismType::Transformation => {
+                if lo_ref.addr.is_valid() {
+                    Ok(lo_ref.library_ref.transformations.get_word(lo_ref.addr))
+                } else {
+                    Err(LibraryOrganismTryGetErr::InvalidAddr)
+                }
+            }
+            _ => Err(LibraryOrganismTryGetErr::InvalidLibraryOrganismType),
+        }
+    }
+}
+
+impl LibraryOrganism for FullMask {
+    fn try_get(lo_ref: &LibraryOrganismRef<Self>) -> Result<&Self, LibraryOrganismTryGetErr> {
+        match lo_ref.lo_type {
+            LibraryOrganismType::FullMask => {
+                if lo_ref.addr.is_valid() {
+                    Ok(lo_ref.library_ref.full_masks.get_word(lo_ref.addr))
+                } else {
+                    Err(LibraryOrganismTryGetErr::InvalidAddr)
+                }
+            }
+            _ => Err(LibraryOrganismTryGetErr::InvalidLibraryOrganismType),
+        }
+    }
+}
+
+impl LibraryOrganism for FullAddr {
+    fn try_get(lo_ref: &LibraryOrganismRef<Self>) -> Result<&Self, LibraryOrganismTryGetErr> {
+        match lo_ref.lo_type {
+            LibraryOrganismType::InverseAddr => {
+                if lo_ref.addr.is_valid() {
+                    Ok(lo_ref.library_ref.inverse_addrs.get_word(lo_ref.addr))
+                } else {
+                    Err(LibraryOrganismTryGetErr::InvalidAddr)
+                }
+            }
+            _ => Err(LibraryOrganismTryGetErr::InvalidLibraryOrganismType),
+        }
+    }
+}
+
+impl LibraryOrganism for Quat {
+    fn try_get(lo_ref: &LibraryOrganismRef<Self>) -> Result<&Self, LibraryOrganismTryGetErr> {
+        match lo_ref.lo_type {
+            LibraryOrganismType::Rotation => {
+                let full_addr: FullAddr = lo_ref.addr;
+
+                if full_addr.is_valid()
+                    && full_addr.get_genus_index() < Library::GENERA_PER_SMALL_CLASS
+                {
+                    Ok(lo_ref.library_ref.rotations.get_word(full_addr))
+                } else {
+                    Err(LibraryOrganismTryGetErr::InvalidAddr)
+                }
+            }
+            LibraryOrganismType::Orientation => {
+                let half_addr: HalfAddr = *lo_ref.addr.get_half_addr();
+
+                if half_addr.is_valid() {
+                    Ok(lo_ref.library_ref.orientations.get_word(half_addr))
+                } else {
+                    Err(LibraryOrganismTryGetErr::InvalidAddr)
+                }
+            }
+            _ => Err(LibraryOrganismTryGetErr::InvalidLibraryOrganismType),
+        }
+    }
+}
+
+pub struct LibraryOrganismRef<T: LibraryOrganism + ?Sized> {
+    library_ref: LibraryRef,
+    addr: FullAddr,
+    lo_type: LibraryOrganismType,
+    _pd: PhantomData<T>,
+}
+
+impl<T: LibraryOrganism + ?Sized> LibraryOrganismRef<T> {
+    pub fn try_get(&self) -> Result<&T, LibraryOrganismTryGetErr> {
+        T::try_get(self)
+    }
+}
+
+impl<T: LibraryOrganism + ?Sized> From<(FullAddr, LibraryOrganismType)> for LibraryOrganismRef<T> {
+    fn from((addr, lo_type): (FullAddr, LibraryOrganismType)) -> Self {
+        Self {
+            library_ref: Library::get(),
+            addr,
+            lo_type,
+            _pd: Default::default(),
+        }
+    }
+}
+
+struct LibraryRefMut(RwLockWriteGuard<'static, Library>);
+
+impl Deref for LibraryRefMut {
+    type Target = Library;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.0
+    }
+}
+
+impl DerefMut for LibraryRefMut {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut *self.0
+    }
+}
+
 /* Library needs a more complicated setup because Library::initialize() relies on Library::get(), so
 a lazy_static won't suffice */
 impl StaticDataLibrary for Library {
+    type Target = LibraryRef;
+
     fn pre_init() -> Option<Box<dyn FnOnce()>> {
         Some(Box::new(|| {
             Data::initialize();
@@ -1273,15 +1539,20 @@ impl StaticDataLibrary for Library {
     }
 
     fn init() -> Option<Box<dyn FnOnce()>> {
-        Some(Box::new(|| unsafe {
-            LIBRARY = MaybeUninit::<Library>::new(Library::default());
-
-            LIBRARY.assume_init_mut().initialize();
+        Some(Box::new(|| {
+            Library::initialize();
         }))
     }
 
-    fn get() -> &'static Self {
-        unsafe { LIBRARY.assume_init_ref() }
+    fn get() -> LibraryRef {
+        assert!(LIBRARY_ASSUME_INIT.load(Ordering::Acquire));
+
+        LibraryRef(
+            // Safe: see assert above
+            unsafe { transmute::<&RwLock<MaybeUninit<Library>>, &RwLock<Library>>(&LIBRARY) }
+                .read()
+                .unwrap(),
+        )
     }
 
     fn get_once() -> Option<&'static Once> {
@@ -1289,22 +1560,17 @@ impl StaticDataLibrary for Library {
     }
 }
 
-static mut LIBRARY: MaybeUninit<Library> = MaybeUninit::<Library>::uninit();
+// Safe: MaybeUninitLibrary
+static LIBRARY: RwLock<MaybeUninit<Library>> = RwLock::new(MaybeUninit::uninit());
+static LIBRARY_ASSUME_INIT: AtomicBool = AtomicBool::new(false);
 static LIBRARY_ONCE: Once = Once::new();
-
-lazy_static! {
-    /* Used only for updating or reloading the library mid session. Not the most "safe", but it can
-    be done in a safe manner so long as updating and reloading is only done in a single-threaded
-    state */
-    static ref LIBRARY_MUTEX: Mutex<()> = Mutex::<()>::new(());
-}
 
 #[cfg(test)]
 mod tests {
     use {super::*, crate::util::StaticDataLibrary};
 
     fn test_validity() {
-        let library: &Library = Library::get();
+        let library: &Library = &*Library::get();
 
         for genus_index in 0_usize..library.genus_infos.len() {
             let transformation_genus: &Genus<Transformation> =
@@ -1398,7 +1664,7 @@ mod tests {
     }
 
     fn test_reorientations() {
-        let library: &Library = Library::get();
+        let library: &Library = &*Library::get();
         let reorientation_genus_index: usize = GenusIndex::REORIENTATION.into();
         let simple_transformation_genus: &Genus<Transformation> =
             &library.transformations[usize::from(GenusIndex::SIMPLE)];
@@ -1406,7 +1672,7 @@ mod tests {
             <[Vec<(usize, usize)>; usize::PENTAGON_PIECE_COUNT]>::from_file(
                 STRING_DATA.tests.reorientation_tests.as_ref(),
             )
-            .to_option()
+            .ok()
             .unwrap();
 
         for species_index in 0_usize..Library::SPECIES_PER_GENUS {
@@ -1656,7 +1922,7 @@ mod tests {
     }
 
     fn test_simples() {
-        let library: &Library = Library::get();
+        let library: &Library = &*Library::get();
         let simple_genus_index: usize = GenusIndex::SIMPLE.into();
         let transformation_genus: &Genus<Transformation> =
             &library.transformations[simple_genus_index];

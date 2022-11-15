@@ -314,31 +314,42 @@ impl Data {
 
         Some(mesh)
     }
+
+    fn new() -> Self {
+        Self {
+            verts: Vec::<VertexData>::new(),
+            edges: Vec::<EdgeData>::new(),
+            vert_indices: Vec::<usize>::new(),
+            faces: Vec::<FaceData>::new(),
+        }
+    }
 }
 
 #[cfg(test)]
 impl Data {
     fn validate_polyhedra() -> LogErrorResult {
         let log_target: String = log_path!("validate_polyhedra").to_string();
-        let mut data: MaybeUninit<[Data; 4]> = MaybeUninit::<[Data; 4]>::zeroed();
-        let data: &mut [Data; 4] = unsafe { data.assume_init_mut() };
+        let mut data_array: [MaybeUninit<Data>; 4_usize] =
+            unsafe { MaybeUninit::<[MaybeUninit<Data>; 4_usize]>::uninit().assume_init() };
 
-        for polyhedron_usize in 0_usize..4_usize {
-            let mut data_builder: DataBuilder = DataBuilder {
-                data: &mut data[polyhedron_usize],
-                polyhedron: PolyhedronOption::from(polyhedron_usize as u8).0.unwrap(),
-            };
-
-            data_builder.generate_checked()?;
+        for (polyhedron_index, data) in data_array.iter_mut().enumerate() {
+            DataBuilder {
+                data: data.write(Data::new()),
+                polyhedron: PolyhedronOption::from(polyhedron_index as u8).0.unwrap(),
+            }
+            .generate_checked()?;
         }
+
+        // Safe: we just initialized each element in data_array
+        let data_array: [Data; 4_usize] = unsafe { transmute(data_array) };
 
         let validate_dual_polyhedra =
             |polyhedron_a: Polyhedron| -> LogErrorResult {
                 let polyhedron_b: Polyhedron = polyhedron_a.dual();
                 let properties_a: &Properties = Properties::get(polyhedron_a);
                 let properties_b: &Properties = Properties::get(polyhedron_b);
-                let data_a: &Data = &data[polyhedron_a as usize];
-                let data_b: &Data = &data[polyhedron_b as usize];
+                let data_a: &Data = &data_array[polyhedron_a as usize];
+                let data_b: &Data = &data_array[polyhedron_b as usize];
 
                 if properties_a.vert_count != properties_b.face_count {
                     return Err(log_error!(
@@ -1089,19 +1100,7 @@ impl DataLibrary {
 
         for (polyhedron_index, data) in data_array.iter_mut().enumerate() {
             DataBuilder {
-                data: unsafe {
-                    std::ptr::write(
-                        data.as_mut_ptr(),
-                        Data {
-                            verts: Vec::<VertexData>::new(),
-                            edges: Vec::<EdgeData>::new(),
-                            vert_indices: Vec::<usize>::new(),
-                            faces: Vec::<FaceData>::new(),
-                        },
-                    );
-
-                    data.assume_init_mut()
-                },
+                data: data.write(Data::new()),
                 polyhedron: PolyhedronOption::from(polyhedron_index as u8).0.unwrap(),
             }
             .generate();
@@ -1114,6 +1113,8 @@ impl DataLibrary {
 }
 
 impl StaticDataLibrary for DataLibrary {
+    type Target = &'static Self;
+
     fn get() -> &'static Self {
         &DATA_LIBRARY
     }

@@ -1,5 +1,7 @@
 use {
-    self::transformation::{Action, Addr, FullAddr, HalfAddr, Library, Transformation},
+    self::transformation::{
+        Action, Addr, FullAddr, HalfAddr, Library, LibraryOrganismRef, Transformation,
+    },
     crate::{app::prelude::*, piece::consts::*, prelude::*},
     bevy::{app::PluginGroupBuilder, prelude::*},
     libc::{c_void, memcmp},
@@ -412,6 +414,7 @@ pub mod inflated {
                 piece_components_mut_item.transform.rotation = *self
                     .half_addr(piece_components_mut_item.piece_component.index)
                     .get_orientation()
+                    .try_get()
                     .unwrap();
             }
         }
@@ -437,7 +440,7 @@ pub mod inflated {
         type Output = PuzzleState;
 
         fn add(self, rhs: FullAddr) -> Self::Output {
-            if let Some(transformation) = rhs.get_transformation() {
+            if let Ok(transformation) = rhs.get_transformation().try_get() {
                 self + transformation
             } else {
                 self.clone()
@@ -461,7 +464,7 @@ pub mod inflated {
 
     impl AddAssign<HalfAddr> for PuzzleState {
         fn add_assign(&mut self, rhs: HalfAddr) {
-            if let Some(transformation) = rhs.as_reorientation().get_transformation() {
+            if let Ok(transformation) = rhs.as_reorientation().get_transformation().try_get() {
                 *self += transformation;
             }
         }
@@ -469,7 +472,7 @@ pub mod inflated {
 
     impl AddAssign<FullAddr> for PuzzleState {
         fn add_assign(&mut self, rhs: FullAddr) {
-            if let Some(transformation) = rhs.get_transformation() {
+            if let Ok(transformation) = rhs.get_transformation().try_get() {
                 *self += transformation;
             }
         }
@@ -784,14 +787,17 @@ pub mod inflated {
                         action.transformation.try_get_genus_index().unwrap();
 
                     if genus_index.is_complex() {
-                        let comprising_simples: &[HalfAddr] =
+                        let simple_slice_ref: LibraryOrganismRef<[HalfAddr]> =
                             action.transformation.get_simple_slice();
+                        let comprising_simples: &[HalfAddr] = simple_slice_ref.try_get().unwrap();
                         let mut camera_start: HalfAddr = action.camera_start;
                         let mut cumulative_standardization: HalfAddr = HalfAddr::ORIGIN;
 
                         actions.reserve(comprising_simples.len());
 
-                        for comprising_simple in action.transformation.get_simple_slice() {
+                        for comprising_simple in
+                            action.transformation.get_simple_slice().try_get().unwrap()
+                        {
                             let transformation: FullAddr =
                                 comprising_simple.as_simple() + cumulative_standardization;
                             let standardization: HalfAddr = transformation.standardization();

@@ -1,3 +1,5 @@
+use crate::puzzle::transformation::LibraryOrganismRef;
+
 use {
     super::{Preferences, View},
     crate::{
@@ -886,6 +888,7 @@ impl PendingActions {
                 .as_reorientation()
                 .get_inverse_addr()
                 .get_rotation()
+                .try_get()
                 .unwrap())
                 * (*camera_orientation),
             animation_speed_data,
@@ -1015,6 +1018,8 @@ impl PendingActions {
             camera_orientation: save_state
                 .camera
                 .get_orientation()
+                .try_get()
+                .ok()
                 .copied()
                 .unwrap_or_default(),
             actions: save_state.extended_puzzle_state.actions.clone().into(),
@@ -1093,13 +1098,20 @@ impl PuzzleAction {
 
             if let Some(current_action) = &self.current_action {
                 let action: Action = current_action.action;
-                let end_quat: Option<Quat> = action.get_camera_end().get_orientation().copied();
+                let end_quat: Option<Quat> = action
+                    .get_camera_end()
+                    .get_orientation()
+                    .try_get()
+                    .ok()
+                    .copied();
 
                 match current_action.s_now() {
                     Some(s) => {
                         if action.transformation.is_valid() {
-                            let comprising_simples: &[HalfAddr] =
+                            let simple_slice_ref: LibraryOrganismRef<[HalfAddr]> =
                                 action.transformation.get_simple_slice();
+                            let comprising_simples: &[HalfAddr] =
+                                simple_slice_ref.try_get().unwrap();
                             let mut cycle_count: f32 = 0.0_f32;
                             let mut puzzle_state: InflatedPuzzleState =
                                 extended_puzzle_state.puzzle_state.clone();
@@ -1118,9 +1130,9 @@ impl PuzzleAction {
                                     cycle_count += cycles;
                                 } else {
                                     let mask: FullMask =
-                                        *comprising_simple.get_full_mask().unwrap();
+                                        *comprising_simple.get_full_mask().try_get().ok().unwrap();
                                     let rotation: Quat = Quat::IDENTITY.short_slerp(
-                                        *comprising_simple.get_rotation().unwrap(),
+                                        *comprising_simple.get_rotation().try_get().unwrap(),
                                         (s - cycle_count) / cycles,
                                     );
 
@@ -1138,6 +1150,7 @@ impl PuzzleAction {
                                             * (*puzzle_state
                                                 .half_addr(piece_index)
                                                 .get_orientation()
+                                                .try_get()
                                                 .unwrap());
                                     }
 
@@ -1180,7 +1193,8 @@ impl PuzzleAction {
                                 .update_pieces(&mut queries.p1());
 
                             if !action.transformation.is_genus_index_reorientation() {
-                                standardization_quat = standardization_addr.get_rotation().copied();
+                                standardization_quat =
+                                    standardization_addr.get_rotation().try_get().ok().copied();
                             }
                         }
 

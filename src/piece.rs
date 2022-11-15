@@ -3392,6 +3392,8 @@ impl PieceLibrary {
 }
 
 impl StaticDataLibrary for PieceLibrary {
+    type Target = &'static Self;
+
     fn pre_init() -> Option<Box<dyn FnOnce()>> {
         Some(Box::new(Data::initialize))
     }

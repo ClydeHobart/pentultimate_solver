@@ -140,6 +140,8 @@ lazy_static! {
 }
 
 impl StaticDataLibrary for SolverData {
+    type Target = &'static Self;
+
     fn pre_init() -> Option<Box<dyn FnOnce()>> {
         Some(Box::new(Library::build))
     }
@@ -361,7 +363,7 @@ impl FullMaskAndCompletion {
     }
 
     fn should_explore(&self, full_addr: FullAddr) -> bool {
-        if let Some(full_mask) = full_addr.get_full_mask() {
+        if let Ok(full_mask) = full_addr.get_full_mask().try_get() {
             (SOLVER_DATA.completed_half_masks[self.completion.tier as usize]
                 | SOLVER_DATA.focus_half_masks[self.completion.tier as usize]
                     & self.get_focus_unaffected_half_mask())
@@ -1025,7 +1027,7 @@ mod tests {
         init_env_logger();
         SolverData::build();
 
-        let camera_orientation: Quat = *HalfAddr::ORIGIN.get_orientation().unwrap();
+        let camera_orientation: Quat = *HalfAddr::ORIGIN.get_orientation().try_get().unwrap();
         let preferences: Preferences = Preferences {
             file_menu: FileMenuData {
                 randomization_params: RandomizationParams {

@@ -27,7 +27,7 @@ lazy_static = "1.4.0"
 libc = "0.2.99"
 log = { version = "0.4.14", features = ["serde"] }
 memmap = "0.7.0"
-num-format = "0.4.0"
+memoffset = "0.7.1"
 num-traits = "0.2.15"
 plotters = "0.3.2"
 rand = "0.8.4"
@@ -56,10 +56,12 @@ default = [
     "io_read_to_string",
     "all_file_formats",
     # "non_unit_tests",
+    # "no_ffi",
 ]
 const_fn_floating_point_arithmetic = []
 io_read_to_string = []
 non_unit_tests = []
+no_ffi = ["glam/scalar-math"]
 
 # specialization = []
 

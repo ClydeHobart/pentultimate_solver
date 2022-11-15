@@ -1,6 +1,7 @@
+use std::io::Read;
+
 use {
     crate::prelude::*,
-    ::log::Level,
     bevy::{
         app::AppExit,
         ecs::{
@@ -12,13 +13,14 @@ use {
     bit_field::{BitArray, BitField},
     egui::Color32,
     memmap::Mmap,
-    num_format::{Buffer, Locale},
     num_traits::PrimInt,
     serde::{Deserialize, Serialize},
     simple_error::SimpleError,
     std::{
         any::type_name,
         cmp::min,
+        convert::{AsRef, TryFrom},
+        env::var,
         error::Error as StdError,
         ffi::OsStr,
         fmt::{Debug, Write},
@@ -40,8 +42,7 @@ pub mod prelude {
     pub use super::{
         debug_break, exit_app, log::prelude::*, red_to_green, to_pretty_string, untracked_ref,
         untracked_ref_mut, AsBitString, DefaultArray, FromAlt, FromFile, FromFileOrDefault,
-        IntoAlt, SerFmt, ShortSlerp, StaticDataLibrary, ToFile, ToOption, ToResult,
-        WithLengthAndCapacity,
+        IntoAlt, SerFmt, ShortSlerp, StaticDataLibrary, ToFile, WithLengthAndCapacity,
     };
 }
 
@@ -80,16 +81,16 @@ impl FromAlt<Duration> for String {
             Day,
         }
 
-        let mut fields: [u32; 7_usize] = [0_u32; 7_usize];
+        let mut fields: [u64; 7_usize] = [0_u64; 7_usize];
         let mut populated_fields: u8 = 0_u8;
         let mut nanos: u128 = value.as_nanos();
 
         for field_index in Field::Nano as usize..=Field::Day as usize {
             let conversion_factor: u128 = CONVERSION_FACTORS[field_index];
-            let field: u32 = (nanos % conversion_factor) as u32;
+            let field: u64 = (nanos % conversion_factor) as u64;
 
             fields[field_index] = field;
-            populated_fields |= ((field != 0_u32) as u8) << field_index;
+            populated_fields |= ((field != 0_u64) as u8) << field_index;
             nanos /= conversion_factor;
         }
 
@@ -102,14 +103,14 @@ impl FromAlt<Duration> for String {
 
         macro_rules! print_min_field_digits {
             () => {{
-                let field_count: u32 = fields[field_i8 as usize];
-                let (digits, digit_count): (u32, usize) = {
-                    if field_count % 10_u32 != 0_u32 {
+                let field_count: u64 = fields[field_i8 as usize];
+                let (digits, digit_count): (u64, usize) = {
+                    if field_count % 10_u64 != 0_u64 {
                         (field_count, 3_usize)
-                    } else if field_count % 100_u32 != 0_u32 {
-                        (field_count / 10_u32, 2_usize)
+                    } else if field_count % 100_u64 != 0_u64 {
+                        (field_count / 10_u64, 2_usize)
                     } else {
-                        (field_count / 100_u32, 1_usize)
+                        (field_count / 100_u64, 1_usize)
                     }
                 };
 
@@ -127,10 +128,58 @@ impl FromAlt<Duration> for String {
 
             match field {
                 Field::Day => {
-                    let mut buffer: Buffer = Buffer::default();
+                    // This used to use num_format::Buffer, but Miri sees UB in that
+                    const MAX_TRIO_COUNT: usize = {
+                        let mut max_days: u64 = u64::MAX
+                            / (CONVERSION_FACTORS[Field::Sec as usize]
+                                * CONVERSION_FACTORS[Field::Min as usize]
+                                * CONVERSION_FACTORS[Field::Hr as usize])
+                                as u64;
+                        let mut trio_count: usize = 0_usize;
 
-                    buffer.write_formatted(&fields[Field::Day as usize], &Locale::en);
-                    write!(duration_string, "{}d", buffer.as_str()).unwrap();
+                        while max_days != 0_u64 {
+                            trio_count += 1_usize;
+                            max_days /= 1000_u64;
+                        }
+
+                        trio_count
+                    };
+                    let mut digit_trios: [u16; MAX_TRIO_COUNT] = [0_u16; MAX_TRIO_COUNT];
+                    let mut populated_trios: usize = 0_usize;
+                    let mut days: u64 = fields[Field::Day as usize];
+
+                    while days != 0_u64 {
+                        digit_trios[populated_trios] = (days % 1000_u64) as u16;
+                        days /= 1000_u64;
+                        populated_trios += 1_usize;
+                    }
+
+                    /* This shouldn't happen, since that would mean the field isn't populated, but
+                    handle it properly anyway */
+                    if !warn_expect!(populated_trios > 0_usize) {
+                        populated_trios = 1_usize;
+                    }
+
+                    for (trio_index, trio) in digit_trios[0_usize..populated_trios]
+                        .iter()
+                        .enumerate()
+                        .rev()
+                    {
+                        write!(
+                            duration_string,
+                            "{0:1$}{2}",
+                            trio,
+                            if trio_index == populated_trios - 1_usize {
+                                0_usize
+                            } else {
+                                3_usize
+                            },
+                            if trio_index != 0_usize { "," } else { "" }
+                        )
+                        .unwrap();
+                    }
+
+                    write!(duration_string, "d").unwrap();
 
                     if field_i8 == min_field_i8 {
                         field_i8 = 0_i8;
@@ -147,7 +196,7 @@ impl FromAlt<Duration> for String {
                 Field::Sec => {
                     let is_min_field: bool = field_i8 == min_field_i8;
                     let is_max_field: bool = field_i8 == max_field_i8;
-                    let secs: u32 = fields[Field::Sec as usize];
+                    let secs: u64 = fields[Field::Sec as usize];
 
                     match (is_min_field, is_max_field) {
                         (false, false) => write!(duration_string, "{:02}.", secs),
@@ -164,7 +213,7 @@ impl FromAlt<Duration> for String {
                 Field::Milli => {
                     let is_min_field: bool = field_i8 == min_field_i8;
                     let is_max_field: bool = field_i8 == max_field_i8;
-                    let millis: u32 = fields[Field::Milli as usize];
+                    let millis: u64 = fields[Field::Milli as usize];
 
                     match (is_min_field, is_max_field) {
                         (false, false) => write!(duration_string, "{:03}", millis),
@@ -181,7 +230,7 @@ impl FromAlt<Duration> for String {
                 Field::Micro => {
                     let is_min_field: bool = field_i8 == min_field_i8;
                     let is_max_field: bool = field_i8 == max_field_i8;
-                    let micros: u32 = fields[Field::Micro as usize];
+                    let micros: u64 = fields[Field::Micro as usize];
 
                     match (is_min_field, is_max_field) {
                         (false, false) => write!(duration_string, "{:03}", micros),
@@ -196,7 +245,7 @@ impl FromAlt<Duration> for String {
                     }
                 }
                 Field::Nano => {
-                    let nanos: u32 = fields[Field::Nano as usize];
+                    let nanos: u64 = fields[Field::Nano as usize];
 
                     if field_i8 == max_field_i8 {
                         write!(duration_string, "{}ns", nanos)
@@ -253,42 +302,6 @@ where
     }
 }
 
-pub trait ToResult<T>
-where
-    Self: Sized,
-{
-    fn to_result(self) -> LogErrorResult<T>;
-}
-
-impl<T> ToResult<T> for Option<T> {
-    fn to_result(self) -> LogErrorResult<T> {
-        match self {
-            Some(value) => Ok(value),
-            None => Err(log_error!(Level::Debug, "Option was none".into())),
-        }
-    }
-}
-
-#[macro_export(local_inner_macros)]
-macro_rules! option_to_result {
-    ($expr:expr) => {
-        match $expr {
-            Some(value) => Ok(value),
-            None => Err(log_error!(
-                ::log::Level::Debug,
-                std::format!("\"{}\" was None", std::stringify!($expr))
-            )),
-        }
-    };
-}
-
-pub trait ToOption<T>
-where
-    Self: Sized,
-{
-    fn to_option(self) -> Option<T>;
-}
-
 trait DisplayError
 where
     Self: Sized,
@@ -315,24 +328,9 @@ impl DisplayError for LogError {
     }
 }
 
-impl<T, E> ToOption<T> for Result<T, E>
-where
-    E: Debug,
-{
-    fn to_option(self) -> Option<T> {
-        if self.is_ok() {
-            self.ok()
-        } else {
-            if let Some(error) = self.err() {
-                error.display_error();
-            }
-
-            None
-        }
-    }
-}
-
 pub trait StaticDataLibrary: 'static {
+    type Target;
+
     fn pre_init() -> Option<Box<dyn FnOnce()>> {
         None
     }
@@ -347,7 +345,7 @@ pub trait StaticDataLibrary: 'static {
         None
     }
 
-    fn get() -> &'static Self;
+    fn get() -> Self::Target;
 
     fn get_once() -> Option<&'static Once> {
         None /* Some types utilize lazy_static!, which maintains its own Once */
@@ -526,9 +524,50 @@ pub trait FromFile: for<'de> Deserialize<'de> {
                 function_call()
             )))
         })?;
-        let file: File = File::open(file_name)?;
-        let mmap: Mmap = unsafe { Mmap::map(&file) }?;
-        let bytes: &[u8] = &mmap;
+        let mut file: File = File::open(file_name)?;
+
+        enum FileBytes {
+            Mmap(Mmap),
+            #[cfg(debug_assertions)]
+            ByteVec(Vec<u8>),
+        }
+
+        impl AsRef<[u8]> for FileBytes {
+            fn as_ref(&self) -> &[u8] {
+                match self {
+                    Self::Mmap(mmap) => &mmap,
+                    #[cfg(debug_assertions)]
+                    Self::ByteVec(byte_vec) => &byte_vec,
+                }
+            }
+        }
+
+        impl<'a> TryFrom<&'a mut File> for FileBytes {
+            type Error = Box<dyn StdError>;
+
+            fn try_from(file: &'a mut File) -> Result<Self, Self::Error> {
+                #[cfg(debug_assertions)]
+                {
+                    // If we're running this in Miri, Mmap isn't a viable option since it uses FFI
+                    if var("MIRIFLAGS")
+                        .ok()
+                        .and_then(|miriflags: String| miriflags.find("-Zmiri-disable-isolation"))
+                        .is_some()
+                    {
+                        let mut byte_vec: Vec<u8> = Vec::<u8>::new();
+
+                        file.read_to_end(&mut byte_vec)?;
+
+                        return Ok(Self::ByteVec(byte_vec));
+                    }
+                }
+
+                Ok(Self::Mmap(unsafe { Mmap::map(file) }?))
+            }
+        }
+
+        let file_bytes: FileBytes = (&mut file).try_into()?;
+        let bytes: &[u8] = file_bytes.as_ref();
         let to_boxed_error = |string: String| -> Box<dyn StdError> {
             Box::new(SimpleError::new(format!("{}: {}", function_call(), string)))
         };
@@ -538,7 +577,9 @@ pub trait FromFile: for<'de> Deserialize<'de> {
                 match ser_fmt {
                     $(
                         #[$feature]
-                        SerFmt::$ser_fmt => $result_expr.map_err(to_pretty_string).map_err(to_boxed_error),
+                        SerFmt::$ser_fmt => $result_expr
+                            .map_err(to_pretty_string)
+                            .map_err(to_boxed_error),
                     )*
                 }
             }
@@ -934,125 +975,7 @@ macro_rules! min {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::{ToOption, ToResult},
-        crate::prelude::*,
-        ::log::Level,
-        std::time::Duration,
-    };
-
-    #[test]
-    fn to_result() {
-        macro_rules! test_some {
-            ($e:expr, $t:ty) => {
-                break_assert!({
-                    let result: LogErrorResult<$t> = Some($e).to_result();
-
-                    result.is_ok() && result.unwrap() == $e
-                });
-            };
-        }
-
-        test_some!(5, i32);
-        test_some!("foo", &str);
-        test_some!(15.0_f32, f32);
-
-        break_assert!({
-            let result: LogErrorResult = None.to_result();
-
-            result.is_err() && result.unwrap_err().debug == "Option was none"
-        });
-    }
-
-    fn to_option_test_ok() {
-        macro_rules! test_ok {
-            ($expr:expr, $t:ty, $e:ty) => {
-                break_assert!({
-                    let option: Option<$t> = Result::<$t, $e>::Ok($expr).to_option();
-
-                    option.is_some() && option.unwrap() == $expr
-                });
-            };
-        }
-
-        test_ok!(5, i32, f32);
-        test_ok!("foo", &str, i32);
-        test_ok!(15.0_f32, f32, &str);
-    }
-
-    macro_rules! test_err {
-        ($expr:expr, $t:ty, $e:ty) => {
-            break_assert!({
-                println!(
-                    "\n\
-                    ******** BEGIN EXPECT ********\n\
-                    {:#?}\n\
-                    ******** END EXPECT ********\n\
-                    ******** BEGIN ERROR ********",
-                    $expr
-                );
-
-                let option: Option<$t> = Result::<$t, $e>::Err($expr).to_option();
-
-                println!("******** END ERROR ********");
-
-                option.is_none()
-            });
-        };
-    }
-
-    fn to_option_test_err_std() {
-        test_err!(5, f32, i32);
-        test_err!("foo", i32, &str);
-        test_err!(15.0_f32, &str, f32);
-    }
-
-    #[cfg(feature = "specialization")]
-    macro_rules! test_log_error {
-        ($expr:expr, $t:ty) => {
-            break_assert!({
-                println!("\n******** BEGIN EXPECT ********");
-
-                $expr.log();
-
-                println!("******** END EXPECT ********\n******** BEGIN ERROR ********");
-
-                let option: Option<$t> = LogErrorResult::<$t>::Err($expr).to_option();
-
-                println!("******** END ERROR ********");
-
-                option.is_none()
-            });
-        };
-    }
-
-    #[cfg(not(feature = "specialization"))]
-    macro_rules! test_log_error {
-        ($expr:expr, $t:ty) => {
-            test_err!($expr, $t, LogError);
-        };
-    }
-
-    fn to_option_test_err_log_error() {
-        test_log_error!(log_error!(Level::Error, "Error Message".into()), i32);
-        test_log_error!(log_error!(Level::Warn, "Warn Message".into()), u32);
-        test_log_error!(log_error!(Level::Info, "Info Message".into()), f32);
-        test_log_error!(log_error!(Level::Debug, "Debug Message".into()), i64);
-        test_log_error!(log_error!(Level::Trace, "Trace Message".into()), f64);
-    }
-
-    fn to_option_test_err() {
-        init_env_logger();
-        to_option_test_err_std();
-        to_option_test_err_log_error();
-    }
-
-    #[test]
-    fn to_option() {
-        init_env_logger();
-        to_option_test_ok();
-        to_option_test_err();
-    }
+    use {crate::prelude::*, std::time::Duration};
 
     #[test]
     fn string_from_alt_duration() {

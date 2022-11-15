@@ -1,6 +1,6 @@
 pub use self::library::{
     Class, Genus, GenusIndex, GenusIndexBitArray, GenusIndexString, GenusIndexType, GenusRange,
-    LargeGenus, Library, Organism, SmallClass, Species,
+    LargeGenus, Library, LibraryOrganismRef, LibraryRef, Organism, SmallClass, Species,
 };
 
 use {
@@ -189,12 +189,9 @@ impl HalfAddr {
         Self::is_valid_organism_index(unsafe { self.get_organism_index_unchecked() })
     }
 
-    pub fn get_orientation(self) -> Option<&'static Quat> {
-        if self.is_valid() {
-            Some(Library::get_orientation(self))
-        } else {
-            None
-        }
+    #[inline(always)]
+    pub fn get_orientation(self) -> LibraryOrganismRef<Quat> {
+        Library::get_orientation(self)
     }
 
     pub const fn default() -> Self {
@@ -270,6 +267,7 @@ impl Add<FullAddr> for HalfAddr {
         if self.is_valid() && rhs.is_valid() {
             let mut sum: Self = rhs
                 .get_transformation()
+                .try_get()
                 .unwrap()
                 .as_ref()
                 .half_addr(self.get_species_index());
@@ -525,18 +523,21 @@ pub struct FullAddr {
 }
 
 impl FullAddr {
-    pub fn get_simple_slice(self) -> &'static [HalfAddr] {
-        if self.is_valid() {
-            Library::get_simple_slice(self)
-        } else {
-            &[]
-        }
+    #[inline(always)]
+    pub fn get_simple_slice(self) -> LibraryOrganismRef<[HalfAddr]> {
+        Library::get_simple_slice(self)
     }
 
     pub fn get_simple_slice_string(self) -> String {
         let mut simple_slice_string: String = String::new();
 
-        for (simple_index, simple) in self.get_simple_slice().iter().enumerate() {
+        for (simple_index, simple) in self
+            .get_simple_slice()
+            .try_get()
+            .unwrap()
+            .iter()
+            .enumerate()
+        {
             write!(
                 simple_slice_string,
                 "{0}{1:\t>2$}ha!({3},\t{4}),",
@@ -564,7 +565,7 @@ impl FullAddr {
         if self.is_genus_index_reorientation() {
             1_u32
         } else {
-            Self::get_simple_slice_cycles(self.get_simple_slice())
+            Self::get_simple_slice_cycles(self.get_simple_slice().try_get().unwrap())
         }
     }
 
@@ -600,7 +601,7 @@ impl FullAddr {
 
     pub fn get_inverse_addr(self) -> Self {
         if self.is_valid() {
-            *Library::get_inverse_addr(self)
+            *Library::get_inverse_addr(self).try_get().unwrap()
         } else {
             Self::default()
         }
@@ -634,12 +635,9 @@ impl FullAddr {
         self.half_addr.species_index_is_valid()
     }
 
-    pub fn get_full_mask(self) -> Option<&'static FullMask> {
-        if self.is_valid() {
-            Some(Library::get_full_mask(self))
-        } else {
-            None
-        }
+    #[inline(always)]
+    pub fn get_full_mask(self) -> LibraryOrganismRef<FullMask> {
+        Library::get_full_mask(self)
     }
 
     pub fn mirror(self) -> Self {
@@ -668,12 +666,9 @@ impl FullAddr {
         self.genus_index.is_valid()
     }
 
-    pub fn get_rotation(self) -> Option<&'static Quat> {
-        if self.is_valid() && self.get_genus_index() < Library::GENERA_PER_SMALL_CLASS {
-            Some(Library::get_rotation(self))
-        } else {
-            None
-        }
+    #[inline(always)]
+    pub fn get_rotation(self) -> LibraryOrganismRef<Quat> {
+        Library::get_rotation(self)
     }
 
     pub fn set_half_addr(&mut self, half_addr: HalfAddr) -> &mut FullAddr {
@@ -687,12 +682,8 @@ impl FullAddr {
         -(HalfAddr::ORIGIN + self)
     }
 
-    pub fn get_transformation(self) -> Option<&'static Transformation> {
-        if self.is_valid() {
-            Some(Library::get_transformation(self))
-        } else {
-            None
-        }
+    pub fn get_transformation(self) -> LibraryOrganismRef<Transformation> {
+        Library::get_transformation(self)
     }
 
     #[inline(always)]
