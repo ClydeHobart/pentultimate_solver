@@ -1648,7 +1648,10 @@ static LIBRARY: RwLock<MaybeUninit<Library>> = RwLock::new(MaybeUninit::uninit()
 static LIBRARY_ASSUME_INIT: AtomicBool = AtomicBool::new(false);
 
 /// Empty `Mutex` used to lock write access over operations that require more than just
-/// `Library::get_mut()`
+/// `Library::get_mut()`. For example, initializing complex genera requires performing operations
+/// with `Transformation`s and `FullAddr`/`HalfAddr`s, which implicitly calls `Library::get()`. We
+/// cannot have `Library::get()` fail or lock in these cases, but we still want to guarantee no
+/// other thread is trying to modify the library at the same time we're initializing it.
 static LIBRARY_MUTEX: Mutex<()> = Mutex::new(());
 
 /// `Once` for use by `StaticDataLibrary` impl
