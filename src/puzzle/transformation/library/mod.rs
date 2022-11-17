@@ -22,6 +22,7 @@ use {
     serde::{Deserialize, Deserializer, Serialize, Serializer},
     simple_error::SimpleError,
     std::{
+        collections::VecDeque,
         convert::{TryFrom, TryInto},
         error::Error,
         fmt::{Debug, Formatter},
@@ -504,6 +505,11 @@ pub struct Library {
     orientations: LargeGenus<Quat>,
 }
 
+#[test]
+fn print_library_size() {
+    panic!("size_of::<Library>() == {}", std::mem::size_of::<Library>());
+}
+
 #[derive(Debug)]
 pub enum InitializeFamilyErr {
     InvalidSeedSimpleSlice,
@@ -518,7 +524,14 @@ pub enum InitializeFamilyErr {
 
 pub type SimpleSlice<'a> = Option<&'a [HalfAddr]>;
 
-enum _InitializationInstruction {
+struct InitializeSimpleSliceGenusInput {
+    genus_index: GenusIndex,
+    mirror: bool,
+    invert: bool,
+}
+
+enum InitializationInstruction {
+    InitializeMaybeUninit,
     CheckOutput,
     InitializeOrientations,
     InitializeReorientationGenus,
@@ -526,6 +539,13 @@ enum _InitializationInstruction {
     InitializeOrder(OrderInput),
     InitializeFamily(FamilyInput),
     PushGenus(GenusInfo),
+    InitializeSimpleSliceGenus(InitializeSimpleSliceGenusInput),
+    InitializeRestOfComplexGenus(GenusIndex),
+}
+
+struct InitializationState {
+    instructions: VecDeque<InitializationInstruction>,
+    seed_simples: Vec<HalfAddr>,
 }
 
 pub struct LibraryRef(RwLockReadGuard<'static, Library>);
@@ -719,6 +739,11 @@ impl Library {
     pub const SPECIES_PER_GENUS: usize = usize::PENTAGON_PIECE_COUNT;
     pub const SPECIES_PER_LARGE_GENUS: usize = usize::PIECE_COUNT;
 
+    const ORGANISMS_PER_SMALL_CLASS: usize =
+        Self::ORGANISMS_PER_GENUS * Self::GENERA_PER_SMALL_CLASS;
+    const ORGANISMS_PER_LARGE_GENUS: usize =
+        Self::ORGANISMS_PER_SPECIES * Self::SPECIES_PER_LARGE_GENUS;
+
     #[inline(always)]
     pub fn get_simple_slice(full_addr: FullAddr) -> LibraryOrganismRef<[HalfAddr]> {
         (full_addr, LibraryOrganismType::SimpleSlice).into()
@@ -888,60 +913,8 @@ impl Library {
         {
             let mut library_write_guard: RwLockWriteGuard<MaybeUninit<Library>> =
                 LIBRARY.write().unwrap();
-            let library_mut_ptr: *mut Library = library_write_guard.as_mut_ptr();
 
-            macro_rules! init_field {
-                ($($field:tt: $field_ty:ty = $capacity:ident,)*) => {
-                    $(
-                        /* Safe: We are writing into fields at their offset location from
-                        `library_mut_ptr` */
-                        write(
-                            /* Safe: `library_mut_ptr` is a mutable pointer that is rendered const
-                            from the `raw_field!()` invocation, so we can safely make it mutable
-                            again */
-                            raw_field!(library_mut_ptr, Library, $field) as *mut $field_ty,
-                            Vec::with_capacity(Self::$capacity)
-                        );
-                    )*
-                }
-            }
-
-            macro_rules! zero_field {
-                ($($field:tt: $field_ty:ty,)*) => {
-                    $(
-                        /* Safe: We are writing into fields at their offset location from
-                        `library_mut_ptr` */
-                        write_bytes(
-                            /* Safe: `library_mut_ptr` is a mutable pointer that is rendered const
-                            from the `raw_field!()` invocation, so we can safely make it mutable
-                            again */
-                            raw_field!(library_mut_ptr, Library, $field) as *mut $field_ty,
-                            0_u8,
-                            1_usize
-                        );
-                    )*
-                }
-            }
-
-            // Safe: We are writing into fields at their offset location from library_mut_ptr
-            unsafe {
-                init_field!(
-                    family_infos: Vec<FamilyInfo> = GENERA_PER_SMALL_CLASS,
-                    genus_infos: Vec<GenusInfo> = GENERA_PER_SMALL_CLASS,
-                    simples: Vec<HalfAddr> = ORGANISMS_PER_GENUS,
-                    transformations: Class<Transformation> = ORGANISMS_PER_GENUS,
-                    full_masks: Class<FullMask> = ORGANISMS_PER_GENUS,
-                    inverse_addrs: Class<FullAddr> = ORGANISMS_PER_GENUS,
-                );
-            }
-
-            unsafe {
-                zero_field!(rotations: SmallClass<Quat>, orientations: LargeGenus<Quat>,);
-            }
-
-            /* Correct: All the `Vec` members now have been explicitly initialized, and the
-            remaining members are arrays of `Quat`s, which are fine to leave zeroed (Quat::ZERO) */
-            const_assert_eq!(0_u32, unsafe { transmute::<f32, u32>(0.0_f32) });
+            Self::initialize_maybe_uninit(&mut library_write_guard);
             LIBRARY_ASSUME_INIT.store(true, Ordering::Release);
         }
 
@@ -954,6 +927,64 @@ impl Library {
             &mut lwg,
             OrderInput::from_file_or_default(&STRING_DATA.files.library),
         );
+    }
+
+    fn initialize_maybe_uninit(maybe_uninit_library: &mut MaybeUninit<Self>) {
+        let library_mut_ptr: *mut Library = maybe_uninit_library.as_mut_ptr();
+
+        macro_rules! init_field {
+            ($($field:tt: $field_ty:ty = $capacity:ident,)*) => {
+                $(
+                    /* Safe: We are writing into fields at their offset location from
+                    `library_mut_ptr` */
+                    write(
+                        /* Safe: `library_mut_ptr` is a mutable pointer that is rendered const
+                        from the `raw_field!()` invocation, so we can safely make it mutable
+                        again */
+                        raw_field!(library_mut_ptr, Library, $field) as *mut $field_ty,
+                        Vec::with_capacity(Self::$capacity)
+                    );
+                )*
+            }
+        }
+
+        // Safe: We are writing into fields at their offset location from library_mut_ptr
+        unsafe {
+            init_field!(
+                family_infos: Vec<FamilyInfo> = GENERA_PER_SMALL_CLASS,
+                genus_infos: Vec<GenusInfo> = GENERA_PER_SMALL_CLASS,
+                simples: Vec<HalfAddr> = ORGANISMS_PER_GENUS,
+                transformations: Class<Transformation> = ORGANISMS_PER_GENUS,
+                full_masks: Class<FullMask> = ORGANISMS_PER_GENUS,
+                inverse_addrs: Class<FullAddr> = ORGANISMS_PER_GENUS,
+            );
+        }
+
+        macro_rules! zero_field {
+            ($($field:tt: $field_ty:ty,)*) => {
+                $(
+                    /* Safe: We are writing into fields at their offset location from
+                    `library_mut_ptr` */
+                    write_bytes(
+                        /* Safe: `library_mut_ptr` is a mutable pointer that is rendered const
+                        from the `raw_field!()` invocation, so we can safely make it mutable
+                        again */
+                        raw_field!(library_mut_ptr, Library, $field) as *mut $field_ty,
+                        0_u8,
+                        1_usize
+                    );
+                )*
+            }
+        }
+
+        // Safe: We are writing into fields at their offset location from library_mut_ptr
+        unsafe {
+            zero_field!(rotations: SmallClass<Quat>, orientations: LargeGenus<Quat>,);
+        }
+
+        /* Correct: All the `Vec` members now have been explicitly initialized, and the
+        remaining members are arrays of `Quat`s, which are fine to leave zeroed (Quat::ZERO) */
+        const_assert_eq!(0_u32, unsafe { transmute::<f32, u32>(0.0_f32) });
     }
 
     fn initialize_orientations(lwg: &mut LibraryWriteGuard, icosidodecahedron_data: &Data) {
