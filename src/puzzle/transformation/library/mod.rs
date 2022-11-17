@@ -22,6 +22,7 @@ use {
     serde::{Deserialize, Deserializer, Serialize, Serializer},
     simple_error::SimpleError,
     std::{
+        collections::VecDeque,
         convert::{TryFrom, TryInto},
         error::Error,
         fmt::{Debug, Formatter},
@@ -518,6 +519,30 @@ pub enum InitializeFamilyErr {
 
 pub type SimpleSlice<'a> = Option<&'a [HalfAddr]>;
 
+struct InitializeSimpleSliceGenusInput {
+    genus_index: GenusIndex,
+    mirror: bool,
+    invert: bool,
+}
+
+enum InitializationInstruction {
+    InitializeMaybeUninit,
+    CheckOutput,
+    InitializeOrientations,
+    InitializeReorientationGenus,
+    InitializeSimpleGenus,
+    InitializeOrder(OrderInput),
+    InitializeFamily(FamilyInput),
+    PushGenus(GenusInfo),
+    InitializeSimpleSliceGenus(InitializeSimpleSliceGenusInput),
+    InitializeRestOfComplexGenus(GenusIndex),
+}
+
+struct InitializationState {
+    instructions: VecDeque<InitializationInstruction>,
+    seed_simples: Vec<HalfAddr>,
+}
+
 pub struct LibraryRef(RwLockReadGuard<'static, Library>);
 
 impl Deref for LibraryRef {
@@ -708,6 +733,11 @@ impl Library {
     pub const ORGANISMS_PER_SPECIES: usize = usize::PENTAGON_VERTEX_COUNT;
     pub const SPECIES_PER_GENUS: usize = usize::PENTAGON_PIECE_COUNT;
     pub const SPECIES_PER_LARGE_GENUS: usize = usize::PIECE_COUNT;
+
+    const ORGANISMS_PER_SMALL_CLASS: usize =
+        Self::ORGANISMS_PER_GENUS * Self::GENERA_PER_SMALL_CLASS;
+    const ORGANISMS_PER_LARGE_GENUS: usize =
+        Self::ORGANISMS_PER_SPECIES * Self::SPECIES_PER_LARGE_GENUS;
 
     #[inline(always)]
     pub fn get_simple_slice(full_addr: FullAddr) -> LibraryOrganismRef<[HalfAddr]> {
