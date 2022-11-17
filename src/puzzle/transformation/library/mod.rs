@@ -22,7 +22,6 @@ use {
     serde::{Deserialize, Deserializer, Serialize, Serializer},
     simple_error::SimpleError,
     std::{
-        collections::VecDeque,
         convert::{TryFrom, TryInto},
         error::Error,
         fmt::{Debug, Formatter},
@@ -505,11 +504,6 @@ pub struct Library {
     orientations: LargeGenus<Quat>,
 }
 
-#[test]
-fn print_library_size() {
-    panic!("size_of::<Library>() == {}", std::mem::size_of::<Library>());
-}
-
 #[derive(Debug)]
 pub enum InitializeFamilyErr {
     InvalidSeedSimpleSlice,
@@ -524,37 +518,13 @@ pub enum InitializeFamilyErr {
 
 pub type SimpleSlice<'a> = Option<&'a [HalfAddr]>;
 
-struct InitializeSimpleSliceGenusInput {
-    genus_index: GenusIndex,
-    mirror: bool,
-    invert: bool,
-}
-
-enum InitializationInstruction {
-    InitializeMaybeUninit,
-    CheckOutput,
-    InitializeOrientations,
-    InitializeReorientationGenus,
-    InitializeSimpleGenus,
-    InitializeOrder(OrderInput),
-    InitializeFamily(FamilyInput),
-    PushGenus(GenusInfo),
-    InitializeSimpleSliceGenus(InitializeSimpleSliceGenusInput),
-    InitializeRestOfComplexGenus(GenusIndex),
-}
-
-struct InitializationState {
-    instructions: VecDeque<InitializationInstruction>,
-    seed_simples: Vec<HalfAddr>,
-}
-
 pub struct LibraryRef(RwLockReadGuard<'static, Library>);
 
 impl Deref for LibraryRef {
     type Target = Library;
 
     fn deref(&self) -> &Self::Target {
-        &*self.0
+        &self.0
     }
 }
 
@@ -706,13 +676,13 @@ impl Deref for LibraryRefMut {
     type Target = Library;
 
     fn deref(&self) -> &Self::Target {
-        &*self.0
+        &self.0
     }
 }
 
 impl DerefMut for LibraryRefMut {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut *self.0
+        &mut self.0
     }
 }
 
@@ -738,11 +708,6 @@ impl Library {
     pub const ORGANISMS_PER_SPECIES: usize = usize::PENTAGON_VERTEX_COUNT;
     pub const SPECIES_PER_GENUS: usize = usize::PENTAGON_PIECE_COUNT;
     pub const SPECIES_PER_LARGE_GENUS: usize = usize::PIECE_COUNT;
-
-    const ORGANISMS_PER_SMALL_CLASS: usize =
-        Self::ORGANISMS_PER_GENUS * Self::GENERA_PER_SMALL_CLASS;
-    const ORGANISMS_PER_LARGE_GENUS: usize =
-        Self::ORGANISMS_PER_SPECIES * Self::SPECIES_PER_LARGE_GENUS;
 
     #[inline(always)]
     pub fn get_simple_slice(full_addr: FullAddr) -> LibraryOrganismRef<[HalfAddr]> {
@@ -866,7 +831,7 @@ impl Library {
             return None;
         }
 
-        let library: &Self = &*Self::get();
+        let library: &Self = &Self::get();
         let genus_info: &GenusInfo = library.get_genus_info(genus_index);
         let simple_slice_start: usize = genus_info.simple_offset as usize;
         let simple_slice_end: usize =
@@ -1452,7 +1417,7 @@ impl Library {
             return Err(InitializeFamilyErr::DoesNotTransformPuzzleState);
         }
 
-        let library: &Self = &*Self::get();
+        let library: &Self = &Self::get();
 
         // Check for a homomorphic genus
         for family_info in library.family_infos.iter() {

@@ -42,9 +42,9 @@ pub mod simd;
 
 pub mod prelude {
     pub use super::{
-        debug_break, exit_app, log::prelude::*, red_to_green, to_pretty_string, untracked_ref,
-        untracked_ref_mut, AsBitString, DefaultArray, FromAlt, FromFile, FromFileOrDefault,
-        IntoAlt, SerFmt, ShortSlerp, StaticDataLibrary, ToFile, WithLengthAndCapacity,
+        debug_break, exit_app, log::prelude::*, red_to_green, to_pretty_string, AsBitString,
+        DefaultArray, FromAlt, FromFile, FromFileOrDefault, IntoAlt, SerFmt, ShortSlerp,
+        StaticDataLibrary, ToFile, WithLengthAndCapacity,
     };
 }
 
@@ -541,7 +541,7 @@ pub trait FromFile: for<'de> Deserialize<'de> {
             fn as_ref(&self) -> &[u8] {
                 match self {
                     #[cfg(not(miri))]
-                    Self::Mmap(mmap) => &mmap,
+                    Self::Mmap(mmap) => mmap,
                     #[cfg(miri)]
                     Self::ByteVec(byte_vec) => &byte_vec,
                 }
@@ -915,27 +915,6 @@ macro_rules! define_super_trait {
 
         impl<T: $sub_trait $(+ $other_sub_trait)*> $super_trait for T {}
     };
-}
-
-/// Returns a copy of an immutable reference that is no longer tracked by the borrow checker
-///
-/// Though the returned reference nominally has the 'static lifetime, this is just used to trick
-/// the borrow checker. It is the users responsibility to ensure that the referenced data isn't
-/// mutated while the reference is in scope. This can be useful in cases where a user wants to hold
-/// a mutable reference to one field of a struct, and an immutable reference to another field
-pub fn untracked_ref<T>(reference: &T) -> &'static T {
-    unsafe { (reference as *const T).as_ref() }.unwrap()
-}
-
-/// Returns a copy of a mutable reference that is no longer tracked by the borrow checker
-///
-/// Though the returned reference nominally has the 'static lifetime, this is just used to trick the
-/// borrow checker. It is the users responsibility to ensure that the referenced data isn't mutated
-/// by other threads while the reference is in scope. This can be useful in cases where a user wants
-/// to hold a mutable reference to one field of a struct, and an immutable reference to another
-/// field
-pub fn untracked_ref_mut<T>(reference: &mut T) -> &'static mut T {
-    unsafe { (reference as *mut T).as_mut() }.unwrap()
 }
 
 #[macro_export]
