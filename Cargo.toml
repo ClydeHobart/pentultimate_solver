@@ -15,18 +15,19 @@ bincode = { version = "1.3.3", optional = true }
 bit_field = "0.10.1"
 bitvec = "1.0.0"
 egui = "0.18.1"
-env_logger = "0.8.3"
+env_logger = "0.9.3"
 epaint = "0.18.1"
 fnv = "1.0.7"
 glam = { version = "0.20.5", features = ["default", "debug-glam-assert"] }
 gltf-json = "0.16.0"
 hexf = "0.2.1"
+itertools = "0.10.5"
 json5 = { version = "0.3.0", optional = true }
 lazy_static = "1.4.0"
 libc = "0.2.99"
 log = { version = "0.4.14", features = ["serde"] }
 memmap = "0.7.0"
-num-format = "0.4.0"
+memoffset = "0.7.1"
 num-traits = "0.2.15"
 plotters = "0.3.2"
 rand = "0.8.4"
@@ -39,7 +40,7 @@ static_assertions = "1.1.0"
 strum = "0.24.0"
 strum_macros = "0.24.0"
 toml = { version = "0.5.8", optional = true }
-tracing-subscriber = "0.3.8" # for testing
+tracing-subscriber = "0.3.8"                                               # for testing
 
 [dev-dependencies]
 criterion = "0.3.4"
@@ -50,18 +51,31 @@ uuid = "0.8.2"
 [features]
 # default = ["const_fn_floating_point_arithmetic", "io_read_to_string", "ron"]
 # default = ["const_fn_floating_point_arithmetic", "io_read_to_string", "all_file_formats"]
-default = ["const_fn_floating_point_arithmetic", "io_read_to_string", "all_file_formats", "non_unit_tests"]
+default = [
+    "const_fn_floating_point_arithmetic",
+    "io_read_to_string",
+    "all_file_formats",
+    # "non_unit_tests",
+    # "no_ffi",
+]
 const_fn_floating_point_arithmetic = []
 io_read_to_string = []
 non_unit_tests = []
+miri = ["no_ffi"]
+no_ffi = ["glam/scalar-math"]
 
 # specialization = []
 
-all_file_formats = ["bincode", "json5", "serde_json", "ron"] # toml is left out due to lack of supported types
+all_file_formats = [
+    "bincode",
+    "json5",
+    "serde_json",
+    "ron",
+] # toml is left out due to lack of supported types
 
-[[bench]]
-name = "criterion_benchmarks"
-harness = false
+# [[bench]]
+# name = "criterion_benchmarks"
+# harness = false
 
 [profile.dev]
 opt-level = 0
