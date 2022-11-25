@@ -26,21 +26,6 @@ use {
     strum::IntoEnumIterator,
 };
 
-#[derive(Debug, Default)]
-pub struct VertexData {
-    pub vec: Vec3,
-    pub norm: Vec3,
-}
-
-impl From<Vec3> for VertexData {
-    fn from(vec: Vec3) -> Self {
-        Self {
-            vec,
-            norm: vec.normalize_or_zero(),
-        }
-    }
-}
-
 #[derive(Clone, Copy, Eq, Debug, Default, Hash, Ord, PartialEq, PartialOrd)]
 pub struct EdgeData(usize, usize);
 
@@ -72,14 +57,14 @@ pub struct FaceData {
 
 impl FaceData {
     pub fn new(
-        verts: &[VertexData],
+        verts: &[Vec3],
         vert_indices: &[usize],
         range: Range<usize>,
         edges: EdgeBitArray,
     ) -> Self {
         let norm: Vec3 = vert_indices[range.clone()]
             .iter()
-            .map(|vert_index: &usize| -> &Vec3 { &verts[*vert_index].vec })
+            .map(|vert_index: &usize| -> &Vec3 { &verts[*vert_index] })
             .sum::<Vec3>()
             .normalize_or_zero();
 
@@ -135,7 +120,7 @@ impl FaceData {
 
 #[derive(Debug)]
 pub struct Data {
-    pub verts: Vec<VertexData>,
+    pub verts: Vec<Vec3>,
     pub edges: Vec<EdgeData>,
     pub vert_indices: Vec<usize>,
     pub faces: Vec<FaceData>,
@@ -160,29 +145,27 @@ impl Data {
     pub fn get_closest_vert_index(
         &self,
         vec: &Vec3,
-        filter: OptionalIndexedPredicate<VertexData>,
+        filter: OptionalIndexedPredicate<Vec3>,
     ) -> usize {
         Data::get_closest_vert_index_for_verts(&self.verts, vec, filter)
     }
 
     pub fn get_closest_vert_index_for_verts(
-        verts: &[VertexData],
+        verts: &[Vec3],
         vec: &Vec3,
-        filter: OptionalIndexedPredicate<VertexData>,
+        filter: OptionalIndexedPredicate<Vec3>,
     ) -> usize {
         use std::cmp::Ordering;
 
-        let filter: IndexedPredicate<VertexData> =
-            filter.unwrap_or(&|_: usize, _: &VertexData| -> bool { true });
+        let filter: IndexedPredicate<Vec3> =
+            filter.unwrap_or(&|_: usize, _: &Vec3| -> bool { true });
 
         verts
             .iter()
             .enumerate()
-            .filter(|(vert_index, vert): &(usize, &VertexData)| -> bool {
-                filter(*vert_index, vert)
-            })
-            .map(|(vert_index, vert): (usize, &VertexData)| -> (usize, f32) {
-                (vert_index, vert.norm.dot(*vec))
+            .filter(|(vert_index, vert): &(usize, &Vec3)| -> bool { filter(*vert_index, vert) })
+            .map(|(vert_index, vert): (usize, &Vec3)| -> (usize, f32) {
+                (vert_index, vert.dot(*vec))
             })
             .max_by(
                 |(_vert_index_a, norm_dot_vec_a): &(usize, f32),
@@ -261,9 +244,9 @@ impl Data {
         let mut normals: Vec<[f32; 3]> = Vec::<[f32; 3]>::new();
         let mut uvs: Vec<[f32; 2]> = Vec::<[f32; 2]>::new();
         let mut append_vert = |vert_index: usize| {
-            let vert_data: &VertexData = &self.verts[vert_index];
-            positions.push(*vert_data.vec.as_ref());
-            normals.push(*vert_data.norm.as_ref());
+            let vert: &Vec3 = &self.verts[vert_index];
+            positions.push(*vert.as_ref());
+            normals.push(*vert.normalize_or_zero().as_ref());
             uvs.push([0.0, 0.0]);
         };
         let mut append_all_verts = || {
@@ -290,7 +273,7 @@ impl Data {
                     let initial_index: u32 = positions.len() as u32;
 
                     for vert_index in vert_indices[face_data.get_range()].iter() {
-                        positions.push(*self.verts[*vert_index].vec.as_ref());
+                        positions.push(*self.verts[*vert_index].as_ref());
                         normals.push(*face_data.norm.as_ref());
                         uvs.push([0.0, 0.0]);
                     }
@@ -318,7 +301,7 @@ impl Data {
 
     fn new() -> Self {
         Self {
-            verts: Vec::<VertexData>::new(),
+            verts: Vec::<Vec3>::new(),
             edges: Vec::<EdgeData>::new(),
             vert_indices: Vec::<usize>::new(),
             faces: Vec::<FaceData>::new(),
@@ -344,45 +327,44 @@ impl Data {
         // Safe: we just initialized each element in data_array
         let data_array: [Data; 4_usize] = unsafe { transmute(data_array) };
 
-        let validate_dual_polyhedra =
-            |polyhedron_a: Polyhedron| -> LogErrorResult {
-                let polyhedron_b: Polyhedron = polyhedron_a.dual();
-                let properties_a: &Properties = Properties::get(polyhedron_a);
-                let properties_b: &Properties = Properties::get(polyhedron_b);
-                let data_a: &Data = &data_array[polyhedron_a as usize];
-                let data_b: &Data = &data_array[polyhedron_b as usize];
+        let validate_dual_polyhedra = |polyhedron_a: Polyhedron| -> LogErrorResult {
+            let polyhedron_b: Polyhedron = polyhedron_a.dual();
+            let properties_a: &Properties = Properties::get(polyhedron_a);
+            let properties_b: &Properties = Properties::get(polyhedron_b);
+            let data_a: &Data = &data_array[polyhedron_a as usize];
+            let data_b: &Data = &data_array[polyhedron_b as usize];
 
-                if properties_a.vert_count != properties_b.face_count {
+            if properties_a.vert_count != properties_b.face_count {
+                return Err(log_error!(
+                    target: log_target,
+                    Level::Warn,
+                    format!(
+                        "Polyhedron {:?}'s vertex count doesn't equal polyhedron {:?}'s face count",
+                        polyhedron_a, polyhedron_b
+                    )
+                ));
+            }
+
+            for (index, (vert_a, face_b)) in
+                data_a.verts.iter().zip(data_b.faces.iter()).enumerate()
+            {
+                let vert_norm_a: Vec3 = vert_a.normalize_or_zero();
+
+                if !vert_norm_a.abs_diff_eq(face_b.norm, f32::EPSILON) {
                     return Err(log_error!(
                         target: log_target,
                         Level::Warn,
                         format!(
-                        "Polyhedron {:?}'s vertex count doesn't equal polyhedron {:?}'s face count",
-                        polyhedron_a, polyhedron_b
-                    )
-                    ));
-                }
-
-                for index in 0..properties_a.vert_count {
-                    if !data_a.verts[index]
-                        .norm
-                        .abs_diff_eq(data_b.faces[index].norm, f32::EPSILON)
-                    {
-                        return Err(log_error!(
-                            target: log_target,
-                            Level::Warn,
-                            format!(
                             "Vert {}'s normal vector ({:?}) of polyhedron {:?} isn't close enough \
                                 to face {}'s normal vector ({:?}) of polyhedron {:?}",
-                            index, data_a.verts[index].norm, polyhedron_a,
-                            index, data_b.faces[index].norm, polyhedron_b
+                            index, vert_norm_a, polyhedron_a, index, face_b.norm, polyhedron_b
                         )
-                        ));
-                    }
+                    ));
                 }
+            }
 
-                Ok(())
-            };
+            Ok(())
+        };
 
         validate_dual_polyhedra(Polyhedron::Icosahedron)?;
         validate_dual_polyhedra(Polyhedron::Dodecahedron)?;
@@ -407,14 +389,14 @@ impl<'a> DataBuilder<'a> {
 
     fn generate_verts(&mut self) {
         let properties: &Properties = self.polyhedron.properties();
-        let verts: &mut Vec<VertexData> = &mut self.data.verts;
+        let verts: &mut Vec<Vec3> = &mut self.data.verts;
 
         verts.clear();
         verts.reserve_exact(properties.vert_count);
         Self::generate_verts_for_properties(properties, verts);
     }
 
-    fn generate_verts_for_properties(properties: &Properties, verts: &mut Vec<VertexData>) {
+    fn generate_verts_for_properties(properties: &Properties, verts: &mut Vec<Vec3>) {
         match properties.polyhedron {
             Polyhedron::Icosahedron => {
                 let base_vector: Vec3 = properties.base_vectors[0];
@@ -422,7 +404,7 @@ impl<'a> DataBuilder<'a> {
 
                 for _perm in 0..3 {
                     for vert in 0..4 {
-                        verts.push(VertexData::from(
+                        verts.push(
                             perm_mat
                                 * Mat3::from(ReflectionMat3::new(
                                     vert & 0b10 != 0,
@@ -430,7 +412,7 @@ impl<'a> DataBuilder<'a> {
                                     false,
                                 ))
                                 * base_vector,
-                        ));
+                        );
                     }
 
                     perm_mat = PERMUTE_AXES * perm_mat;
@@ -442,7 +424,7 @@ impl<'a> DataBuilder<'a> {
 
                 for _perm in 0..3 {
                     for vert in 0..4 {
-                        verts.push(VertexData::from(
+                        verts.push(
                             perm_mat
                                 * Mat3::from(ReflectionMat3::new(
                                     vert & 0b10 != 0,
@@ -450,7 +432,7 @@ impl<'a> DataBuilder<'a> {
                                     vert & 0b01 != 0,
                                 ))
                                 * base_vector,
-                        ));
+                        );
                     }
 
                     perm_mat = PERMUTE_AXES * perm_mat;
@@ -459,13 +441,13 @@ impl<'a> DataBuilder<'a> {
                 let base_vector: Vec3 = properties.base_vectors[1];
 
                 for vert in 0..8 {
-                    verts.push(VertexData::from(
+                    verts.push(
                         Mat3::from(ReflectionMat3::new(
                             vert & 0b100 != 0,
                             vert & 0b010 != 0,
                             vert & 0b001 != 0,
                         )) * base_vector,
-                    ));
+                    );
                 }
             }
             Polyhedron::Icosidodecahedron => {
@@ -476,7 +458,7 @@ impl<'a> DataBuilder<'a> {
                 for _perm in 0..3 {
                     for vert in 0..8 {
                         if vert & 0b11 == 0 {
-                            verts.push(VertexData::from(
+                            verts.push(
                                 perm_mat
                                     * Mat3::from(ReflectionMat3::new(
                                         vert & 0b100 != 0,
@@ -484,10 +466,10 @@ impl<'a> DataBuilder<'a> {
                                         false,
                                     ))
                                     * base_vector_1,
-                            ));
+                            );
                         }
 
-                        verts.push(VertexData::from(
+                        verts.push(
                             perm_mat
                                 * Mat3::from(ReflectionMat3::new(
                                     vert & 0b100 != 0,
@@ -495,7 +477,7 @@ impl<'a> DataBuilder<'a> {
                                     vert & 0b001 != 0,
                                 ))
                                 * base_vector_2,
-                        ));
+                        );
                     }
 
                     perm_mat = PERMUTE_AXES * perm_mat;
@@ -510,7 +492,7 @@ impl<'a> DataBuilder<'a> {
 
     fn generate_edges(&mut self) {
         let properties: &Properties = self.polyhedron.properties();
-        let verts: &Vec<VertexData> = &self.data.verts;
+        let verts: &Vec<Vec3> = &self.data.verts;
         let edges: &mut Vec<EdgeData> = &mut self.data.edges;
 
         edges.clear();
@@ -519,14 +501,11 @@ impl<'a> DataBuilder<'a> {
         let distance_squared_threshold: f32 =
             properties.edge_length * properties.edge_length + 0.000001;
 
-        for (vert_index_1, vert_data_1) in verts.iter().enumerate() {
-            let vert_1: &Vec3 = &vert_data_1.vec;
+        for (vert_index_1, vert_1) in verts.iter().enumerate() {
             let vert_index_1_plus_1: usize = vert_index_1 + 1_usize;
 
-            for (vert_index_2_offset, vert_data_2) in
-                verts[vert_index_1_plus_1..].iter().enumerate()
-            {
-                if vert_1.distance_squared(vert_data_2.vec) <= distance_squared_threshold {
+            for (vert_index_2_offset, vert_2) in verts[vert_index_1_plus_1..].iter().enumerate() {
+                if vert_1.distance_squared(*vert_2) <= distance_squared_threshold {
                     edges.push(EdgeData(
                         vert_index_1,
                         vert_index_1_plus_1 + vert_index_2_offset,
@@ -541,7 +520,7 @@ impl<'a> DataBuilder<'a> {
 
         let properties: &Properties = self.polyhedron.properties();
         let should_be_initial_vert: fn(usize, usize) -> bool = self.get_should_be_initial_vert();
-        let verts: &Vec<VertexData> = &self.data.verts;
+        let verts: &Vec<Vec3> = &self.data.verts;
         let edges: &Vec<EdgeData> = &self.data.edges;
         let vert_indices: &mut Vec<usize> = &mut self.data.vert_indices;
         let faces: &mut Vec<FaceData> = &mut self.data.faces;
@@ -695,9 +674,9 @@ impl<'a> DataBuilder<'a> {
                                 "No valid next vertex for previous vertex {} ({}) and current vertex {} ({}) in \
                                     polyhedron {:?}",
                                 prev_vert_index,
-                                verts[prev_vert_index].vec,
+                                verts[prev_vert_index],
                                 curr_vert_index,
-                                verts[curr_vert_index].vec,
+                                verts[curr_vert_index],
                                 properties.polyhedron
                             )
                         ));
@@ -720,9 +699,9 @@ impl<'a> DataBuilder<'a> {
 
                             INVALID_VERT_INDEX
                         } else {
-                            let curr_vert_vector: Vec3 = verts[curr_vert_index].vec;
+                            let curr_vert_vector: Vec3 = verts[curr_vert_index];
                             let prev_vert_to_curr_vert_vector: Vec3 =
-                                curr_vert_vector - verts[prev_vert_index].vec;
+                                curr_vert_vector - verts[prev_vert_index];
                             let mut best_vert_index: usize = INVALID_VERT_INDEX;
                             let mut best_vert_angle: f32 = 0.0;
 
@@ -749,7 +728,7 @@ impl<'a> DataBuilder<'a> {
                                 }
 
                                 let curr_vert_to_candidate_vert_vector: Vec3 =
-                                    verts[candidate_vert_index].vec - curr_vert_vector;
+                                    verts[candidate_vert_index] - curr_vert_vector;
 
                                 if prev_vert_to_curr_vert_vector
                                     .cross(curr_vert_vector)
@@ -806,9 +785,9 @@ impl<'a> DataBuilder<'a> {
                             "No valid next vertex for previous vertex {} ({}) and current vertex \
                                 {} ({}) in polyhedron {:?}",
                             prev_vert_index,
-                            verts[prev_vert_index].vec,
+                            verts[prev_vert_index],
                             curr_vert_index,
-                            verts[curr_vert_index].vec,
+                            verts[curr_vert_index],
                             properties.polyhedron
                         )
                     ));
@@ -822,10 +801,9 @@ impl<'a> DataBuilder<'a> {
             log_edge_status!();
         }
 
-        let dual_verts: Vec<VertexData> = {
+        let dual_verts: Vec<Vec3> = {
             let dual_properties: &Properties = Properties::get(properties.polyhedron.dual());
-            let mut verts: Vec<VertexData> =
-                Vec::<VertexData>::with_capacity(dual_properties.vert_count);
+            let mut verts: Vec<Vec3> = Vec::<Vec3>::with_capacity(dual_properties.vert_count);
 
             Self::generate_verts_for_properties(dual_properties, &mut verts);
 
@@ -856,10 +834,10 @@ impl<'a> DataBuilder<'a> {
             }
 
             face_data.quat = {
-                let first_vert: Vec3 = verts[*face_slice.first().unwrap()].vec;
+                let first_vert: Vec3 = verts[*face_slice.first().unwrap()];
                 let negative_face_average: Vec3 = -(face_slice
                     .iter()
-                    .map(|vert_index: &usize| -> &Vec3 { &verts[*vert_index].vec })
+                    .map(|vert_index: &usize| -> &Vec3 { &verts[*vert_index] })
                     .sum::<Vec3>()
                     / face_slice.len() as f32);
 
@@ -917,12 +895,12 @@ impl<'a> DataBuilder<'a> {
         self.generate_elements_checked(
             Self::generate_verts_checked,
             "vertices",
-            |data: &Data| -> (&Vec<VertexData>,) { (&data.verts,) },
+            |data: &Data| -> (&Vec<Vec3>,) { (&data.verts,) },
         )?;
         self.generate_elements_checked(
             Self::generate_edges_checked,
             "edges",
-            |data: &Data| -> (&Vec<VertexData>, &Vec<EdgeData>) { (&data.verts, &data.edges) },
+            |data: &Data| -> (&Vec<Vec3>, &Vec<EdgeData>) { (&data.verts, &data.edges) },
         )?;
         self.generate_elements_checked(
             Self::generate_faces_checked,
@@ -963,7 +941,7 @@ impl<'a> DataBuilder<'a> {
         self.generate_verts();
 
         let properties: &Properties = self.polyhedron.properties();
-        let verts: &Vec<VertexData> = &self.data.verts;
+        let verts: &Vec<Vec3> = &self.data.verts;
 
         log::trace!(
             target: log_path!("generate_verts"),

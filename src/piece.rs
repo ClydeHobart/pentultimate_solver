@@ -4,7 +4,7 @@ use {
         app::prelude::*,
         math::{
             polyhedra::{
-                data::{Data, EdgeData, FaceData, VertexData},
+                data::{Data, EdgeData, FaceData},
                 properties::ICOSIDODECAHEDRON,
                 Polyhedron,
             },
@@ -1101,7 +1101,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
         let start: u32 = params.mesh_headers_with_index.index as u32;
 
         let icosidodecahedron_data: &Data = Data::get(Polyhedron::Icosidodecahedron);
-        let icosidodecahedron_verts: &Vec<VertexData> = &icosidodecahedron_data.verts;
+        let icosidodecahedron_verts: &Vec<Vec3> = &icosidodecahedron_data.verts;
         let icosidodecahedron_vert_indices: &Vec<usize> = &icosidodecahedron_data.vert_indices;
         let icosidodecahedron_faces: &Vec<FaceData> = &icosidodecahedron_data.faces;
 
@@ -1116,7 +1116,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                 .range
                 .clone()
                 .map(|vert_indices_index: usize| -> &Vec3 {
-                    &icosidodecahedron_verts[icosidodecahedron_vert_indices[vert_indices_index]].vec
+                    &icosidodecahedron_verts[icosidodecahedron_vert_indices[vert_indices_index]]
                 })
                 .enumerate()
             {
@@ -1124,7 +1124,7 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
             }
         };
         let pyramid_center = || -> Vec3 {
-            transformation * Data::get(params.piece_type.pyramid_polyhedron()).verts[0_usize].vec
+            transformation * Data::get(params.piece_type.pyramid_polyhedron()).verts[0_usize]
         };
         let add_adjacent_face_indices_same_piece =
             |params: &mut PieceHeaderParams, vert_index: usize| {
@@ -1138,7 +1138,6 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                             &(Quat::from_axis_angle(
                                 icosidodecahedron_verts[face_data
                                     .get_slice(icosidodecahedron_vert_indices)[vert_index]]
-                                    .vec
                                     .normalize(),
                                 PI,
                             ) * face_data.norm),
@@ -2506,7 +2505,6 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
                                         vert_index,
                                         next_vert_index
                                     )]
-                                .vec
                                 - center,
                             Vec3::ZERO,
                             polygon_vert.cross(polygon[next_vert_index]),
