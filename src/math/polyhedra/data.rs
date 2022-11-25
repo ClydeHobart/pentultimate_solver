@@ -3,7 +3,7 @@ use {
         math::{
             polyhedra::{
                 properties::{self, Properties},
-                Polyhedron, PolyhedronOption,
+                Polyhedron,
             },
             *,
         },
@@ -23,6 +23,7 @@ use {
         mem::{transmute, MaybeUninit},
         ops::Range,
     },
+    strum::IntoEnumIterator,
 };
 
 #[derive(Debug, Default)]
@@ -332,10 +333,10 @@ impl Data {
         let mut data_array: [MaybeUninit<Data>; 4_usize] =
             unsafe { MaybeUninit::<[MaybeUninit<Data>; 4_usize]>::uninit().assume_init() };
 
-        for (polyhedron_index, data) in data_array.iter_mut().enumerate() {
+        for (data, polyhedron) in data_array.iter_mut().zip(Polyhedron::iter()) {
             DataBuilder {
                 data: data.write(Data::new()),
-                polyhedron: PolyhedronOption::from(polyhedron_index as u8).0.unwrap(),
+                polyhedron,
             }
             .generate_checked()?;
         }
@@ -1098,10 +1099,10 @@ impl DataLibrary {
         let mut data_array: [MaybeUninit<Data>; 4_usize] =
             unsafe { MaybeUninit::<[MaybeUninit<Data>; 4_usize]>::uninit().assume_init() };
 
-        for (polyhedron_index, data) in data_array.iter_mut().enumerate() {
+        for (data, polyhedron) in data_array.iter_mut().zip(Polyhedron::iter()) {
             DataBuilder {
                 data: data.write(Data::new()),
-                polyhedron: PolyhedronOption::from(polyhedron_index as u8).0.unwrap(),
+                polyhedron,
             }
             .generate();
         }

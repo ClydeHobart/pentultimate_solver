@@ -67,7 +67,7 @@ impl Properties {
     }
 }
 
-/// The `Properties` of a regular icosahedron (20 regular triangles)
+/// The `Properties` of `Polyhedron::Icosahedron`
 pub const ICOSAHEDRON: Properties = Properties {
     polyhedron: Polyhedron::Icosahedron,
     vert_count: 12,
@@ -78,7 +78,7 @@ pub const ICOSAHEDRON: Properties = Properties {
     face_sizes: &[FaceSizeData::new(0, 3), FaceSizeData::new(20, 0)],
 };
 
-/// The `Properties` of a regular dodecahedron (12 regular pentagons)
+/// The `Properties` of `Polyhedron::Dodecahedron`
 pub const DODECAHEDRON: Properties = Properties {
     polyhedron: Polyhedron::Dodecahedron,
     vert_count: ICOSAHEDRON.face_count,
@@ -95,7 +95,7 @@ pub const DODECAHEDRON: Properties = Properties {
     ],
 };
 
-/// The `Properties` of an icosidodecahedron (12 regular pentagons and 20 regular triangles)
+/// The `Properties` of `Polyhedron::Icosidodecahedron`
 pub const ICOSIDODECAHEDRON: Properties = Properties {
     polyhedron: Polyhedron::Icosidodecahedron,
     vert_count: ICOSAHEDRON.edge_count,
@@ -113,7 +113,7 @@ pub const ICOSIDODECAHEDRON: Properties = Properties {
     ],
 };
 
-/// The `Properties` of a rhombic triacontahedron (30 rhombi)
+/// The `Properties` of `Polyhedron::RhombicTriacontahedron`
 pub const RHOMBIC_TRIACONTAHEDRON: Properties = Properties {
     polyhedron: Polyhedron::RhombicTriacontahedron,
     vert_count: ICOSIDODECAHEDRON.face_count,

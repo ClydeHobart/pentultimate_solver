@@ -1,24 +1,50 @@
 use {
     bevy_inspector_egui::Inspectable,
     serde::{Deserialize, Serialize},
-    std::mem::transmute,
+    strum_macros::EnumIter,
 };
 
+/// A module for the `Data` struct, its related types, and its static instances
 pub mod data;
+
+/// A module for the `Properties` struct, its related types, and its static instances
 pub mod properties;
 
+/// One of the polyhedra used by this crate
 #[derive(
-    Clone, Copy, Debug, Deserialize, Eq, Hash, Inspectable, Ord, PartialEq, PartialOrd, Serialize,
+    Clone,
+    Copy,
+    Debug,
+    Deserialize,
+    EnumIter,
+    Eq,
+    Hash,
+    Inspectable,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    Serialize,
 )]
-#[repr(u8)]
 pub enum Polyhedron {
+    /// A [regular icosahedron](https://en.wikipedia.org/wiki/Regular_icosahedron) (20 regular
+    /// triangles)
     Icosahedron,
+
+    /// A [regular dodecahedron](https://en.wikipedia.org/wiki/Regular_dodecahedron) (12 regular
+    /// pentagons)
     Dodecahedron,
+
+    /// An [icosidodecahedron](https://en.wikipedia.org/wiki/Icosidodecahedron) (12 regular
+    /// pentagons, 20 regular triangles)
     Icosidodecahedron,
+
+    /// A [rhombic triacontahedron](https://en.wikipedia.org/wiki/Rhombic_triacontahedron) (30
+    /// rhombi)
     RhombicTriacontahedron,
 }
 
 impl Polyhedron {
+    /// Convert `self` to its [dual polyhedron](https://en.wikipedia.org/wiki/Dual_polyhedron)
     pub fn dual(self) -> Self {
         match self {
             Self::Icosahedron => Self::Dodecahedron,
@@ -28,6 +54,7 @@ impl Polyhedron {
         }
     }
 
+    /// Get the static `Properties` instance for `self`
     #[inline(always)]
     pub const fn properties(self) -> &'static properties::Properties {
         properties::Properties::get(self)
@@ -37,17 +64,5 @@ impl Polyhedron {
 impl Default for Polyhedron {
     fn default() -> Self {
         Self::Icosidodecahedron
-    }
-}
-
-pub struct PolyhedronOption(pub Option<Polyhedron>);
-
-impl From<u8> for PolyhedronOption {
-    fn from(polyhedron: u8) -> Self {
-        Self(if polyhedron <= Polyhedron::RhombicTriacontahedron as u8 {
-            Some(unsafe { transmute::<u8, Polyhedron>(polyhedron) })
-        } else {
-            None
-        })
     }
 }
