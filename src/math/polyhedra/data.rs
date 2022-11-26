@@ -19,6 +19,7 @@ use {
     },
     log::Level,
     std::{
+        cmp::Ordering,
         f32::consts::TAU,
         mem::{transmute, MaybeUninit},
         ops::Range,
@@ -30,15 +31,20 @@ use {
 pub struct EdgeData(usize, usize);
 
 impl EdgeData {
-    pub fn new(vert_index_1: usize, vert_index_2: usize) -> Self {
-        EdgeData(
-            std::cmp::min(vert_index_1, vert_index_2),
-            std::cmp::max(vert_index_1, vert_index_2),
-        )
-    }
-
     pub fn contains_vert(&self, vert_index: usize) -> bool {
         self.0 == vert_index || self.1 == vert_index
+    }
+}
+
+impl TryFrom<(usize, usize)> for EdgeData {
+    type Error = ();
+
+    fn try_from((vert_index_1, vert_index_2): (usize, usize)) -> Result<Self, Self::Error> {
+        match vert_index_1.cmp(&vert_index_2) {
+            Ordering::Less => Ok(Self(vert_index_1, vert_index_2)),
+            Ordering::Equal => Err(()),
+            Ordering::Greater => Ok(Self(vert_index_2, vert_index_1)),
+        }
     }
 }
 
@@ -155,8 +161,6 @@ impl Data {
         vec: &Vec3,
         filter: OptionalIndexedPredicate<Vec3>,
     ) -> usize {
-        use std::cmp::Ordering;
-
         let filter: IndexedPredicate<Vec3> =
             filter.unwrap_or(&|_: usize, _: &Vec3| -> bool { true });
 
@@ -197,8 +201,6 @@ impl Data {
         vec: &Vec3,
         filter: OptionalIndexedPredicate<FaceData>,
     ) -> usize {
-        use std::cmp::Ordering;
-
         let filter: IndexedPredicate<FaceData> =
             filter.unwrap_or(&|_: usize, _: &FaceData| -> bool { true });
 
@@ -652,9 +654,25 @@ impl<'a> DataBuilder<'a> {
             macro_rules! record_edge {
                 () => {
                     // EdgeData::new() automatically orders the indices
-                    let edge: EdgeData = EdgeData::new(prev_vert_index, curr_vert_index);
+                    let edge: EdgeData = ((prev_vert_index, curr_vert_index))
+                        .try_into()
+                        .map_err(|_: ()| -> LogError {
+                            log_error!(
+                                target: log_concat!(log_target, "record_edge"),
+                                Level::Warn,
+                                format!(
+                                    "Cannot record edge with only the vertex {} in polyhedron {:?}",
+                                    prev_vert_index,
+                                    properties.polyhedron
+                                )
+                            )
+                        })?;
 
-                    log::trace!(target: log_concat!(log_target, "record_edge"), "Recording edge {:?}", edge);
+                    log::trace!(
+                        target: log_concat!(log_target, "record_edge"),
+                        "Recording edge {:?}",
+                        edge
+                    );
 
                     edge_matrix[prev_vert_index].set(curr_vert_index, false);
 
@@ -671,8 +689,8 @@ impl<'a> DataBuilder<'a> {
                             target: log_concat!(log_target, "record_edge"),
                             Level::Warn,
                             format!(
-                                "No valid next vertex for previous vertex {} ({}) and current vertex {} ({}) in \
-                                    polyhedron {:?}",
+                                "No valid next vertex for previous vertex {} ({}) and current \
+                                    vertex {} ({}) in polyhedron {:?}",
                                 prev_vert_index,
                                 verts[prev_vert_index],
                                 curr_vert_index,

@@ -1149,14 +1149,18 @@ impl<'a> TryFrom<&mut PieceHeaderParams<'a>> for PieceHeader {
             };
         let map_adjacent_face_index_other_piece =
             |face_index: usize, vert_index: usize, next_vert_index: usize| -> usize {
-                let edge_index: usize = icosidodecahedron_data
-                    .get_edge_index(&{
-                        let face_slice: &[usize] = icosidodecahedron_faces[face_index]
-                            .get_slice(icosidodecahedron_vert_indices);
+                let edge_index: usize = {
+                    let face_slice: &[usize] = icosidodecahedron_faces[face_index]
+                        .get_slice(icosidodecahedron_vert_indices);
 
-                        EdgeData::new(face_slice[vert_index], face_slice[next_vert_index])
-                    })
-                    .unwrap();
+                    EdgeData::try_from((face_slice[vert_index], face_slice[next_vert_index]))
+                }
+                .ok()
+                .as_ref()
+                .and_then(|edge_data: &EdgeData| -> Option<usize> {
+                    icosidodecahedron_data.get_edge_index(edge_data).ok()
+                })
+                .unwrap();
 
                 icosidodecahedron_data.get_closest_face_index(
                     &Vec3::ZERO,
