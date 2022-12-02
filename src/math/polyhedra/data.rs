@@ -27,10 +27,16 @@ use {
     strum::IntoEnumIterator,
 };
 
+/// A pair of distinct vertex indices in ascending order
 #[derive(Clone, Copy, Eq, Debug, Default, Hash, Ord, PartialEq, PartialOrd)]
 pub struct EdgeData(usize, usize);
 
 impl EdgeData {
+    /// Returns whether `self` contains the specified vertex index
+    ///
+    /// # Arguments
+    ///
+    /// * `vert_index` - The vertex index to query for
     pub fn contains_vert(&self, vert_index: usize) -> bool {
         self.0 == vert_index || self.1 == vert_index
     }
@@ -39,6 +45,13 @@ impl EdgeData {
 impl TryFrom<(usize, usize)> for EdgeData {
     type Error = ();
 
+    /// Returns an `Ok`-wrapped `EdgeData` with the two supplied vertex indices in ascending order,
+    /// or `Err(())` if the two indices are the same
+    ///
+    /// # Arguments
+    ///
+    /// * `vert_index_1` - The first of two vertex indices, not necessarily the lesser of the two
+    /// * `vert_index_2` - The second of two vertex indices, not necessarily the greater of the two
     fn try_from((vert_index_1, vert_index_2): (usize, usize)) -> Result<Self, Self::Error> {
         match vert_index_1.cmp(&vert_index_2) {
             Ordering::Less => Ok(Self(vert_index_1, vert_index_2)),
@@ -48,20 +61,45 @@ impl TryFrom<(usize, usize)> for EdgeData {
     }
 }
 
+/// A bit array to refer to a set of edges
 pub type EdgeBitArray = BitArr!(for properties::MAX_EDGE_COUNT, in u32);
 
+/// A struct containing information describing a polyhedron face
 #[derive(Debug, Default)]
 pub struct FaceData {
+    /// A quaternion representing the orientation of this face
+    ///
+    /// This is computed to be "looking" in the opposite direction of `norm`, with the first
+    /// vertex index referred to by `range` being aligned upwards
     pub quat: Quat,
+
+    /// The normal vector of this face
+    ///
+    /// This is computed as the normalized average of the comprising vertex vectors, assuming the
+    /// face is a regular polygon, aligned with
     pub norm: Vec3,
 
-    /* Range of vertex indices in Data::vert_indices corresponding to this face. The corresponding
-    vertices wrap in counter-clockwise order */
+    /// The range of vertex indices within the corresponding `Data::vert_indices` field, describing
+    /// a list of vertices that comprise this face.
+    ///
+    /// The corresponding vertices within the specified slice wrap in counter-clockwise order
+    /// (right-hand rule)
     pub range: Range<usize>,
+
+    /// The set of edges comprising this face
     pub edges: EdgeBitArray,
 }
 
 impl FaceData {
+    /// Returns a new `FaceData`
+    ///
+    /// # Arguments
+    ///
+    /// * `verts` - A slice of vertex vectors
+    /// * `vert_indices` - A slice of indices into `verts`
+    /// * `range` - A range into `vert_indices` specifying the vertices (within `verts`) that
+    ///     comprise the new face
+    /// * `edges` - The edges that comprise the new face
     pub fn new(
         verts: &[Vec3],
         vert_indices: &[usize],
@@ -82,43 +120,256 @@ impl FaceData {
         }
     }
 
+    /// Returns the range of vertex indices for `self`
     pub fn get_range(&self) -> Range<usize> {
         self.range.clone()
     }
 
+    /// Borrows a slice of vertex indices for `self`
+    ///
+    /// # Arguments
+    ///
+    /// * `vert_indices` - The slice of vertex indices to borrow from
     pub fn get_slice<'a>(&self, vert_indices: &'a [usize]) -> &'a [usize] {
         &vert_indices[self.get_range()]
     }
 
+    /// Mutably borrows a slice of vertex indices for `self`
+    ///
+    /// # Arguments
+    ///
+    /// * `vert_indices` - The slice of vertex indices to mutably borrow from
     pub fn get_slice_mut<'a>(&self, vert_indices: &'a mut [usize]) -> &'a mut [usize] {
         &mut vert_indices[self.get_range()]
     }
 
+    /// Returns whether `self` contains a given vertex
+    ///
+    /// # Arguments
+    ///
+    /// * `vert_indices` - The slice of vertex indices that `self` was constructed with
+    /// * `vert_index` - The vertex index to query for
     pub fn contains_vert(&self, vert_indices: &[usize], vert_index: usize) -> bool {
         self.get_slice(vert_indices)
             .iter()
             .any(|index: &usize| *index == vert_index)
     }
 
+    /// Returns the size (the number of vertices) of `self`
+    #[inline(always)]
     pub fn get_size(&self) -> usize {
-        self.range.end - self.range.start
+        self.range.len()
     }
 
+    /// Returns the angle in radians of a full rotation divided into `self.get_size()` equally-sized
+    /// partial rotations
+    #[inline(always)]
+    pub fn get_partial_rotation_angle(&self) -> f32 {
+        TAU / self.get_size() as f32
+    }
+
+    /// Returns the number of consecutive clockwise rotations of angle
+    /// `self.get_partial_rotation_angle()` radians about `self.norm` until an accumulator
+    /// quaternion initialized with `self.quat` is as close to a given quaternion as possible
+    ///
+    /// # Arguments
+    ///
+    /// * `quat` - The quaternion to find the number of partial rotations of
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use {
+    /// #     glam::{EulerRot, Quat, Vec2, Vec3, Vec3Swizzles},
+    /// #     pentultimate_solver::math::polyhedra::{
+    /// #         data::Data,
+    /// #         Polyhedron,
+    /// #     },
+    /// #     rand::{rngs::ThreadRng, thread_rng, Rng},
+    /// #     strum::IntoEnumIterator,
+    /// #     std::{cmp::Ordering, f32::consts::TAU},
+    /// # };
+    /// const SMALL_ERROR: f32 = 1.0E-6_f32;
+    ///
+    /// let mut thread_rng: ThreadRng = thread_rng();
+    /// let mut gen_angle = || -> f32 { TAU * thread_rng.gen::<f32>() };
+    /// let mut gen_quat =
+    ///     || -> Quat { Quat::from_euler(EulerRot::XYZ, gen_angle(), gen_angle(), gen_angle()) };
+    /// let mut dots: Vec<f32> = Vec::new();
+    ///
+    /// for polyhedron in Polyhedron::iter() {
+    ///     let data: &Data = Data::get(polyhedron);
+    ///
+    ///     for face_data in data.faces.iter() {
+    ///         let to_xy_quat: Quat = Quat::from_rotation_arc(face_data.norm, Vec3::Z);
+    ///         let to_xy = |quat: Quat| -> Vec2 { (to_xy_quat * quat * Vec3::Y).xy() };
+    ///         let rand_quat: Quat = gen_quat();
+    ///         let rand_quat_xy: Vec2 = to_xy(rand_quat);
+    ///         let size: usize = face_data.get_size();
+    ///
+    ///         dots.clear();
+    ///         dots.reserve(size);
+    ///
+    ///         for rotation in 0_usize..face_data.get_size() {
+    ///             let quat: Quat = face_data.get_rotated_quat(rotation as u32);
+    ///
+    ///             assert_eq!(face_data.get_rotation(&quat), rotation);
+    ///
+    ///             dots.push(to_xy(quat).dot(rand_quat_xy));
+    ///         }
+    ///
+    ///         let closest_rotation_to_rand_quat: usize = dots
+    ///             .iter()
+    ///             .enumerate()
+    ///             .max_by(
+    ///                 |(_rotation_a, dot_a): &(usize, &f32),
+    ///                     (_rotation_b, dot_b): &(usize, &f32)|
+    ///                     -> Ordering { dot_a.total_cmp(dot_b) },
+    ///             )
+    ///             .unwrap()
+    ///             .0;
+    ///         let rotation_of_rand_quat: usize = face_data.get_rotation(&rand_quat);
+    ///
+    ///         assert!(
+    ///             // This will usually be the case
+    ///             closest_rotation_to_rand_quat == rotation_of_rand_quat ||
+    ///                 // In an unlucky scenario, this might occur
+    ///                 (
+    ///                     dots[closest_rotation_to_rand_quat] -
+    ///                     dots[rotation_of_rand_quat]
+    ///                 ).abs() <= SMALL_ERROR
+    ///         );
+    ///     }
+    /// }
+    /// ```
     pub fn get_rotation(&self, quat: &Quat) -> usize {
         let size: usize = self.get_size();
         let collapsed_result_up: Vec3 =
             Mat4::look_at_rh(Vec3::ZERO, -self.norm, self.norm.cross(self.quat * Vec3::Y))
                 .transform_vector3(*quat * Vec3::Y);
 
-        ((TAU - collapsed_result_up.y.atan2(collapsed_result_up.x)) * size as f32 / TAU).round()
-            as usize
+        ((TAU - collapsed_result_up.y.atan2(collapsed_result_up.x))
+            / self.get_partial_rotation_angle())
+        .round() as usize
             % size
     }
 
+    /// Returns a quaternion to perform a given number of consecutive clockwise rotations of angle
+    /// `self.get_partial_rotation_angle()` radians about `self.norm`
+    ///
+    /// # Arguments
+    ///
+    /// * `rotation` - The number of partial rotations to perform
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use {
+    /// #     glam::{Quat, Vec3},
+    /// #     pentultimate_solver::math::polyhedra::{
+    /// #         data::Data,
+    /// #         Polyhedron,
+    /// #     },
+    /// #     rand::{rngs::ThreadRng, thread_rng, Rng},
+    /// #     strum::IntoEnumIterator,
+    /// #     std::f32::consts::TAU,
+    /// # };
+    /// const SMALL_ERROR: f32 = 1.0E-6_f32;
+    ///
+    /// let mut thread_rng: ThreadRng = thread_rng();
+    ///
+    /// // From https://mathworld.wolfram.com/SpherePointPicking.html
+    /// let mut gen_normalized_vec3 = || -> Vec3 {
+    ///     let theta: f32 = TAU * thread_rng.gen::<f32>();
+    ///     let phi: f32 = (2.0_f32 * thread_rng.gen::<f32>() - 1.0_f32).acos();
+    ///     let sin_phi: f32 = phi.sin();
+    ///
+    ///     Vec3::new(sin_phi * theta.cos(), sin_phi * theta.sin(), phi.cos())
+    /// };
+    ///
+    /// for polyhedron in Polyhedron::iter() {
+    ///     let data: &Data = Data::get(polyhedron);
+    ///
+    ///     for face_data in data.faces.iter() {
+    ///         let size: usize = face_data.get_size();
+    ///
+    ///         assert_eq!(face_data.get_rotation_quat(0_u32), Quat::IDENTITY);
+    ///
+    ///         let rand_normalized_vec3: Vec3 = gen_normalized_vec3();
+    ///
+    ///         assert!((face_data.get_rotation_quat(size as u32) * rand_normalized_vec3)
+    ///             .abs_diff_eq(rand_normalized_vec3, SMALL_ERROR));
+    ///
+    ///         let local_up: Vec3 = face_data.quat * Vec3::Y;
+    ///         let rotated_local_up: Vec3 = face_data.get_rotation_quat(1_u32) * local_up;
+    ///
+    ///         assert!(
+    ///             (
+    ///                 local_up.angle_between(rotated_local_up)
+    ///                     - face_data.get_partial_rotation_angle()
+    ///             )
+    ///                 .abs()
+    ///                 <= SMALL_ERROR
+    ///         );
+    ///     }
+    /// }
+    /// ```
     pub fn get_rotation_quat(&self, rotation: u32) -> Quat {
-        Quat::from_axis_angle(self.norm, rotation as f32 * -TAU / self.get_size() as f32)
+        Quat::from_axis_angle(
+            self.norm,
+            rotation as f32 * -self.get_partial_rotation_angle(),
+        )
     }
 
+    /// Returns this face's quaternion rotated a given number of consecutive clockwise rotations of
+    /// angle `self.get_partial_rotation_angle()` radians
+    ///
+    /// # Arguments
+    ///
+    /// * `rotation` - The number of partial rotations to perform
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use {
+    ///     pentultimate_solver::math::polyhedra::{data::Data, Polyhedron},
+    ///     std::f32::consts::{PI, TAU},
+    ///     strum::IntoEnumIterator,
+    /// };
+    /// const SMALL_ERROR: f32 = 1.0E-6_f32;
+    ///
+    /// for polyhedron in Polyhedron::iter() {
+    ///     let data: &Data = Data::get(polyhedron);
+    ///
+    ///     for face_data in data.faces.iter() {
+    ///         let size: usize = face_data.get_size();
+    ///
+    ///         assert_eq!(face_data.get_rotated_quat(0_u32), face_data.quat);
+    ///
+    ///         let partial_rotation_angle: f32 = face_data.get_partial_rotation_angle();
+    ///         let expected_angle_between = |rotation: u32| -> f32 {
+    ///             let full_rotation_angle: f32 = rotation as f32 * partial_rotation_angle;
+    ///
+    ///             if full_rotation_angle > PI {
+    ///                 TAU - full_rotation_angle
+    ///             } else {
+    ///                 full_rotation_angle
+    ///             }
+    ///         };
+    ///
+    ///         for rotation in 1_u32..size as u32 {
+    ///             assert!(
+    ///                 (face_data
+    ///                     .get_rotated_quat(rotation)
+    ///                     .angle_between(face_data.quat)
+    ///                     - expected_angle_between(rotation))
+    ///                 .abs()
+    ///                     <= SMALL_ERROR
+    ///             );
+    ///         }
+    ///     }
+    /// }
+    /// ```
     pub fn get_rotated_quat(&self, rotation: u32) -> Quat {
         self.get_rotation_quat(rotation) * self.quat
     }
